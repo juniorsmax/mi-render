@@ -10,8 +10,8 @@
 - ✅ Dependencias instaladas (docx, jspdf, xlsx, three.js)
 - ✅ Repositorio GitHub creado → github.com/juniorsmax/mi-render
 - ✅ Código subido a GitHub
-- ⏳ Instalar Xcode completo (App Store → buscar "Xcode") — ~15GB
-- ⏳ Instalar Capacitor para convertir en app iOS nativa
+- ✅ Xcode instalado (v14, Intel Mac, macOS Monterey)
+- ✅ Capacitor instalado + plataforma iOS añadida
 - ⏳ Configurar GitHub MCP con token personal
 - ⏳ Despliegue en producción (Vercel / Netlify)
 
