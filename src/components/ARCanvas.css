@@ -1,0 +1,53 @@
+.ar-canvas-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+.ar-gl-canvas,
+.ar-overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ar-overlay-canvas {
+  pointer-events: none;
+}
+
+/* HUD overlay */
+.ar-hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.ar-hud-top {
+  display: flex;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 20px) + 16px) 16px 16px;
+}
+
+.ar-hud-bottom {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 24px calc(env(safe-area-inset-bottom, 20px) + 16px);
+  pointer-events: all;
+}
+
+.ar-tap-badge {
+  background: rgba(10, 12, 18, 0.75);
+  border: 1px solid rgba(108, 143, 255, 0.3);
+  color: #eef0f5;
+  padding: 8px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}

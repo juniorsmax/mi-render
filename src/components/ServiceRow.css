@@ -1,0 +1,39 @@
+.service-row td {
+  padding: 4px 4px;
+  vertical-align: middle;
+}
+
+.service-row input,
+.service-row select {
+  padding: 7px 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.service-subtotal {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-strong);
+  white-space: nowrap;
+  text-align: right;
+  padding-right: 8px;
+}
+
+.service-remove {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+.service-remove:hover {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--color-danger);
+}

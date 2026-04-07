@@ -1,0 +1,35 @@
+.profile-avatar-row {
+  display: flex; align-items: center; gap: 14px; padding: 16px;
+}
+.profile-avatar {
+  width: 52px; height: 52px; border-radius: var(--r-full);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: flex; align-items: center; justify-content: center;
+  font: 700 18px var(--font); color: #0c0a08; flex-shrink: 0;
+}
+.profile-avatar-info { flex: 1; }
+.profile-avatar-name { font: 700 16px var(--font); color: var(--text-strong); }
+
+.profile-lang-row {
+  display: flex; flex-direction: column; gap: 12px; padding: 16px;
+}
+.lang-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.lang-pill {
+  padding: 6px 14px; border-radius: var(--r-full);
+  font: 600 13px var(--font);
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; transition: var(--ease);
+}
+.lang-pill-active {
+  background: rgba(240,165,0,0.15);
+  border-color: rgba(240,165,0,0.4);
+  color: var(--accent);
+}
+
+.profile-section {
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+.profile-version {
+  text-align: center; font-size: 12px; padding: 8px 0 4px;
+}

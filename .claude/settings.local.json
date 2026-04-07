@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(sudo chmod:*)",
+      "Read(//Users/junior/.npm/_cacache/tmp/**)",
+      "Read(//Users/junior/.npm/_cacache/**)",
+      "Bash(npm cache:*)",
+      "Bash(npx --yes vite build)",
+      "Bash(npx vite:*)",
+      "Bash(pnpm --version)",
+      "Bash(npm run:*)",
+      "Read(//tmp/**)",
+      "Bash(jobs)",
+      "Bash(ipconfig getifaddr:*)",
+      "Bash(node:*)",
+      "Bash(sed -i '' 's|from '\\\\''../i18n/index.js'\\\\''|from '\\\\''../i18n/index.jsx'\\\\''|g' /Users/junior/Desktop/mi-render/src/components/BottomNav.jsx /Users/junior/Desktop/mi-render/src/components/CreateSheet.jsx /Users/junior/Desktop/mi-render/src/views/ExploreView.jsx /Users/junior/Desktop/mi-render/src/views/ProfileView.jsx /Users/junior/Desktop/mi-render/src/views/ProjectsView.jsx)",
+      "Bash(sed -i '' 's|from '\\\\''./i18n/index.js'\\\\''|from '\\\\''./i18n/index.jsx'\\\\''|g' /Users/junior/Desktop/mi-render/src/App.jsx)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
+    ]
+  }
+}

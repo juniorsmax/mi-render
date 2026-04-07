@@ -1,0 +1,186 @@
+/* ── Permission / Manual screens ─────────────────────────────────── */
+.scan-start-root {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 30%, rgba(108, 143, 255, 0.08) 0%, transparent 70%),
+    var(--color-bg);
+  overflow-y: auto;
+}
+
+.scan-start-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 32px 24px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+
+.scan-icon {
+  font-size: 3.5rem;
+  filter: drop-shadow(0 4px 20px rgba(108, 143, 255, 0.3));
+}
+
+.scan-steps {
+  padding: 18px 20px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+/* reuse home-step styles */
+.home-step { display: flex; align-items: flex-start; gap: 12px; }
+.home-step-n {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff;
+  flex-shrink: 0; margin-top: 1px;
+}
+.home-step p { color: var(--color-text); }
+
+.scan-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  align-items: center;
+}
+.scan-actions .btn { width: 100%; max-width: 300px; }
+
+/* ── Camera / Canvas screens ─────────────────────────────────────── */
+.scan-camera-root {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.scan-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.scan-canvas-static {
+  /* frozen frame canvas — fills whole screen */
+  background: #000;
+}
+
+/* HUD top */
+.scan-hud-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 20px) + 12px) 16px 12px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.scan-tap-badge {
+  background: rgba(10, 12, 18, 0.80);
+  border: 1px solid rgba(108, 143, 255, 0.35);
+  color: #eef0f5;
+  padding: 8px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+/* HUD bottom (corners step) */
+.scan-hud-bottom {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px calc(env(safe-area-inset-bottom, 20px) + 16px);
+  z-index: 10;
+}
+
+/* Scale form (scale step) */
+.scan-scale-form {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 18px 20px calc(env(safe-area-inset-bottom, 20px) + 16px);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scale-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.scale-input-row input { flex: 1; }
+
+.scale-actions {
+  display: flex;
+  gap: 10px;
+}
+.scale-actions .btn { flex: 1; }
+
+/* ── Diag / warning card ─────────────────────────────────────────── */
+.scan-diag {
+  padding: 14px 18px;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.scan-diag-warn {
+  border-color: rgba(251, 191, 36, 0.3) !important;
+  background: rgba(251, 191, 36, 0.05) !important;
+  color: var(--color-text);
+}
+
+/* ── Manual form ─────────────────────────────────────────────────── */
+.manual-form {
+  padding: 22px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.form-field { display: flex; flex-direction: column; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-actions { display: flex; gap: 10px; }
+.form-actions .btn { flex: 1; }
+.manual-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(108, 143, 255, 0.07);
+  border: 1px solid rgba(108, 143, 255, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 14px;
+}
+.manual-area { font-size: 1.3rem; font-weight: 700; }
