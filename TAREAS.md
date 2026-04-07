@@ -10,10 +10,14 @@
 - ✅ Dependencias instaladas (docx, jspdf, xlsx, three.js)
 - ✅ Repositorio GitHub creado → github.com/juniorsmax/mi-render
 - ✅ Código subido a GitHub
-- ✅ Xcode instalado (v14, Intel Mac, macOS Monterey)
+- ✅ Xcode instalado (v14, Intel Mac, macOS Monterey 12.7.6)
 - ✅ Capacitor instalado + plataforma iOS añadida
+- ⚠️ LIMITACIÓN: Mac 2017 = macOS máx. Monterey → no puede instalar Xcode 16
+- ⚠️ LiDAR nativo requiere Xcode 16 → usar Cloud Build (GitHub Actions / Codemagic)
+- ⏳ Configurar GitHub Actions para build iOS en la nube (Opción A)
 - ⏳ Configurar GitHub MCP con token personal
 - ⏳ Despliegue en producción (Vercel / Netlify)
+- 🆕 Alternativa a LiDAR: escáner con IA desde foto (no requiere hardware especial)
 
 ## DISEÑO / UI
 - ✅ Paleta ámbar/naranja (diferente a Polycam)
