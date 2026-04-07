@@ -1,5 +1,22 @@
 {
   "appId": "com.zerbitecni.mirender",
   "appName": "mi-render",
-  "webDir": "dist"
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false,
+    "backgroundColor": "#0c0a08"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1800,
+      "backgroundColor": "#0c0a08",
+      "showSpinner": false,
+      "launchAutoHide": true
+    },
+    "Camera": {
+      "presentationStyle": "fullscreen"
+    }
+  }
 }

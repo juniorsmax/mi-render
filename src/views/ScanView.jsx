@@ -1,36 +1,45 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useCamera } from '../hooks/useCamera'
 import { shoelace } from '../lib/shoelace'
+import { sanitizeNumber, sanitizeName } from '../lib/security'
+import { getScanMode, SCAN_MODE_LABELS } from '../lib/lidar'
+import { Icon } from '../components/Icon.jsx'
 import './ScanView.css'
 
 /**
- * ScanView — camera-based room scanner (no WebXR needed)
+ * ScanView — escáner de habitaciones
  *
- * Steps:
- *  'permission'  → ask for camera access
- *  'corners'     → live camera + tap floor corners (3+ points)
- *  'scale'       → tap 2 reference points + enter real distance → compute m²
- *  'manual'      → fallback: width × length input
+ * Pasos:
+ *  'permission'  → intro + detección de capacidades (LiDAR / cámara)
+ *  'corners'     → cámara en vivo + toque de esquinas
+ *  'scale'       → frame congelado + referencia de escala
+ *  'manual'      → fallback: ancho × largo
  */
 export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
-  const [step, setStep] = useState(initialStep)
-  const [corners, setCorners] = useState([])        // pixel coords [{x,y}]
-  const [refPoints, setRefPoints] = useState([])    // 2 reference pixel points
-  const [refDist, setRefDist] = useState('')        // real distance in meters
-  const { videoRef, cameraState, errorMsg, start, stop } = useCamera()
-  const canvasRef = useRef(null)
-  const overlayRef = useRef(null)
-  const frozenImageRef = useRef(null) // ImageData of frozen frame for scale step
+  const [step, setStep]           = useState(initialStep)
+  const [corners, setCorners]     = useState([])
+  const [refPoints, setRefPoints] = useState([])
+  const [refDist, setRefDist]     = useState('')
+  const [scanMode, setScanMode]   = useState(null)  // detectado async
 
-  // ── Draw loop: corners + polygon on live camera ───────────────────
+  const { videoRef, cameraState, errorMsg, start, stop } = useCamera()
+  const canvasRef      = useRef(null)
+  const frozenImageRef = useRef(null)
+
+  // Detectar capacidades al montar
+  useEffect(() => {
+    getScanMode().then(setScanMode)
+  }, [])
+
+  // ── Draw loop: corners sobre cámara en vivo ───────────────────────
   useEffect(() => {
     if (step !== 'corners') return
     let rafId
     function draw() {
       const canvas = canvasRef.current
-      const video = videoRef.current
+      const video  = videoRef.current
       if (!canvas || !video) { rafId = requestAnimationFrame(draw); return }
-      canvas.width = canvas.offsetWidth
+      canvas.width  = canvas.offsetWidth
       canvas.height = canvas.offsetHeight
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -41,143 +50,148 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
     return () => cancelAnimationFrame(rafId)
   }, [step, corners, videoRef])
 
-  // ── Draw frozen frame + corners + ref points for scale step ──────
+  // ── Redraw en paso scale ──────────────────────────────────────────
   useEffect(() => {
     if (step !== 'scale') return
     const canvas = canvasRef.current
     if (!canvas) return
-    canvas.width = canvas.offsetWidth
+    canvas.width  = canvas.offsetWidth
     canvas.height = canvas.offsetHeight
     const ctx = canvas.getContext('2d')
-
-    // Restore frozen frame
-    if (frozenImageRef.current) {
-      ctx.putImageData(frozenImageRef.current, 0, 0)
-    }
-    // Draw corners
+    if (frozenImageRef.current) ctx.putImageData(frozenImageRef.current, 0, 0)
     drawPolygon(ctx, corners, canvas.width, canvas.height)
-    // Draw ref points
     drawRefPoints(ctx, refPoints)
   }, [step, refPoints, corners])
 
-  // ── Freeze frame when moving to scale step ────────────────────────
+  // ── Congelar frame y pasar a scale ───────────────────────────────
   function freezeAndNextStep() {
     const canvas = canvasRef.current
-    const video = videoRef.current
+    const video  = videoRef.current
     if (!canvas || !video) return
-
-    canvas.width = canvas.offsetWidth
+    canvas.width  = canvas.offsetWidth
     canvas.height = canvas.offsetHeight
     const ctx = canvas.getContext('2d')
-
-    // Draw video frame into canvas
     const vw = video.videoWidth, vh = video.videoHeight
-    const cw = canvas.width, ch = canvas.height
-    // Cover-fit
-    const scale = Math.max(cw / vw, ch / vh)
-    const dw = vw * scale, dh = vh * scale
+    const cw = canvas.width,     ch = canvas.height
+    const s  = Math.max(cw / vw, ch / vh)
+    const dw = vw * s, dh = vh * s
     const dx = (cw - dw) / 2, dy = (ch - dh) / 2
     ctx.drawImage(video, dx, dy, dw, dh)
-
     frozenImageRef.current = ctx.getImageData(0, 0, cw, ch)
-    stop() // stop camera stream
+    stop()
     setStep('scale')
   }
 
-  // ── Tap handler for corners step ──────────────────────────────────
+  // ── Tap: marcar esquinas ──────────────────────────────────────────
   const handleCornerTap = useCallback((e) => {
     if (step !== 'corners') return
-    const rect = canvasRef.current.getBoundingClientRect()
+    const rect  = canvasRef.current.getBoundingClientRect()
     const touch = e.touches?.[0] ?? e
     const x = touch.clientX - rect.left
     const y = touch.clientY - rect.top
     setCorners((prev) => [...prev, { x, y }])
   }, [step])
 
-  // ── Tap handler for scale step (ref points) ───────────────────────
+  // ── Tap: marcar puntos de referencia ─────────────────────────────
   const handleRefTap = useCallback((e) => {
     if (step !== 'scale' || refPoints.length >= 2) return
-    const rect = canvasRef.current.getBoundingClientRect()
+    const rect  = canvasRef.current.getBoundingClientRect()
     const touch = e.touches?.[0] ?? e
     const x = touch.clientX - rect.left
     const y = touch.clientY - rect.top
     setRefPoints((prev) => [...prev, { x, y }])
   }, [step, refPoints.length])
 
-  // ── Calculate and finish ──────────────────────────────────────────
+  // ── Calcular m² ───────────────────────────────────────────────────
   function handleCalculate() {
-    const d = parseFloat(refDist)
-    if (isNaN(d) || d <= 0 || refPoints.length < 2) return
+    const d = sanitizeNumber(refDist, { min: 0.01, max: 100 })
+    if (d === null || refPoints.length < 2) return
 
     const px = refPoints[1].x - refPoints[0].x
     const py = refPoints[1].y - refPoints[0].y
     const pixelDist = Math.sqrt(px * px + py * py)
-    if (pixelDist < 5) return // points too close
+    if (pixelDist < 5) return
 
-    const scale = d / pixelDist           // meters per pixel
+    const scale     = d / pixelDist
     const pixelArea = shoelace(corners.map((p) => ({ x: p.x, z: p.y })))
-    const areaSqM = parseFloat((pixelArea * scale * scale).toFixed(2))
+    const areaSqM   = parseFloat((pixelArea * scale * scale).toFixed(2))
 
-    onComplete({ areaSqM, points: corners })
+    onComplete({ areaSqM, points: corners, scanMode: 'camera' })
   }
+
+  const modeInfo = scanMode ? SCAN_MODE_LABELS[scanMode] : null
 
   // ── STEP: permission ──────────────────────────────────────────────
   if (step === 'permission') {
     return (
       <div className="scan-start-root">
         <div className="scan-start-content safe-top safe-bottom">
-          <div className="scan-icon">📷</div>
-          <h2>Escaneo de habitación</h2>
-          <p className="text-muted" style={{ textAlign: 'center' }}>
-            Abre la cámara, apunta al suelo y toca las esquinas de la estancia.
-            Sin WebXR — funciona en cualquier iPhone.
+
+          <div className="scan-icon">
+            <Icon name={scanMode === 'camera' || !scanMode ? 'camera' : 'lidar'} size={38} />
+          </div>
+
+          <div>
+            <h2>Escaneo de habitación</h2>
+            {modeInfo && (
+              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
+                <span
+                  className="scan-mode-badge"
+                  style={{ color: modeInfo.color, borderColor: modeInfo.color + '66', background: modeInfo.color + '11' }}
+                >
+                  <Icon name={scanMode?.includes('lidar') ? 'lidar' : 'camera'} size={14} />
+                  {modeInfo.label} · {modeInfo.desc}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <p className="muted" style={{ textAlign: 'center', fontSize: 14 }}>
+            Apunta la cámara al suelo y toca las esquinas de la estancia para calcular los m².
           </p>
 
           <div className="scan-steps glass">
             <ScanStep n={1} text="Apunta la cámara al suelo de la habitación" />
-            <ScanStep n={2} text="Toca las 4 esquinas del suelo en orden" />
+            <ScanStep n={2} text="Toca las esquinas del suelo en orden" />
             <ScanStep n={3} text="Marca una distancia de referencia conocida" />
           </div>
 
           {cameraState === 'error' && (
-            <div className="scan-diag glass scan-diag-warn">⚠️ {errorMsg}</div>
+            <div className="scan-diag scan-diag-warn">
+              <span className="scan-diag-icon"><Icon name="warning" size={18} /></span>
+              <span>{errorMsg}</span>
+            </div>
           )}
 
           <div className="scan-actions">
             <button
               className="btn btn-primary btn-lg"
-              onClick={async () => {
-                await start()
-                setStep('corners')
-              }}
+              onClick={async () => { await start(); setStep('corners') }}
               disabled={cameraState === 'requesting'}
             >
-              {cameraState === 'requesting' ? 'Abriendo cámara…' : 'Abrir cámara'}
+              {cameraState === 'requesting'
+                ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Abriendo cámara…</>
+                : <><Icon name="camera" size={18} /> Abrir cámara</>
+              }
             </button>
             <button className="btn btn-ghost" onClick={() => setStep('manual')}>
               Introducir m² manualmente
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={onCancel}>Volver</button>
+            <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+              <Icon name="back" size={16} /> Volver
+            </button>
           </div>
         </div>
       </div>
     )
   }
 
-  // ── STEP: corners (live camera) ───────────────────────────────────
+  // ── STEP: corners (cámara en vivo) ────────────────────────────────
   if (step === 'corners') {
     return (
       <div className="scan-camera-root">
-        {/* Live camera */}
-        <video
-          ref={videoRef}
-          className="scan-video"
-          playsInline
-          muted
-          autoPlay
-        />
+        <video ref={videoRef} className="scan-video" playsInline muted autoPlay />
 
-        {/* Tap canvas */}
         <canvas
           ref={canvasRef}
           className="scan-canvas"
@@ -185,7 +199,6 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           onTouchStart={(e) => { e.preventDefault(); handleCornerTap(e) }}
         />
 
-        {/* HUD top */}
         <div className="scan-hud-top safe-top">
           <div className="scan-tap-badge">
             {corners.length === 0
@@ -193,23 +206,25 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
               : `${corners.length} esquina${corners.length !== 1 ? 's' : ''} marcada${corners.length !== 1 ? 's' : ''}`
             }
           </div>
+          {corners.length > 0 && (
+            <div className="scan-corner-count">{corners.length} pts</div>
+          )}
         </div>
 
-        {/* HUD bottom */}
         <div className="scan-hud-bottom safe-bottom">
           <button
             className="btn btn-ghost"
             onClick={() => setCorners((p) => p.slice(0, -1))}
             disabled={corners.length === 0}
           >
-            ↩ Deshacer
+            <Icon name="undo" size={16} /> Deshacer
           </button>
           <button
             className="btn btn-primary"
             onClick={freezeAndNextStep}
             disabled={corners.length < 3}
           >
-            Listo ({corners.length})
+            Listo ({corners.length}) →
           </button>
         </div>
       </div>
@@ -218,50 +233,50 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
 
   // ── STEP: scale reference ─────────────────────────────────────────
   if (step === 'scale') {
-    const canProceed = refPoints.length === 2 && parseFloat(refDist) > 0
+    const canProceed = refPoints.length === 2 && sanitizeNumber(refDist, { min: 0.01 }) !== null
     return (
       <div className="scan-camera-root">
-        {/* Frozen frame canvas */}
-        <canvas ref={canvasRef} className="scan-canvas scan-canvas-static"
+        <canvas
+          ref={canvasRef}
+          className="scan-canvas scan-canvas-static"
           onPointerDown={handleRefTap}
           onTouchStart={(e) => { e.preventDefault(); handleRefTap(e) }}
           style={{ touchAction: 'none' }}
         />
 
-        {/* HUD top */}
         <div className="scan-hud-top safe-top">
           <div className="scan-tap-badge">
             {refPoints.length === 0 && 'Toca el inicio de una pared conocida'}
             {refPoints.length === 1 && 'Toca el final de esa pared'}
-            {refPoints.length === 2 && '✓ Referencia marcada'}
+            {refPoints.length === 2 && <><Icon name="check" size={14} style={{ display: 'inline' }} /> Referencia marcada</>}
           </div>
         </div>
 
-        {/* Scale form */}
-        <div className="scan-scale-form glass safe-bottom">
-          <p style={{ fontSize: 13, marginBottom: 8 }}>
+        <div className="scan-scale-form">
+          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
             ¿Cuánto mide esa distancia en metros?
           </p>
           <div className="scale-input-row">
             <input
               type="number"
               placeholder="Ej. 3.50"
-              min="0.1"
+              min="0.01"
+              max="100"
               step="0.01"
               value={refDist}
               onChange={(e) => setRefDist(e.target.value)}
               inputMode="decimal"
             />
-            <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>m</span>
+            <span className="scale-unit">m</span>
           </div>
           <div className="scale-actions">
             <button className="btn btn-ghost btn-sm" onClick={() => {
               setRefPoints([])
               setStep('corners')
               setCorners([])
-              start().then(() => {})
+              start()
             }}>
-              ↩ Re-escanear
+              <Icon name="undo" size={14} /> Re-escanear
             </button>
             <button
               className="btn btn-primary"
@@ -284,56 +299,83 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   return null
 }
 
-// ── Manual form ────────────────────────────────────────────────────────────────
+// ── Formulario manual ──────────────────────────────────────────────────────────
 function ManualForm({ onComplete, onBack }) {
-  const [width, setWidth] = useState('')
-  const [length, setLength] = useState('')
+  const [width, setWidth]       = useState('')
+  const [length, setLength]     = useState('')
   const [roomName, setRoomName] = useState('')
 
-  const w = parseFloat(width), l = parseFloat(length)
-  const computed = !isNaN(w) && !isNaN(l) && w > 0 && l > 0 ? (w * l).toFixed(2) : null
+  const w = sanitizeNumber(width,  { min: 0.1, max: 999 })
+  const l = sanitizeNumber(length, { min: 0.1, max: 999 })
+  const computed = w && l ? (w * l).toFixed(2) : null
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!computed) return
+    const name = sanitizeName(roomName) || 'Habitación'
     onComplete({
-      areaSqM: parseFloat(computed),
-      roomName,
+      areaSqM:    parseFloat(computed),
+      roomName:   name,
       dimensions: `${w} m × ${l} m`,
+      scanMode:   'manual',
     })
   }
 
   return (
-    <div className="scan-start-root scroll-view">
+    <div className="scan-start-root">
       <div className="scan-start-content safe-top safe-bottom">
-        <div className="scan-icon">📐</div>
+        <div className="scan-icon">
+          <Icon name="manual" size={38} />
+        </div>
         <h2>Medición manual</h2>
-        <p className="text-muted">Introduce las dimensiones de la estancia.</p>
+        <p className="muted" style={{ fontSize: 14 }}>Introduce las dimensiones de la estancia.</p>
 
         <form className="manual-form glass" onSubmit={handleSubmit}>
           <div className="form-field">
             <label>Nombre de la estancia</label>
-            <input type="text" placeholder="Ej. Salón" value={roomName} onChange={(e) => setRoomName(e.target.value)} />
+            <input
+              type="text"
+              placeholder="Ej. Salón"
+              value={roomName}
+              onChange={(e) => setRoomName(e.target.value)}
+              maxLength={100}
+            />
           </div>
           <div className="form-row">
             <div className="form-field">
               <label>Ancho (m)</label>
-              <input type="number" placeholder="4.20" min="0.1" step="0.01" value={width} onChange={(e) => setWidth(e.target.value)} required inputMode="decimal" />
+              <input
+                type="number" placeholder="4.20"
+                min="0.1" max="999" step="0.01"
+                value={width}
+                onChange={(e) => setWidth(e.target.value)}
+                inputMode="decimal"
+              />
             </div>
             <div className="form-field">
               <label>Largo (m)</label>
-              <input type="number" placeholder="3.80" min="0.1" step="0.01" value={length} onChange={(e) => setLength(e.target.value)} required inputMode="decimal" />
+              <input
+                type="number" placeholder="3.80"
+                min="0.1" max="999" step="0.01"
+                value={length}
+                onChange={(e) => setLength(e.target.value)}
+                inputMode="decimal"
+              />
             </div>
           </div>
           {computed && (
             <div className="manual-result">
-              <span className="text-muted">Superficie calculada</span>
-              <span className="manual-area text-mono text-accent">{computed} m²</span>
+              <span className="muted">Superficie calculada</span>
+              <span className="manual-area">{computed} m²</span>
             </div>
           )}
           <div className="form-actions">
-            <button type="button" className="btn btn-ghost" onClick={onBack}>← Volver</button>
-            <button type="submit" className="btn btn-primary" disabled={!computed}>Continuar →</button>
+            <button type="button" className="btn btn-ghost" onClick={onBack}>
+              <Icon name="back" size={16} /> Volver
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={!computed}>
+              Continuar →
+            </button>
           </div>
         </form>
       </div>
@@ -341,45 +383,49 @@ function ManualForm({ onComplete, onBack }) {
   )
 }
 
-// ── Canvas drawing helpers ─────────────────────────────────────────────────────
+// ── Helpers de canvas ──────────────────────────────────────────────────────────
 function drawPolygon(ctx, points, w, h) {
   if (points.length === 0) return
 
-  // Polygon fill
   if (points.length >= 3) {
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
     points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y))
     ctx.closePath()
-    ctx.fillStyle = 'rgba(108, 143, 255, 0.18)'
+    ctx.fillStyle = 'rgba(240, 165, 0, 0.15)'
     ctx.fill()
   }
 
-  // Lines
   if (points.length >= 2) {
     ctx.beginPath()
     ctx.moveTo(points[0].x, points[0].y)
     points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y))
     if (points.length >= 3) ctx.closePath()
-    ctx.strokeStyle = 'rgba(108, 143, 255, 0.8)'
+    ctx.strokeStyle = 'rgba(240, 165, 0, 0.85)'
     ctx.lineWidth = 2
     ctx.setLineDash([6, 4])
     ctx.stroke()
     ctx.setLineDash([])
   }
 
-  // Dots
   points.forEach((p, i) => {
+    // Halo
     ctx.beginPath()
-    ctx.arc(p.x, p.y, 10, 0, Math.PI * 2)
-    ctx.fillStyle = i === 0 ? 'rgba(52, 211, 153, 0.9)' : 'rgba(108, 143, 255, 0.9)'
+    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2)
+    ctx.fillStyle = i === 0 ? 'rgba(45, 212, 191, 0.2)' : 'rgba(240, 165, 0, 0.2)'
+    ctx.fill()
+
+    // Punto
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, 9, 0, Math.PI * 2)
+    ctx.fillStyle = i === 0 ? 'rgba(45, 212, 191, 0.95)' : 'rgba(240, 165, 0, 0.95)'
     ctx.fill()
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
     ctx.stroke()
 
-    // Number label
-    ctx.fillStyle = '#fff'
+    // Número
+    ctx.fillStyle = '#0c0a08'
     ctx.font = 'bold 11px -apple-system, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -388,10 +434,10 @@ function drawPolygon(ctx, points, w, h) {
 }
 
 function drawRefPoints(ctx, points) {
-  points.forEach((p, i) => {
+  points.forEach((p) => {
     ctx.beginPath()
-    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.9)'
+    ctx.arc(p.x, p.y, 10, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.95)'
     ctx.fill()
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2
@@ -413,7 +459,7 @@ function ScanStep({ n, text }) {
   return (
     <div className="home-step">
       <div className="home-step-n">{n}</div>
-      <p style={{ fontSize: 13 }}>{text}</p>
+      <p>{text}</p>
     </div>
   )
 }
