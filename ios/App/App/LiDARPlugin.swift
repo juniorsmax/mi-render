@@ -11,8 +11,13 @@ import CoreLocation
  *  isAvailable     → capacidades del dispositivo
  *  startScan       → escaneo de habitación con RoomPlan (iOS 16+)
  *  startObjectScan → escaneo 3D de objeto con ARKit .mesh
- *  exportUSDZ      → exporta último escaneo como USDZ y abre share sheet
  *  stopScan        → para cualquier escaneo en curso
+ *  exportUSDZ      → exporta último escaneo como USDZ
+ *  saveWorldMap    → persiste ARWorldMap con nombre
+ *  measureDistance → distancia entre dos puntos 3D
+ *  exportOBJ       → exporta malla como OBJ
+ *  exportPLY       → exporta malla como PLY
+ *  exportSTL       → exporta malla como STL
  */
 @objc(LiDARPlugin)
 public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
@@ -60,7 +65,6 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
             return
         }
 
-        // Iniciar geolocalización para incluir en el resultado
         requestLocation()
         pendingCall = call
 
@@ -70,7 +74,6 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
             vc.onResult = { [weak self] result in
                 guard let self = self else { return }
                 if var result = result {
-                    // Inyectar GPS si disponible
                     if let loc = self.lastLocation {
                         result["latitude"]  = loc.coordinate.latitude
                         result["longitude"] = loc.coordinate.longitude
@@ -113,36 +116,145 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
     }
 
-    // ── exportUSDZ ───────────────────────────────────────────────────────────
-    @objc func exportUSDZ(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            // Buscar el VC presentado con datos de exportación
-            if let vc = self.bridge?.viewController {
-                // Compartir el último archivo USDZ generado
-                let tmpDir = FileManager.default.temporaryDirectory
-                let usdzUrl = tmpDir.appendingPathComponent("mi-render-scan.usdz")
-                if FileManager.default.fileExists(atPath: usdzUrl.path) {
-                    let activity = UIActivityViewController(
-                        activityItems: [usdzUrl],
-                        applicationActivities: nil
-                    )
-                    vc.present(activity, animated: true)
-                    call.resolve(["path": usdzUrl.path])
-                } else {
-                    call.reject("No hay escaneo guardado para exportar")
-                }
-            }
-        }
-    }
-
     // ── stopScan ─────────────────────────────────────────────────────────────
     @objc func stopScan(_ call: CAPPluginCall) {
+        ScanManager.shared.stopScan()
         DispatchQueue.main.async {
             self.bridge?.viewController?.presentedViewController?.dismiss(animated: true)
         }
         pendingCall?.reject("Escaneo detenido")
         pendingCall = nil
         call.resolve(["stopped": true])
+    }
+
+    // ── exportUSDZ ───────────────────────────────────────────────────────────
+    @objc func exportUSDZ(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+
+            // Intentar exportar desde RoomPlanManager si hay sala capturada (iOS 16+)
+            if #available(iOS 16.0, *),
+               let room = RoomPlanManager.shared.lastCapturedRoom,
+               let url = ExportManager.shared.exportUSDZ(room: room, named: "mi-render-scan") {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path])
+                return
+            }
+
+            // Fallback: buscar USDZ en directorio temporal (flujo ObjectScan)
+            let tmpUrl = FileManager.default.temporaryDirectory
+                .appendingPathComponent("mi-render-scan.usdz")
+            if FileManager.default.fileExists(atPath: tmpUrl.path) {
+                ExportManager.shared.shareFile(at: tmpUrl, from: vc)
+                call.resolve(["path": tmpUrl.path])
+            } else {
+                call.reject("No hay escaneo guardado para exportar")
+            }
+        }
+    }
+
+    // ── saveWorldMap ─────────────────────────────────────────────────────────
+    @objc func saveWorldMap(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "worldmap-\(Int(Date().timeIntervalSince1970))"
+
+        guard let session = ScanManager.shared.session else {
+            call.reject("No hay sesión AR activa para guardar")
+            return
+        }
+
+        WorldMapManager.shared.saveWorldMap(session: session, named: name) { result in
+            switch result {
+            case .success(let url):
+                call.resolve(["saved": true, "path": url.path, "name": name])
+            case .failure(let error):
+                call.reject("Error guardando mapa: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // ── measureDistance ──────────────────────────────────────────────────────
+    @objc func measureDistance(_ call: CAPPluginCall) {
+        guard
+            let aDict = call.getObject("pointA"),
+            let bDict = call.getObject("pointB"),
+            let ax = aDict["x"] as? Double,
+            let ay = aDict["y"] as? Double,
+            let az = aDict["z"] as? Double,
+            let bx = bDict["x"] as? Double,
+            let by = bDict["y"] as? Double,
+            let bz = bDict["z"] as? Double
+        else {
+            call.reject("Se requieren pointA y pointB con propiedades x, y, z")
+            return
+        }
+
+        let pointA = SIMD3<Float>(Float(ax), Float(ay), Float(az))
+        let pointB = SIMD3<Float>(Float(bx), Float(by), Float(bz))
+
+        let distance = MeasurementManager.shared.measureDistance(from: pointA, to: pointB)
+        let formatted = MeasurementManager.shared.formattedDistance(from: pointA, to: pointB)
+
+        call.resolve([
+            "distanceM":  Double(distance),
+            "formatted":  formatted,
+        ])
+    }
+
+    // ── exportOBJ ────────────────────────────────────────────────────────────
+    @objc func exportOBJ(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+        let meshes = MeshManager.shared.getAllMeshes()
+
+        guard !meshes.isEmpty else {
+            call.reject("No hay malla 3D capturada para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        if let url = ExportManager.shared.exportAsset(asset, format: .obj, named: name) {
+            call.resolve(["path": url.path, "format": "obj"])
+        } else {
+            call.reject("Error exportando OBJ")
+        }
+    }
+
+    // ── exportPLY ────────────────────────────────────────────────────────────
+    @objc func exportPLY(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+        let meshes = MeshManager.shared.getAllMeshes()
+
+        guard !meshes.isEmpty else {
+            call.reject("No hay malla 3D capturada para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        if let url = ExportManager.shared.exportAsset(asset, format: .ply, named: name) {
+            call.resolve(["path": url.path, "format": "ply"])
+        } else {
+            call.reject("Error exportando PLY")
+        }
+    }
+
+    // ── exportSTL ────────────────────────────────────────────────────────────
+    @objc func exportSTL(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+        let meshes = MeshManager.shared.getAllMeshes()
+
+        guard !meshes.isEmpty else {
+            call.reject("No hay malla 3D capturada para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        if let url = ExportManager.shared.exportAsset(asset, format: .stl, named: name) {
+            call.resolve(["path": url.path, "format": "stl"])
+        } else {
+            call.reject("Error exportando STL")
+        }
     }
 
     // ── GPS ──────────────────────────────────────────────────────────────────
@@ -167,7 +279,6 @@ class RoomPlanViewController: UIViewController {
 
     private var captureView:    RoomCaptureView!
     private var captureSession: RoomCaptureSession!
-    private var capturedRoomData: CapturedRoomData?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -179,13 +290,10 @@ class RoomPlanViewController: UIViewController {
 
         captureSession = captureView.captureSession
         captureSession.delegate = self
-
-        addButtons()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Evitar que la pantalla se oscurezca durante el escaneo
         UIApplication.shared.isIdleTimerDisabled = true
         let config = RoomCaptureSession.Configuration()
         captureSession.run(configuration: config)
@@ -197,20 +305,13 @@ class RoomPlanViewController: UIViewController {
         captureSession.stop()
     }
 
-    // ── Botones ───────────────────────────────────────────────────────────────
-    private func addButtons() {
-        // Usamos viewDidLayoutSubviews para calcular safe area correctamente
-    }
-
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        // Solo añadir botones una vez
         if view.viewWithTag(101) != nil { return }
 
         let topInset = view.safeAreaInsets.top + 12
         let w = view.bounds.width
 
-        // Cerrar
         let closeBtn = UIButton(type: .system)
         closeBtn.tag = 101
         closeBtn.setTitle("✕", for: .normal)
@@ -222,7 +323,6 @@ class RoomPlanViewController: UIViewController {
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
-        // Listo
         let doneBtn = UIButton(type: .system)
         doneBtn.tag = 102
         doneBtn.setTitle("✓  Listo", for: .normal)
@@ -265,10 +365,16 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             do {
                 let room = try await RoomBuilder(options: []).capturedRoom(from: data)
 
-                // Exportar USDZ al directorio temporal
-                let usdzUrl = FileManager.default.temporaryDirectory
+                // Guardar en RoomPlanManager para acceso posterior (exportUSDZ, etc.)
+                RoomPlanManager.shared.lastCapturedRoom = room
+
+                // Exportar USDZ al directorio de exportaciones
+                let _ = ExportManager.shared.exportUSDZ(room: room, named: "mi-render-scan")
+
+                // También en tmp para compatibilidad con flujo anterior
+                let tmpUrl = FileManager.default.temporaryDirectory
                     .appendingPathComponent("mi-render-scan.usdz")
-                try? room.export(to: usdzUrl, exportOptions: .parametric)
+                try? room.export(to: tmpUrl, exportOptions: .parametric)
 
                 let result = self.buildResult(from: room)
                 await MainActor.run {
@@ -286,10 +392,8 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
     }
 
-    // ── CapturedRoom → JSON con posiciones para plano 2D ─────────────────────
     private func buildResult(from room: CapturedRoom) -> [String: Any] {
 
-        // Área del suelo
         var floorArea  = Float(0)
         var wallArea   = Float(0)
         var totalVolume = Float(0)
@@ -307,7 +411,6 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             floorArea  = maxW * maxL
         }
 
-        // Paredes — incluye posición y ángulo para renderizar plano 2D
         let walls: [[String: Any]] = room.walls.map { wall in
             let t = wall.transform
             wallArea += wall.dimensions.x * wall.dimensions.y
@@ -324,12 +427,10 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             ]
         }
 
-        // Altura media de habitación
         let avgHeight = room.walls.isEmpty ? Float(2.5) :
             room.walls.map { $0.dimensions.y }.reduce(0, +) / Float(room.walls.count)
         totalVolume = floorArea * avgHeight
 
-        // Ventanas
         let windows: [[String: Any]] = room.windows.map { w in
             let t = w.transform
             return [
@@ -343,7 +444,6 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
         let windowArea = room.windows.reduce(Float(0)) { $0 + Float($1.dimensions.x * $1.dimensions.y) }
 
-        // Puertas
         let doors: [[String: Any]] = room.doors.map { d in
             let t = d.transform
             return [
@@ -357,7 +457,6 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             ]
         }
 
-        // Aberturas (openings)
         let openings: [[String: Any]] = room.openings.map { o in
             let t = o.transform
             return [
@@ -383,10 +482,7 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             "openings":    openings,
             "scanMode":    "roomplan",
             "confidence":  "high",
-            "usdzExported": FileManager.default.fileExists(
-                atPath: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("mi-render-scan.usdz").path
-            ),
+            "usdzExported": true,
         ]
     }
 
@@ -507,6 +603,9 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
             self.captureBtn.isEnabled = false
         }
         let anchors = meshAnchors
+        // Registrar anchors en MeshManager para exportación posterior
+        anchors.forEach { MeshManager.shared.addAnchor($0) }
+
         DispatchQueue.global(qos: .userInitiated).async {
             let result = self.buildMeshResult(from: anchors)
             DispatchQueue.main.async {

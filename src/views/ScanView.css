@@ -1,79 +1,355 @@
 /* ══════════════════════════════════════════════════════
-   ScanView — UI estilo Polycam
-   Agentes: Luna (Frontend) + Vera (Diseño) + Ares (Escáner)
+   ScanView — Zerbitecni Identity
+   Rediseño visual completo — Luna (Frontend)
    ══════════════════════════════════════════════════════ */
 
-/* ── Pantalla de inicio ─────────────────────────────── */
+/* ── Keyframes ──────────────────────────────────────── */
+@keyframes pulse-ring {
+  0%   { transform: scale(0.92); opacity: 0.6; }
+  50%  { transform: scale(1.08); opacity: 0.15; }
+  100% { transform: scale(0.92); opacity: 0.6; }
+}
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes scan-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240,165,0,0.35), 0 0 60px rgba(240,165,0,0.1); }
+  50%       { box-shadow: 0 0 0 18px rgba(240,165,0,0), 0 0 80px rgba(240,165,0,0.22); }
+}
+@keyframes step-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes text-cycle {
+  0%, 28%  { opacity: 1; transform: translateY(0); }
+  33%      { opacity: 0; transform: translateY(-6px); }
+  34%      { opacity: 0; transform: translateY(6px); }
+  38%, 95% { opacity: 1; transform: translateY(0); }
+  100%     { opacity: 1; }
+}
+@keyframes corner-ripple {
+  0%   { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+@keyframes badge-pop {
+  0%   { transform: translateX(-50%) scale(0.88); opacity: 0; }
+  60%  { transform: translateX(-50%) scale(1.04); }
+  100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes metric-count {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes btn-glow-pulse {
+  0%, 100% { box-shadow: 0 4px 18px rgba(240,165,0,0.25); }
+  50%       { box-shadow: 0 4px 28px rgba(240,165,0,0.55), 0 0 0 3px rgba(240,165,0,0.12); }
+}
+@keyframes teal-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(45,212,191,0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(45,212,191,0); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* ══════════════════════════════════════════════════════
+   PANTALLA DE INICIO (permission)
+   ══════════════════════════════════════════════════════ */
 .scan-start-root {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(ellipse 60% 50% at 50% 30%, rgba(240,165,0,0.07) 0%, transparent 70%), var(--bg);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 20%, rgba(240,165,0,0.06) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 30% at 80% 80%, rgba(45,212,191,0.04) 0%, transparent 60%),
+    var(--bg);
   overflow-y: auto;
 }
+
 .scan-start-content {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  padding: 32px 24px;
-  max-width: 400px;
+  gap: 22px;
+  padding: 36px 20px;
+  max-width: 420px;
   width: 100%;
   text-align: center;
+  animation: slide-up-fade 320ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
+
+/* Icono principal — anillo con glow */
 .scan-icon {
-  width: 80px; height: 80px;
-  border-radius: var(--r-xl);
-  background: rgba(240,165,0,0.1);
-  border: 1px solid rgba(240,165,0,0.25);
+  position: relative;
+  width: 88px; height: 88px;
+  border-radius: 28px;
+  background: rgba(240,165,0,0.08);
+  border: 1px solid rgba(240,165,0,0.22);
   display: flex; align-items: center; justify-content: center;
   color: var(--accent);
-  box-shadow: 0 0 40px rgba(240,165,0,0.12);
+  animation: scan-breathe 3s ease-in-out infinite;
+  flex-shrink: 0;
 }
+.scan-icon::before {
+  content: '';
+  position: absolute; inset: -10px;
+  border-radius: 36px;
+  border: 1.5px solid rgba(240,165,0,0.12);
+  animation: pulse-ring 3s ease-in-out infinite;
+}
+
+/* Badge de modo */
 .scan-mode-badge {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: var(--r-full);
+  padding: 6px 16px; border-radius: var(--r-full);
   font: 600 12px var(--font); border: 1px solid currentColor;
+  letter-spacing: 0.03em;
 }
+
+/* Tabs de modo */
+.scan-mode-tabs {
+  display: flex; justify-content: center; gap: 0;
+  background: rgba(255,220,160,0.04);
+  border: 1px solid rgba(255,220,160,0.1);
+  border-radius: var(--r-full);
+  padding: 3px;
+  width: fit-content;
+  margin: 0 auto;
+}
+.scan-mode-tab {
+  font: 700 12px var(--font); letter-spacing: 0.06em;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 7px 18px;
+  border-radius: var(--r-full);
+  transition: color 0.2s, background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.scan-mode-tab.active {
+  color: #0c0a08;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+/* Steps de instrucciones */
 .scan-steps {
-  padding: 18px 20px; width: 100%;
-  display: flex; flex-direction: column; gap: 14px; text-align: left;
+  padding: 20px 18px;
+  width: 100%;
+  display: flex; flex-direction: column; gap: 16px;
+  text-align: left;
+  border-radius: var(--r-lg);
 }
-.home-step { display: flex; align-items: flex-start; gap: 12px; }
+
+.home-step {
+  display: flex; align-items: flex-start; gap: 14px;
+  animation: step-fade-in 350ms ease both;
+}
+.home-step:nth-child(1) { animation-delay: 60ms; }
+.home-step:nth-child(2) { animation-delay: 120ms; }
+.home-step:nth-child(3) { animation-delay: 180ms; }
+
 .home-step-n {
-  width: 26px; height: 26px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: #0c0a08;
+  font-size: 12px; font-weight: 800; color: #0c0a08;
   flex-shrink: 0; margin-top: 1px;
+  box-shadow: 0 2px 8px rgba(240,165,0,0.3);
 }
-.home-step p { color: var(--text); font-size: 13px; }
+
+.home-step p { color: var(--text); font-size: 13.5px; line-height: 1.55; }
+
+/* Acciones */
 .scan-actions {
   display: flex; flex-direction: column; gap: 10px;
   width: 100%; align-items: center;
 }
-.scan-actions .btn { width: 100%; max-width: 300px; }
+.scan-actions .btn { width: 100%; max-width: 320px; }
+.scan-actions .btn-primary {
+  animation: btn-glow-pulse 3s ease-in-out infinite;
+}
+.scan-actions .btn-primary:active {
+  transform: scale(0.96);
+  animation: none;
+}
 
-/* ── Pantalla de cámara (estilo Polycam) ────────────── */
+/* Diagnóstico / error */
+.scan-diag {
+  padding: 14px 18px; width: 100%;
+  font-size: 13px; line-height: 1.6;
+  display: flex; align-items: flex-start; gap: 10px;
+  border-radius: var(--r-md);
+  animation: step-fade-in 250ms ease both;
+}
+.scan-diag-warn {
+  border: 1px solid rgba(251,191,36,0.3);
+  background: rgba(251,191,36,0.06);
+  color: var(--text);
+}
+.scan-diag-icon { flex-shrink: 0; margin-top: 1px; color: var(--warning); }
+
+/* ══════════════════════════════════════════════════════
+   STEP: SCANNING — Radar animado
+   ══════════════════════════════════════════════════════ */
+.scan-scanning-root {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle 300px at 50% 40%, rgba(240,165,0,0.05) 0%, transparent 70%),
+    var(--bg);
+}
+
+.scan-scanning-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 48px 24px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  animation: slide-up-fade 300ms ease both;
+}
+
+/* Radar container */
+.scan-radar-wrap {
+  position: relative;
+  width: 180px; height: 180px;
+  flex-shrink: 0;
+}
+
+/* Anillos concéntricos */
+.scan-radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(240,165,0,0.18);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+}
+.scan-radar-ring:nth-child(1) { width: 180px; height: 180px; }
+.scan-radar-ring:nth-child(2) { width: 130px; height: 130px; border-color: rgba(240,165,0,0.22); }
+.scan-radar-ring:nth-child(3) { width: 80px; height: 80px; border-color: rgba(240,165,0,0.28); }
+
+/* Sweep de radar */
+.scan-radar-sweep {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  animation: radar-sweep 2.4s linear infinite;
+  overflow: hidden;
+}
+.scan-radar-sweep::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 50%; height: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(240,165,0,0.0) 200deg,
+    rgba(240,165,0,0.18) 280deg,
+    rgba(240,165,0,0.38) 340deg,
+    rgba(240,165,0,0.0) 360deg
+  );
+  transform-origin: 0% 0%;
+  border-radius: 0 100% 0 0;
+}
+
+/* Punto central */
+.scan-radar-dot {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 12px var(--accent), 0 0 24px rgba(240,165,0,0.4);
+}
+
+/* Cruz de ejes */
+.scan-radar-axes {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+}
+.scan-radar-axes::before,
+.scan-radar-axes::after {
+  content: '';
+  position: absolute;
+  background: rgba(240,165,0,0.1);
+}
+.scan-radar-axes::before {
+  top: 0; bottom: 0; left: 50%;
+  width: 1px; transform: translateX(-50%);
+}
+.scan-radar-axes::after {
+  left: 0; right: 0; top: 50%;
+  height: 1px; transform: translateY(-50%);
+}
+
+/* Texto de estado — ciclo automático via CSS */
+.scan-status-text {
+  font: 600 16px var(--font);
+  color: var(--text-strong);
+  letter-spacing: 0.01em;
+  min-height: 24px;
+}
+
+.scan-status-sub {
+  font: 400 13px var(--font);
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 280px;
+}
+
+/* Barra de progreso indeterminada */
+.scan-progress-bar {
+  width: 200px; height: 3px;
+  background: rgba(255,220,160,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.scan-progress-bar::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), transparent);
+  border-radius: 2px;
+  animation: scan-progress-slide 1.8s ease-in-out infinite;
+}
+@keyframes scan-progress-slide {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+/* ══════════════════════════════════════════════════════
+   STEP: CORNERS — Cámara fullscreen
+   ══════════════════════════════════════════════════════ */
 .scan-camera-root {
   position: fixed; inset: 0;
   background: #000;
   z-index: 50; overflow: hidden;
 }
+
 .scan-video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: cover;
 }
+
 .scan-canvas {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   touch-action: none; cursor: crosshair;
 }
-.scan-canvas-static { background: #000; }
+.scan-canvas-static { background: #0c0a08; }
 
-/* ── HUD superior (Consejos + X) ────────────────────── */
+/* HUD superior */
 .scan-hud-top {
   position: absolute; top: 0; left: 0; right: 0;
   display: flex; align-items: flex-start;
@@ -84,214 +360,252 @@
 .scan-hud-top > * { pointer-events: auto; }
 
 .scan-tips-btn {
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(10,8,6,0.75);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #fff; font: 600 14px var(--font);
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(10,8,6,0.80);
+  border: 1px solid rgba(240,165,0,0.25);
+  color: var(--accent); font: 600 13px var(--font);
   padding: 9px 16px; border-radius: var(--r-full);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
 }
+.scan-tips-btn:active { background: rgba(240,165,0,0.12); }
+
 .scan-close-btn {
   width: 40px; height: 40px; border-radius: 50%;
-  background: rgba(10,8,6,0.75);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #fff; font-size: 18px;
+  background: rgba(10,8,6,0.80);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-muted); font-size: 18px;
   display: flex; align-items: center; justify-content: center;
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   cursor: pointer;
+  transition: background 0.2s, color 0.2s;
 }
+.scan-close-btn:active { color: var(--danger); }
 
-/* Badge instrucción central superior */
+/* Badge instrucción central */
 .scan-instruction-badge {
-  position: absolute; top: calc(env(safe-area-inset-top, 20px) + 68px);
-  left: 50%; transform: translateX(-50%);
-  background: rgba(10,8,6,0.82);
-  border: 1px solid rgba(240,165,0,0.4);
-  color: var(--text-strong);
-  padding: 8px 20px; border-radius: var(--r-full);
-  font: 600 13px var(--font);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  white-space: nowrap; z-index: 10; pointer-events: none;
-}
-
-/* Botón plano de planta (top-left sobre cámara) */
-.scan-plan-btn {
   position: absolute;
   top: calc(env(safe-area-inset-top, 20px) + 68px);
-  left: 16px;
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(10,8,6,0.75);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #fff; font: 600 13px var(--font);
-  padding: 8px 14px; border-radius: var(--r-full);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  cursor: pointer; z-index: 10;
+  left: 50%; transform: translateX(-50%);
+  background: rgba(10,8,6,0.88);
+  border: 1px solid rgba(240,165,0,0.35);
+  color: var(--text-strong);
+  padding: 9px 22px; border-radius: var(--r-full);
+  font: 600 13px var(--font);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  white-space: nowrap; z-index: 10; pointer-events: none;
+  animation: badge-pop 280ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 
-/* ── HUD inferior (Polycam style) ───────────────────── */
+/* HUD inferior */
 .scan-hud-bottom {
   position: absolute; bottom: 0; left: 0; right: 0;
   z-index: 10;
-  background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+  background: linear-gradient(
+    to top,
+    rgba(0,0,0,0.92) 0%,
+    rgba(0,0,0,0.6) 50%,
+    transparent 100%
+  );
   padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 8px);
 }
 
-/* Tabs modo: ESPACIO | OBJETO | MANUAL */
-.scan-mode-tabs {
-  display: flex; justify-content: center; gap: 24px;
-  padding: 6px 0 14px;
-}
-.scan-mode-tab {
-  font: 700 13px var(--font); letter-spacing: 0.06em;
-  color: rgba(255,255,255,0.45);
-  cursor: pointer; padding: 4px 0;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s, border-color 0.2s;
-}
-.scan-mode-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* Controles principales */
+/* Controles */
 .scan-controls-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 28px 10px;
   gap: 16px;
 }
 
-/* Botón deshacer (izquierda) */
+/* Botón deshacer */
 .scan-undo-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: var(--r-full);
-  color: #fff; font: 600 11px var(--font);
-  width: 60px; height: 60px;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 50%;
+  color: rgba(255,255,255,0.7); font: 600 10px var(--font);
+  width: 58px; height: 58px;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: background 0.2s, color 0.2s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
-.scan-undo-btn:disabled { opacity: 0.3; pointer-events: none; }
+.scan-undo-btn:active { transform: scale(0.9); background: rgba(255,255,255,0.15); }
+.scan-undo-btn:disabled { opacity: 0.25; pointer-events: none; }
 
-/* Botón captura grande (centro) */
+/* Botón captura central */
 .scan-capture-btn {
-  width: 78px; height: 78px; border-radius: 50%;
-  border: 3px solid #fff;
+  width: 80px; height: 80px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.9);
   background: transparent;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; flex-shrink: 0;
-  transition: transform 0.15s;
+  transition: transform 0.15s, border-color 0.2s;
   position: relative;
+  -webkit-tap-highlight-color: transparent;
 }
-.scan-capture-btn:active { transform: scale(0.94); }
+.scan-capture-btn:active { transform: scale(0.93); }
+.scan-capture-btn.has-points {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(240,165,0,0.2), 0 0 20px rgba(240,165,0,0.3);
+}
+
 .scan-capture-inner {
-  width: 58px; height: 58px; border-radius: 50%;
-  background: #fff;
-  transition: background 0.2s, transform 0.15s;
+  width: 60px; height: 60px; border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  transition: background 0.2s, transform 0.15s, border-radius 0.25s;
 }
 .scan-capture-btn.has-points .scan-capture-inner {
-  background: var(--accent);
-  transform: scale(0.9);
-  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  transform: scale(0.88);
+  border-radius: 18px;
 }
 
-/* Botón Listo (derecha) */
+/* Botón Listo */
 .scan-done-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: var(--r-full);
-  color: #fff; font: 600 11px var(--font);
-  width: 60px; height: 60px;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 50%;
+  color: rgba(255,255,255,0.7); font: 600 10px var(--font);
+  width: 58px; height: 58px;
   cursor: pointer;
-  transition: opacity 0.2s, background 0.2s;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
 .scan-done-btn.ready {
-  background: rgba(240,165,0,0.25);
-  border-color: rgba(240,165,0,0.6);
-  color: var(--accent);
+  background: rgba(45,212,191,0.15);
+  border-color: rgba(45,212,191,0.5);
+  color: var(--teal);
+  animation: teal-pulse 2s ease-in-out infinite;
 }
+.scan-done-btn.ready:active { transform: scale(0.9); animation: none; }
 
-/* ── Panel de escala (inferior flotante) ────────────── */
+/* ══════════════════════════════════════════════════════
+   STEP: SCALE — Panel inferior
+   ══════════════════════════════════════════════════════ */
 .scan-scale-panel {
   position: absolute; bottom: 0; left: 0; right: 0;
-  background: rgba(10,8,6,0.95);
-  border-top: 1px solid rgba(255,220,160,0.12);
+  background: rgba(10,8,6,0.97);
+  border-top: 1px solid rgba(240,165,0,0.14);
   border-radius: 24px 24px 0 0;
-  padding: 20px 20px calc(env(safe-area-inset-bottom, 20px) + 12px);
+  padding: 22px 20px calc(env(safe-area-inset-bottom, 20px) + 16px);
   z-index: 10;
-  display: flex; flex-direction: column; gap: 14px;
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  display: flex; flex-direction: column; gap: 16px;
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  animation: slide-up-fade 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
+
+/* Handle */
+.scan-scale-panel::before {
+  content: '';
+  display: block;
+  width: 36px; height: 4px;
+  background: rgba(255,220,160,0.18);
+  border-radius: 2px;
+  margin: 0 auto 4px;
+}
+
 .scan-scale-title {
   font: 700 16px var(--font); color: var(--text-strong); text-align: center;
 }
 .scan-scale-subtitle {
-  font: 400 13px var(--font); color: var(--text-muted); text-align: center; margin-top: -8px;
+  font: 400 13px var(--font); color: var(--text-muted); text-align: center;
+  margin-top: -10px;
 }
 .scale-input-row {
   display: flex; align-items: center; gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 4px 14px 4px 4px;
 }
-.scale-input-row input { flex: 1; }
-.scale-unit { font: 600 15px var(--font); color: var(--text-muted); min-width: 16px; }
+.scale-input-row input {
+  flex: 1; background: transparent; border: none;
+  padding: 10px 12px; font-size: 18px; font-family: var(--font-mono);
+  color: var(--text-strong);
+}
+.scale-input-row input:focus { box-shadow: none; }
+.scale-unit { font: 700 15px var(--font); color: var(--accent); min-width: 16px; }
 .scale-actions { display: flex; gap: 10px; }
 .scale-actions .btn { flex: 1; }
 
-/* ── Warning ─────────────────────────────────────────── */
-.scan-diag {
-  padding: 14px 18px; width: 100%;
-  font-size: 13px; line-height: 1.6;
-  display: flex; align-items: flex-start; gap: 10px;
-  border-radius: var(--r-md);
-}
-.scan-diag-warn {
-  border: 1px solid rgba(251,191,36,0.3);
-  background: rgba(251,191,36,0.06);
-  color: var(--text);
-}
-.scan-diag-icon { flex-shrink: 0; margin-top: 1px; color: var(--warning); }
-
-/* ── Formulario manual ───────────────────────────────── */
+/* ══════════════════════════════════════════════════════
+   STEP: MANUAL — Formulario
+   ══════════════════════════════════════════════════════ */
 .manual-form {
   padding: 22px; width: 100%;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 16px;
+  border-radius: var(--r-lg);
 }
+
 .manual-result {
   display: flex; justify-content: space-between; align-items: center;
-  background: rgba(240,165,0,0.07);
-  border: 1px solid rgba(240,165,0,0.2);
-  border-radius: var(--r-md); padding: 12px 16px; font-size: 14px;
+  background: rgba(240,165,0,0.06);
+  border: 1px solid rgba(240,165,0,0.18);
+  border-radius: var(--r-md); padding: 14px 16px;
+  animation: metric-count 300ms ease both;
 }
-.manual-area { font: 700 1.4rem var(--font-mono); color: var(--accent); }
-
-/* ── Animación pulso LiDAR ──────────────────────────── */
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(240,165,0,0.3), 0 0 40px rgba(240,165,0,0.12); }
-  50%       { box-shadow: 0 0 0 12px rgba(240,165,0,0), 0 0 60px rgba(240,165,0,0.2); }
+.manual-area {
+  font: 800 1.5rem var(--font-mono);
+  color: var(--accent);
+  letter-spacing: -0.02em;
 }
 
-/* ── Tips modal ─────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════
+   TIPS MODAL
+   ══════════════════════════════════════════════════════ */
 .scan-tips-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.72);
   z-index: 200; display: flex; align-items: flex-end;
   animation: fadeIn 180ms ease;
 }
 .scan-tips-sheet {
   width: 100%; background: var(--bg-2);
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-  border-top: 1px solid var(--border);
-  padding: 24px 20px calc(env(safe-area-inset-bottom,20px) + 20px);
-  display: flex; flex-direction: column; gap: 16px;
+  border-radius: 28px 28px 0 0;
+  border-top: 1px solid rgba(240,165,0,0.14);
+  padding: 8px 20px calc(env(safe-area-inset-bottom,20px) + 20px);
+  display: flex; flex-direction: column; gap: 14px;
+  animation: slideUp 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-.scan-tips-title { font: 700 18px var(--font); color: var(--text-strong); }
+.scan-tips-handle {
+  width: 36px; height: 4px;
+  background: rgba(255,220,160,0.18); border-radius: 2px;
+  margin: 8px auto 4px;
+}
+.scan-tips-title {
+  font: 700 18px var(--font); color: var(--text-strong);
+}
 .scan-tip-item {
-  display: flex; align-items: flex-start; gap: 12px;
+  display: flex; align-items: flex-start; gap: 14px;
 }
 .scan-tip-num {
   width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-  background: rgba(240,165,0,0.15); border: 1px solid rgba(240,165,0,0.3);
+  background: rgba(240,165,0,0.1); border: 1px solid rgba(240,165,0,0.25);
   color: var(--accent); font: 700 13px var(--font);
   display: flex; align-items: center; justify-content: center;
 }
-.scan-tip-text { font-size: 14px; color: var(--text); line-height: 1.5; }
+.scan-tip-text { font-size: 14px; color: var(--text); line-height: 1.55; }
+
+/* ══════════════════════════════════════════════════════
+   Botón de plano (top-left sobre cámara)
+   ══════════════════════════════════════════════════════ */
+.scan-plan-btn {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 20px) + 68px);
+  left: 16px;
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(10,8,6,0.80);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text-muted); font: 600 13px var(--font);
+  padding: 8px 14px; border-radius: var(--r-full);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  cursor: pointer; z-index: 10;
+}
+
+/* ══════════════════════════════════════════════════════
+   Slide animations
+   ══════════════════════════════════════════════════════ */
+@keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }

@@ -46,15 +46,25 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
 
     ctx.clearRect(0, 0, size, size)
 
-    // Fondo
-    ctx.fillStyle = '#f8f7f5'
+    // ── Fondo oscuro con grid de puntos ────────────────────────────────────────
+    ctx.fillStyle = '#0c0a08'
     ctx.fillRect(0, 0, size, size)
+
+    // Grid de puntos sutil
+    const gridSpacing = 20
+    ctx.fillStyle = 'rgba(240,165,0,0.1)'
+    for (let x = gridSpacing; x < size - gridSpacing; x += gridSpacing) {
+      for (let z = gridSpacing; z < size - gridSpacing; z += gridSpacing) {
+        ctx.beginPath()
+        ctx.arc(x, z, 1, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
 
     // Escala: metros → píxeles
     const rangeX = (bounds.maxX - bounds.minX) || 1
     const rangeZ = (bounds.maxZ - bounds.minZ) || 1
     const drawArea = size - padding * 2
-    const scale = Math.min(drawArea / rangeX, drawArea / drawArea) * 0.9
     const scaleX = drawArea / rangeX
     const scaleZ = drawArea / rangeZ
     const s = Math.min(scaleX, scaleZ) * 0.88
@@ -69,7 +79,7 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       }
     }
 
-    // ── Área del suelo (relleno) ──────────────────────────────────────────────
+    // ── Área del suelo (relleno sutil) ─────────────────────────────────────────
     if (walls.length >= 2) {
       ctx.save()
       ctx.beginPath()
@@ -77,19 +87,18 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
         const { sx, sy } = toScreen(w.posX ?? 0, w.posZ ?? 0)
         return { sx, sy }
       })
-      // Ordenar puntos por ángulo para formar polígono
       const cx = pts.reduce((a, p) => a + p.sx, 0) / pts.length
       const cy = pts.reduce((a, p) => a + p.sy, 0) / pts.length
       pts.sort((a, b) => Math.atan2(a.sy - cy, a.sx - cx) - Math.atan2(b.sy - cy, b.sx - cx))
       ctx.moveTo(pts[0].sx, pts[0].sy)
       pts.slice(1).forEach(p => ctx.lineTo(p.sx, p.sy))
       ctx.closePath()
-      ctx.fillStyle = 'rgba(220,235,220,0.6)'
+      ctx.fillStyle = 'rgba(240,165,0,0.04)'
       ctx.fill()
       ctx.restore()
     }
 
-    // ── Paredes ───────────────────────────────────────────────────────────────
+    // ── Paredes — amber brillante con glow ────────────────────────────────────
     walls.forEach(wall => {
       const { posX = 0, posZ = 0, angle = 0, width = 0, confidence = 'high' } = wall
       const hw = width / 2
@@ -97,9 +106,15 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       const p1 = toScreen(posX + cos * hw, posZ + sin * hw)
       const p2 = toScreen(posX - cos * hw, posZ - sin * hw)
 
+      const alpha = confidence === 'high' ? 1 : confidence === 'medium' ? 0.75 : 0.5
+      const lw    = confidence === 'high' ? 4.5 : confidence === 'medium' ? 3.5 : 3
+
       ctx.save()
-      ctx.strokeStyle = confidence === 'high' ? '#1a1a1a' : confidence === 'medium' ? '#555' : '#999'
-      ctx.lineWidth   = confidence === 'high' ? 5 : 4
+      // Glow exterior
+      ctx.shadowColor = `rgba(240,165,0,${0.45 * alpha})`
+      ctx.shadowBlur  = 10
+      ctx.strokeStyle = `rgba(240,165,0,${alpha})`
+      ctx.lineWidth   = lw
       ctx.lineCap     = 'square'
       ctx.beginPath()
       ctx.moveTo(p1.sx, p1.sy)
@@ -108,7 +123,7 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       ctx.restore()
     })
 
-    // ── Ventanas ──────────────────────────────────────────────────────────────
+    // ── Ventanas — azul suave ─────────────────────────────────────────────────
     windows.forEach(win => {
       const { posX = 0, posZ = 0, angle = 0, width = 0 } = win
       const hw = width / 2
@@ -117,27 +132,24 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       const p2 = toScreen(posX - cos * hw, posZ - sin * hw)
 
       ctx.save()
-      // Rompe la pared y dibuja ventana
-      ctx.strokeStyle = '#7ab8f5'
-      ctx.lineWidth   = 5
+      // Rompe la pared con fondo oscuro
+      ctx.strokeStyle = '#0c0a08'
+      ctx.lineWidth   = 7
       ctx.lineCap     = 'butt'
-
-      // Fondo blanco sobre la pared
-      ctx.globalCompositeOperation = 'source-over'
-      ctx.strokeStyle = '#f8f7f5'
-      ctx.lineWidth   = 6
       ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke()
 
-      // Líneas de ventana
-      ctx.strokeStyle = '#5599dd'
+      // Línea principal de ventana
+      ctx.shadowColor = 'rgba(96,165,250,0.5)'
+      ctx.shadowBlur  = 6
+      ctx.strokeStyle = '#60a5fa'
+      ctx.lineWidth   = 2
+      ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke()
+
+      // Marca central perpendicular
+      const mid  = toScreen(posX, posZ)
+      const perp = { x: -sin * 5, y: cos * 5 }
+      ctx.strokeStyle = '#60a5fa'
       ctx.lineWidth   = 1.5
-      ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke()
-
-      // Centro marcado
-      const mid = toScreen(posX, posZ)
-      ctx.strokeStyle = '#5599dd'
-      ctx.lineWidth   = 3
-      const perp = { x: -sin * 4, y: cos * 4 }
       ctx.beginPath()
       ctx.moveTo(mid.sx - perp.x, mid.sy - perp.y)
       ctx.lineTo(mid.sx + perp.x, mid.sy + perp.y)
@@ -145,7 +157,7 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       ctx.restore()
     })
 
-    // ── Puertas ───────────────────────────────────────────────────────────────
+    // ── Puertas — teal ────────────────────────────────────────────────────────
     doors.forEach(door => {
       const { posX = 0, posZ = 0, angle = 0, width = 0 } = door
       const hw = width / 2
@@ -154,25 +166,28 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       const p2 = toScreen(posX - cos * hw, posZ - sin * hw)
 
       ctx.save()
-      // Fondo blanco sobre la pared
-      ctx.strokeStyle = '#f8f7f5'
-      ctx.lineWidth = 6
+      // Rompe la pared
+      ctx.strokeStyle = '#0c0a08'
+      ctx.lineWidth = 7
       ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke()
 
-      // Arco de apertura de puerta
-      const doorLen = Math.sqrt((p2.sx - p1.sx) ** 2 + (p2.sy - p1.sy) ** 2)
+      // Arco de apertura
+      const doorLen  = Math.sqrt((p2.sx - p1.sx) ** 2 + (p2.sy - p1.sy) ** 2)
       const arcAngle = Math.atan2(p2.sy - p1.sy, p2.sx - p1.sx)
-      ctx.strokeStyle = '#cc6600'
-      ctx.lineWidth = 1
+
+      ctx.shadowColor = 'rgba(45,212,191,0.4)'
+      ctx.shadowBlur  = 6
+      ctx.strokeStyle = '#2dd4bf'
+      ctx.lineWidth   = 1.2
       ctx.setLineDash([3, 2])
       ctx.beginPath()
       ctx.arc(p1.sx, p1.sy, doorLen, arcAngle, arcAngle + Math.PI / 2)
       ctx.stroke()
       ctx.setLineDash([])
 
-      // Línea de hoja de puerta
-      ctx.strokeStyle = '#cc6600'
-      ctx.lineWidth = 1.5
+      // Hoja de puerta
+      ctx.strokeStyle = '#2dd4bf'
+      ctx.lineWidth   = 1.8
       ctx.beginPath()
       ctx.moveTo(p1.sx, p1.sy)
       ctx.lineTo(
@@ -183,7 +198,7 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       ctx.restore()
     })
 
-    // ── Aberturas (openings) ──────────────────────────────────────────────────
+    // ── Aberturas ─────────────────────────────────────────────────────────────
     openings.forEach(op => {
       const { posX = 0, posZ = 0, angle = 0, width = 0 } = op
       const hw = width / 2
@@ -191,24 +206,68 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
       const p1 = toScreen(posX + cos * hw, posZ + sin * hw)
       const p2 = toScreen(posX - cos * hw, posZ - sin * hw)
       ctx.save()
-      ctx.strokeStyle = '#f8f7f5'
+      ctx.strokeStyle = '#0c0a08'
       ctx.lineWidth = 7
       ctx.beginPath(); ctx.moveTo(p1.sx, p1.sy); ctx.lineTo(p2.sx, p2.sy); ctx.stroke()
       ctx.restore()
     })
 
-    // ── Brújula (N) ───────────────────────────────────────────────────────────
-    const cx = size - 28, cy = size - 28, r = 12
+    // ── Escala visual (línea + metros) ────────────────────────────────────────
+    const scaleBarMeters = 1  // 1 metro
+    const scaleBarPx = scaleBarMeters * s
+    const sbX = padding, sbY = size - padding + 4
+    if (scaleBarPx > 8) {
+      ctx.save()
+      ctx.strokeStyle = 'rgba(240,165,0,0.55)'
+      ctx.lineWidth = 1.5
+      ctx.lineCap = 'round'
+      // Línea horizontal
+      ctx.beginPath(); ctx.moveTo(sbX, sbY); ctx.lineTo(sbX + scaleBarPx, sbY); ctx.stroke()
+      // Ticks extremos
+      ctx.lineWidth = 1.5
+      ctx.beginPath(); ctx.moveTo(sbX, sbY - 3); ctx.lineTo(sbX, sbY + 3); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(sbX + scaleBarPx, sbY - 3); ctx.lineTo(sbX + scaleBarPx, sbY + 3); ctx.stroke()
+      // Texto
+      ctx.fillStyle = 'rgba(240,165,0,0.6)'
+      ctx.font = '500 9px -apple-system, sans-serif'
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillText(`${scaleBarMeters} m`, sbX, sbY + 5)
+      ctx.restore()
+    }
+
+    // ── Brújula N ─────────────────────────────────────────────────────────────
+    const ncx = size - 22, ncy = size - 22, nr = 13
     ctx.save()
-    ctx.fillStyle = '#1a1a1a'
-    ctx.font = 'bold 9px -apple-system,sans-serif'
+    // Fondo del círculo
+    ctx.fillStyle = 'rgba(240,165,0,0.08)'
+    ctx.beginPath(); ctx.arc(ncx, ncy, nr, 0, Math.PI * 2); ctx.fill()
+    // Borde
+    ctx.strokeStyle = 'rgba(240,165,0,0.3)'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    // Flecha Norte (arriba = amber)
+    ctx.fillStyle = 'rgba(240,165,0,0.9)'
+    ctx.beginPath()
+    ctx.moveTo(ncx, ncy - nr + 3)
+    ctx.lineTo(ncx - 4, ncy + 2)
+    ctx.lineTo(ncx, ncy - 1)
+    ctx.closePath()
+    ctx.fill()
+    // Flecha Sur (abajo = muted)
+    ctx.fillStyle = 'rgba(100,90,80,0.7)'
+    ctx.beginPath()
+    ctx.moveTo(ncx, ncy + nr - 3)
+    ctx.lineTo(ncx + 4, ncy - 2)
+    ctx.lineTo(ncx, ncy + 1)
+    ctx.closePath()
+    ctx.fill()
+    // Letra N
+    ctx.fillStyle = 'rgba(240,165,0,0.85)'
+    ctx.font = 'bold 8px -apple-system, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.beginPath(); ctx.arc(cx, cy - r - 6, 7, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(26,26,26,0.15)'; ctx.fill()
-    ctx.fillStyle = '#1a1a1a'; ctx.fillText('N', cx, cy - r - 6)
-    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r)
-    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.5; ctx.stroke()
+    ctx.fillText('N', ncx, ncy - nr - 6)
     ctx.restore()
 
   }, [walls, doors, windows, openings, bounds, size, padding])
@@ -217,10 +276,12 @@ export function FloorPlan({ walls = [], doors = [], windows = [], openings = [],
     <canvas
       ref={canvasRef}
       style={{
-        borderRadius: 8,
+        borderRadius: 10,
         display: 'block',
         maxWidth: '100%',
-        background: '#f8f7f5',
+        background: '#0c0a08',
+        position: 'relative',
+        zIndex: 1,
       }}
     />
   )

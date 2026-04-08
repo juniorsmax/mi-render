@@ -274,17 +274,30 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   // ════════════════════════════════════════════════════
   if (step === 'scanning') {
     return (
-      <div className="scan-start-root">
-        <div className="scan-start-content safe-top safe-bottom" style={{ gap: 28 }}>
-          <div className="scan-icon" style={{ animation: 'pulse 2s infinite' }}>
-            <Icon name="lidar" size={38} />
+      <div className="scan-scanning-root">
+        <div className="scan-scanning-content safe-top safe-bottom">
+          {/* Radar animado */}
+          <div className="scan-radar-wrap">
+            <div className="scan-radar-ring" />
+            <div className="scan-radar-ring" />
+            <div className="scan-radar-ring" />
+            <div className="scan-radar-axes" />
+            <div className="scan-radar-sweep" />
+            <div className="scan-radar-dot" />
           </div>
-          <h2>Escaneando con LiDAR…</h2>
-          <p className="muted" style={{ fontSize: 14, textAlign: 'center' }}>
-            La interfaz de escaneo se ha abierto.<br />
-            Sigue las instrucciones en pantalla y pulsa <strong>Listo</strong> cuando termines.
+
+          {/* Texto de estado */}
+          <div>
+            <p className="scan-status-text">Escaneando habitación…</p>
+          </div>
+
+          <p className="scan-status-sub">
+            Mueve el iPhone lentamente por la estancia.<br />
+            Pulsa <strong style={{ color: 'var(--accent)' }}>Listo</strong> en la pantalla de escaneo cuando termines.
           </p>
-          <div className="spinner" style={{ width: 40, height: 40 }} />
+
+          {/* Barra de progreso */}
+          <div className="scan-progress-bar" />
         </div>
       </div>
     )
@@ -315,7 +328,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
 
         <div className="scan-hud-top safe-top">
           <button className="scan-tips-btn" onClick={() => setShowTips(true)}>
-            💡 Consejos
+            <Icon name="info" size={14} /> Consejos
           </button>
           <button className="scan-close-btn" onClick={onCancel}>
             <Icon name="close" size={16} />
@@ -325,7 +338,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
         <div className="scan-instruction-badge">
           {corners.length === 0 && 'Toca las esquinas del suelo en orden'}
           {corners.length > 0 && corners.length < 3 && `${corners.length} esquina${corners.length>1?'s':''} — toca más`}
-          {corners.length >= 3 && `${corners.length} esquinas — pulsa Listo cuando acabes`}
+          {corners.length >= 3 && `${corners.length} esquinas marcadas — pulsa Listo`}
         </div>
 
         <div className="scan-hud-bottom">
@@ -377,7 +390,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
 
         <div className="scan-hud-top safe-top">
           <button className="scan-tips-btn" onClick={() => setShowTips(true)}>
-            💡 Consejos
+            <Icon name="info" size={14} /> Consejos
           </button>
           <button className="scan-close-btn" onClick={onCancel}>
             <Icon name="close" size={16} />
@@ -387,7 +400,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
         <div className="scan-instruction-badge">
           {refPoints.length === 0 && 'Toca el inicio de una pared conocida'}
           {refPoints.length === 1 && 'Toca el final de esa misma pared'}
-          {refPoints.length === 2 && '✓ Referencia marcada — introduce la distancia'}
+          {refPoints.length === 2 && 'Referencia marcada — introduce la distancia'}
         </div>
 
         <div className="scan-scale-panel">
@@ -439,8 +452,9 @@ function TipsModal({ onClose }) {
   return (
     <div className="scan-tips-overlay" onClick={(e)=>e.target===e.currentTarget&&onClose()}>
       <div className="scan-tips-sheet">
+        <div className="scan-tips-handle" />
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <div className="scan-tips-title">💡 Consejos de escaneo</div>
+          <div className="scan-tips-title">Consejos de escaneo</div>
           <button className="sheet-close" onClick={onClose} style={{position:'static'}}>
             <Icon name="close" size={14} />
           </button>

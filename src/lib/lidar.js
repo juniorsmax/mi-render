@@ -147,6 +147,56 @@ export async function stopScan() {
 
 // ── Etiquetas para UI ─────────────────────────────────────────────────────────
 
+// ── Persistencia espacial ──────────────────────────────────────────────────────
+
+/**
+ * Guarda el ARWorldMap actual con un nombre
+ * @param {string} name — nombre del mapa (ej. "salon-v1")
+ */
+export async function saveWorldMap(name = 'worldmap') {
+  return callNative('saveWorldMap', { name })
+}
+
+// ── Medición de distancias ────────────────────────────────────────────────────
+
+/**
+ * Mide la distancia entre dos puntos 3D en el espacio AR
+ * @param {{ x, y, z }} pointA
+ * @param {{ x, y, z }} pointB
+ * @returns {{ distanceM: number, formatted: string }}
+ */
+export async function measureDistance(pointA, pointB) {
+  return callNative('measureDistance', { pointA, pointB })
+}
+
+// ── Exportación de malla 3D ───────────────────────────────────────────────────
+
+/**
+ * Exporta la malla 3D capturada como archivo OBJ
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportOBJ(name = 'mi-render-mesh') {
+  return callNative('exportOBJ', { name })
+}
+
+/**
+ * Exporta la malla 3D capturada como archivo PLY (nube de puntos)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportPLY(name = 'mi-render-mesh') {
+  return callNative('exportPLY', { name })
+}
+
+/**
+ * Exporta la malla 3D capturada como archivo STL (impresión 3D)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportSTL(name = 'mi-render-mesh') {
+  return callNative('exportSTL', { name })
+}
+
+// ── Etiquetas para UI ─────────────────────────────────────────────────────────
+
 export const SCAN_MODE_LABELS = {
   'lidar-native': { label: 'LiDAR',   desc: 'Escaneo 3D preciso',  color: '#2dd4bf' },
   'lidar-web':    { label: 'AR Web',  desc: 'AR via navegador',    color: '#a78bfa' },

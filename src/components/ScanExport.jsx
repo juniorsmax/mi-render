@@ -1,7 +1,8 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { FloorPlan } from './FloorPlan'
 import { Icon } from './Icon'
 import { Capacitor } from '@capacitor/core'
+import { exportOBJ, exportPLY, exportSTL, saveWorldMap } from '../lib/lidar'
 import './ScanExport.css'
 
 /**
@@ -9,12 +10,16 @@ import './ScanExport.css'
  * Agentes: Luna (UI) + Atlas (datos) + Ares (export)
  *
  * Muestra:
+ *  - Badge de modo de escaneo
  *  - Plano 2D de la habitación (FloorPlan)
- *  - Estadísticas completas (como Polycam)
- *  - Botones: PDF, USDZ, Compartir
+ *  - Tarjetas de métricas con animación escalonada
+ *  - Tabla de detalles
+ *  - Botones de exportación
  */
 export function ScanExport({ result, projectName = 'Mi habitación', address = '', onAccept, onRescan }) {
   const reportRef = useRef(null)
+  const [exportingFormat, setExportingFormat] = useState(null)
+  const [worldMapSaved, setWorldMapSaved]     = useState(false)
 
   if (!result) return null
 
@@ -31,13 +36,14 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     openings    = [],
     wallCount   = 0,
     confidence  = 'high',
+    scanMode    = 'lidar',
     latitude,
     longitude,
     altitude,
     usdzExported = false,
   } = result
 
-  // ── Exportar PDF via print ────────────────────────────────────────────────
+  // ── Exportar PDF via print ─────────────────────────────────────────────────
   function handleExportPDF() {
     const printWindow = window.open('', '_blank')
     const canvas = reportRef.current?.querySelector('canvas')
@@ -78,14 +84,14 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
         ${address ? `<p>${address}</p>` : ''}
         <p class="date">Generado el ${date}</p>
       </div>
-      <div class="brand">mi-render</div>
+      <div class="brand">mi-render · zerbitecni</div>
     </div>
     <div class="content">
       <div class="plan">
         ${planDataUrl ? `<img src="${planDataUrl}" alt="Plano 2D">` : '<p style="color:#999;font-size:12px;">Plano no disponible</p>'}
       </div>
       <div class="stats">
-        <h2>Overview</h2>
+        <h2>Métricas</h2>
         <div class="stat-row"><span class="label">Superficie total</span><span class="value">${floorArea.toFixed(1)} m²</span></div>
         <div class="stat-row"><span class="label">Área de paredes</span><span class="value">${wallArea.toFixed(1)} m²</span></div>
         <div class="stat-row"><span class="label">Área de ventanas</span><span class="value">${windowArea.toFixed(2)} m²</span></div>
@@ -101,7 +107,7 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
       </div>
     </div>
     <div class="footer">
-      Los resultados son estimaciones del sensor LiDAR y pueden variar. Generado con mi-render · zerbitecni.com
+      Resultados estimados por sensor LiDAR. Generado con mi-render · zerbitecni.com
     </div>
   </div>
   <script>window.onload=()=>window.print()</script>
@@ -110,7 +116,7 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     printWindow.document.close()
   }
 
-  // ── Exportar USDZ (share sheet nativa) ───────────────────────────────────
+  // ── Exportar USDZ (share sheet nativa) ────────────────────────────────────
   async function handleExportUSDZ() {
     if (!Capacitor.isNativePlatform()) {
       alert('La exportación USDZ solo está disponible en la app iOS')
@@ -123,7 +129,52 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     }
   }
 
+  // ── Exportar malla 3D (OBJ / PLY / STL) ───────────────────────────────────
+  async function handle3DExport(format) {
+    if (!Capacitor.isNativePlatform()) {
+      alert(`La exportación ${format.toUpperCase()} solo está disponible en la app iOS`)
+      return
+    }
+    setExportingFormat(format)
+    try {
+      const name = projectName.replace(/\s+/g, '-').toLowerCase()
+      if (format === 'obj') await exportOBJ(name)
+      if (format === 'ply') await exportPLY(name)
+      if (format === 'stl') await exportSTL(name)
+    } catch (err) {
+      console.error(`Error exportando ${format}:`, err)
+    } finally {
+      setExportingFormat(null)
+    }
+  }
+
+  // ── Guardar WorldMap para re-scan futuro ───────────────────────────────────
+  async function handleSaveWorldMap() {
+    if (!Capacitor.isNativePlatform()) return
+    try {
+      const name = projectName.replace(/\s+/g, '-').toLowerCase() + '-' + Date.now()
+      await saveWorldMap(name)
+      setWorldMapSaved(true)
+      setTimeout(() => setWorldMapSaved(false), 2500)
+    } catch (err) {
+      console.error('Error guardando WorldMap:', err)
+    }
+  }
+
   const confidenceColor = { high: '#2dd4bf', medium: '#f0a500', low: '#ef4444' }[confidence] ?? '#6b7280'
+  const confidenceLabel = { high: 'Alta', medium: 'Media', low: 'Baja' }[confidence] ?? '–'
+
+  const scanModeLabel = scanMode === 'lidar-native' || scanMode === 'lidar'
+    ? 'LiDAR'
+    : scanMode === 'camera'
+      ? 'Cámara'
+      : 'Manual'
+
+  const scanModePill = scanMode === 'lidar-native' || scanMode === 'lidar'
+    ? 'lidar'
+    : scanMode === 'camera'
+      ? 'camera'
+      : 'manual'
 
   return (
     <div className="scan-export-root">
@@ -137,15 +188,26 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           </div>
           <span className="scan-mode-badge"
             style={{ color: confidenceColor, borderColor: confidenceColor+'55', background: confidenceColor+'11', fontSize: 11 }}>
-            <Icon name="lidar" size={11} /> LiDAR · {confidence === 'high' ? 'Alta' : confidence === 'medium' ? 'Media' : 'Baja'} precisión
+            <Icon name="lidar" size={11} /> {confidenceLabel} precisión
           </span>
+        </div>
+
+        {/* Badge modo de escaneo */}
+        <div className="scan-mode-section">
+          <div className="scan-mode-row">
+            <span className="scan-mode-row-label">Modo de escaneo</span>
+            <span className={`scan-mode-pill ${scanModePill}`}>
+              <Icon name={scanModePill === 'lidar' ? 'lidar' : scanModePill === 'camera' ? 'camera' : 'manual'} size={11} />
+              {scanModeLabel}
+            </span>
+          </div>
         </div>
 
         {/* Plano 2D */}
         {walls.length > 0 && (
           <div className="scan-export-plan">
             <div className="scan-export-plan-label">
-              <Icon name="plan" size={14} />
+              <Icon name="plan" size={13} />
               Plano de planta
             </div>
             <FloorPlan
@@ -153,27 +215,65 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
               doors={doors}
               windows={windows}
               openings={openings}
-              size={Math.min(window.innerWidth - 32, 380)}
+              size={Math.min(window.innerWidth - 56, 360)}
               padding={28}
             />
           </div>
         )}
 
-        {/* Stats — estilo Polycam */}
-        <div className="scan-export-stats glass">
-          <div className="scan-export-stats-title">Overview</div>
+        {/* Tarjetas de métricas — 6 cards en grid 3×2 */}
+        <div className="scan-export-metrics">
+          <MetricCard
+            icon={<AreaIcon />}
+            iconClass="amber"
+            value={`${floorArea.toFixed(1)}`}
+            unit="m²"
+            label="Superficie"
+            accent
+          />
+          <MetricCard
+            icon={<VolumeIcon />}
+            iconClass="amber"
+            value={`${totalVolume.toFixed(1)}`}
+            unit="m³"
+            label="Volumen"
+          />
+          <MetricCard
+            icon={<PerimeterIcon />}
+            iconClass="teal"
+            value={`${perimeter.toFixed(1)}`}
+            unit="m"
+            label="Perímetro"
+            teal
+          />
+          <MetricCard
+            icon={<WallIcon />}
+            iconClass="amber"
+            value={wallCount}
+            label="Paredes"
+          />
+          <MetricCard
+            icon={<DoorIcon />}
+            iconClass="teal"
+            value={doors.length}
+            label="Puertas"
+            teal
+          />
+          <MetricCard
+            icon={<WindowIcon />}
+            iconClass="blue"
+            value={windows.length}
+            label="Ventanas"
+          />
+        </div>
 
-          <StatRow label="Superficie total" value={`${floorArea.toFixed(1)} m²`} accent />
+        {/* Stats tabla — detalles */}
+        <div className="scan-export-stats glass">
+          <div className="scan-export-stats-title">Detalle completo</div>
           <StatRow label="Área de paredes"  value={`${wallArea.toFixed(1)} m²`} />
           <StatRow label="Área de ventanas" value={`${windowArea.toFixed(2)} m²`} />
-          <StatRow label="Volumen total"    value={`${totalVolume.toFixed(2)} m³`} />
-          <StatRow label="Perímetro"        value={`${perimeter.toFixed(1)} m`} />
           <StatRow label="Altura media"     value={`${avgHeight.toFixed(2)} m`} />
-          <div className="stat-divider" />
-          <StatRow label="Nº paredes"  value={wallCount} />
-          <StatRow label="Puertas"     value={doors.length} />
-          <StatRow label="Ventanas"    value={windows.length} />
-          <StatRow label="Aberturas"   value={openings.length} />
+          <StatRow label="Aberturas"        value={openings.length} />
           {latitude  != null && <StatRow label="Latitud"  value={`${latitude.toFixed(6)} N`} />}
           {longitude != null && <StatRow label="Longitud" value={`${longitude.toFixed(6)} E`} />}
           {altitude  != null && <StatRow label="Altitud"  value={`${Math.round(altitude)} m`} />}
@@ -181,16 +281,67 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
 
         {/* Botones de exportación */}
         <div className="scan-export-actions">
-          <ExportBtn icon="document" label="Informe PDF" sub="Plano + estadísticas" onClick={handleExportPDF} />
+          <ExportBtn
+            iconText="PDF"
+            label="Informe PDF"
+            sub="Plano + métricas para imprimir"
+            onClick={handleExportPDF}
+          />
           {usdzExported && (
-            <ExportBtn icon="model3d" label="Modelo USDZ" sub="3D para AR" onClick={handleExportUSDZ} accent />
+            <ExportBtn
+              iconText="3D"
+              label="Modelo USDZ"
+              sub="Modelo 3D para AR Quick Look"
+              onClick={handleExportUSDZ}
+              accent
+            />
+          )}
+
+          {/* Exportación de malla 3D — solo nativo */}
+          {Capacitor.isNativePlatform() && (
+            <div className="export-3d-group">
+              <div className="export-3d-label">
+                <Icon name="scan" size={11} /> Malla 3D
+              </div>
+              <div className="export-3d-row">
+                {['obj', 'ply', 'stl'].map(fmt => (
+                  <button
+                    key={fmt}
+                    className={`export-3d-btn ${exportingFormat === fmt ? 'loading' : ''}`}
+                    onClick={() => handle3DExport(fmt)}
+                    disabled={!!exportingFormat}
+                  >
+                    {exportingFormat === fmt
+                      ? <span className="spinner" style={{ width: 12, height: 12 }} />
+                      : fmt.toUpperCase()
+                    }
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Guardar entorno espacial */}
+          {Capacitor.isNativePlatform() && (
+            <button
+              className={`export-worldmap-btn ${worldMapSaved ? 'saved' : ''}`}
+              onClick={handleSaveWorldMap}
+            >
+              <Icon name={worldMapSaved ? 'check' : 'scan'} size={16} />
+              <div>
+                <div className="export-btn-label">
+                  {worldMapSaved ? 'Entorno guardado ✓' : 'Guardar entorno AR'}
+                </div>
+                <div className="export-btn-sub">Permite re-scan y detección de cambios</div>
+              </div>
+            </button>
           )}
         </div>
 
         {/* Acciones principales */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px 8px' }}>
+        <div className="scan-export-main-actions">
           <button className="btn btn-primary btn-lg" onClick={onAccept}>
-            <Icon name="check" size={18} /> Usar estos datos para presupuesto
+            <Icon name="check" size={18} /> Usar para presupuesto
           </button>
           <button className="btn btn-ghost" onClick={onRescan}>
             <Icon name="scan" size={16} /> Re-escanear
@@ -198,13 +349,27 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
         </div>
 
         <div className="scan-export-footer safe-bottom">
-          Los resultados son estimaciones del sensor LiDAR. mi-render · zerbitecni.com
+          Resultados estimados por sensor LiDAR. mi-render · zerbitecni.com
         </div>
       </div>
     </div>
   )
 }
 
+/* ── Tarjeta de métrica ──────────────────────────────────────────────────────── */
+function MetricCard({ icon, iconClass = 'amber', value, unit, label, accent, teal }) {
+  return (
+    <div className="scan-metric-card">
+      <div className={`scan-metric-icon ${iconClass}`}>{icon}</div>
+      <div className={`scan-metric-value ${accent ? 'accent' : teal ? 'teal' : ''}`}>
+        {value}{unit ? <span style={{ fontSize: '0.65em', marginLeft: 2, fontWeight: 600, opacity: 0.7 }}>{unit}</span> : ''}
+      </div>
+      <div className="scan-metric-label">{label}</div>
+    </div>
+  )
+}
+
+/* ── StatRow ─────────────────────────────────────────────────────────────────── */
 function StatRow({ label, value, accent }) {
   return (
     <div className="stat-row">
@@ -216,17 +381,67 @@ function StatRow({ label, value, accent }) {
   )
 }
 
-function ExportBtn({ icon, label, sub, onClick, accent }) {
+/* ── ExportBtn ───────────────────────────────────────────────────────────────── */
+function ExportBtn({ iconText, label, sub, onClick, accent }) {
   return (
     <button className={`export-btn ${accent ? 'accent' : ''}`} onClick={onClick}>
       <div className="export-btn-icon">
-        <Icon name={icon} size={22} />
+        {iconText}
       </div>
       <div>
         <div className="export-btn-label">{label}</div>
         <div className="export-btn-sub">{sub}</div>
       </div>
-      <Icon name="download" size={18} style={{ marginLeft: 'auto', opacity: 0.6 }} />
+      <Icon name="download" size={18} style={{ marginLeft: 'auto', opacity: 0.45 }} />
     </button>
+  )
+}
+
+/* ── Iconos SVG inline para métricas ─────────────────────────────────────────── */
+function AreaIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 8h6M8 5v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function VolumeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+      <path d="M8 2v12M3 5l5 3 5-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+function PerimeterIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 1.5"/>
+    </svg>
+  )
+}
+function WallIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 4h12M2 8h12M2 12h12M5 4v4M11 8v4M8 4v8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
+  )
+}
+function DoorIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M4 13V3h8v10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M2 13h12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <path d="M10 8.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z" fill="currentColor"/>
+    </svg>
+  )
+}
+function WindowIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2.5" y="4.5" width="11" height="7" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <path d="M8 4.5v7M2.5 8h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>
   )
 }
