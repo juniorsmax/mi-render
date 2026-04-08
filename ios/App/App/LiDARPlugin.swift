@@ -257,6 +257,116 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
     }
 
+    // ── exportDAE ────────────────────────────────────────────────────────────
+    @objc func exportDAE(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+        let meshes = MeshManager.shared.getAllMeshes()
+
+        guard !meshes.isEmpty else {
+            call.reject("No hay malla 3D capturada para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        if let url = ExportManager.shared.exportDAE(asset: asset, named: name) {
+            call.resolve(["path": url.path, "format": "dae"])
+        } else {
+            call.reject("Error exportando DAE")
+        }
+    }
+
+    // ── exportSVG ────────────────────────────────────────────────────────────
+    @available(iOS 16.0, *)
+    @objc func exportSVG(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-plan"
+
+        guard let room = RoomPlanManager.shared.lastCapturedRoom else {
+            call.reject("No hay escaneo de habitación disponible para SVG")
+            return
+        }
+
+        if let url = ExportManager.shared.exportSVG(from: room.walls, named: name) {
+            call.resolve(["path": url.path, "format": "svg"])
+        } else {
+            call.reject("Error exportando SVG")
+        }
+    }
+
+    // ── exportPDF ────────────────────────────────────────────────────────────
+    @available(iOS 16.0, *)
+    @objc func exportPDF(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-plan"
+
+        guard let room = RoomPlanManager.shared.lastCapturedRoom else {
+            call.reject("No hay escaneo de habitación disponible para PDF")
+            return
+        }
+
+        if let url = ExportManager.shared.exportPDF(from: room.walls, named: name) {
+            call.resolve(["path": url.path, "format": "pdf"])
+        } else {
+            call.reject("Error exportando PDF")
+        }
+    }
+
+    // ── exportGLTF ───────────────────────────────────────────────────────────
+    @objc func exportGLTF(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+        let meshes = MeshManager.shared.getAllMeshes()
+
+        guard !meshes.isEmpty else {
+            call.reject("No hay malla 3D capturada para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        if let url = ExportManager.shared.exportGLTF(asset: asset, named: name) {
+            call.resolve(["path": url.path, "format": "gltf"])
+        } else {
+            call.reject("Error exportando GLTF")
+        }
+    }
+
+    // ── exportGLB ────────────────────────────────────────────────────────────
+    @objc func exportGLB(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+        let meshes = MeshManager.shared.getAllMeshes()
+
+        guard !meshes.isEmpty else {
+            call.reject("No hay malla 3D capturada para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        if let url = ExportManager.shared.exportGLB(asset: asset, named: name) {
+            call.resolve(["path": url.path, "format": "glb"])
+        } else {
+            call.reject("Error exportando GLB")
+        }
+    }
+
+    // ── exportAllFormats ─────────────────────────────────────────────────────
+    @available(iOS 16.0, *)
+    @objc func exportAllFormats(_ call: CAPPluginCall) {
+        let name   = call.getString("name") ?? "mi-render-export"
+        let meshes = MeshManager.shared.getAllMeshes()
+        let room   = RoomPlanManager.shared.lastCapturedRoom
+
+        guard !meshes.isEmpty || room != nil else {
+            call.reject("No hay datos escaneados para exportar")
+            return
+        }
+
+        let asset = MeshManager.shared.combinedMesh()
+        ExportManager.shared.exportAllFormats(asset: asset, room: room, named: name)
+
+        let exports = ExportManager.shared.listExports()
+            .filter { $0.lastPathComponent.hasPrefix(name) }
+            .map { ["path": $0.path, "format": $0.pathExtension] }
+
+        call.resolve(["files": exports, "count": exports.count])
+    }
+
     // ── GPS ──────────────────────────────────────────────────────────────────
     private func requestLocation() {
         locationManager = CLLocationManager()
