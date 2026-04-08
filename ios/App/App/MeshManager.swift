@@ -19,8 +19,19 @@ class MeshManager {
 
         let geometry = anchor.geometry
 
-        let vertexBuffer = geometry.vertices.buffer
-        let vertexCount  = geometry.vertices.count
+        let allocator = MTKMeshBufferAllocator(device: MTLCreateSystemDefaultDevice()!)
+
+        let vertexBuffer = allocator.newBuffer(
+            with: Data(bytes: geometry.vertices.buffer.contents(),
+                       count: geometry.vertices.buffer.length),
+            type: .vertex
+        )
+
+        let indexBuffer = allocator.newBuffer(
+            with: Data(bytes: geometry.faces.buffer.contents(),
+                       count: geometry.faces.buffer.length),
+            type: .index
+        )
 
         let vertexDescriptor = MDLVertexDescriptor()
         vertexDescriptor.attributes[0] = MDLVertexAttribute(
@@ -29,21 +40,23 @@ class MeshManager {
             offset: 0,
             bufferIndex: 0
         )
-        vertexDescriptor.layouts[0] = MDLVertexBufferLayout(stride: geometry.vertices.stride)
+        vertexDescriptor.layouts[0] = MDLVertexBufferLayout(
+            stride: geometry.vertices.stride
+        )
 
-        let allocator = MTKMeshBufferAllocator(device: MTLCreateSystemDefaultDevice()!)
-
-        let mdlVertexBuffer = allocator.newBuffer(
-            with: Data(bytes: vertexBuffer.contents(),
-                       count: vertexBuffer.length),
-            type: .vertex
+        let submesh = MDLSubmesh(
+            indexBuffer: indexBuffer,
+            indexCount: geometry.faces.count * 3,
+            indexType: .uInt32,
+            geometryType: .triangles,
+            material: nil
         )
 
         let mesh = MDLMesh(
-            vertexBuffer: mdlVertexBuffer,
-            vertexCount: vertexCount,
+            vertexBuffer: vertexBuffer,
+            vertexCount: geometry.vertices.count,
             descriptor: vertexDescriptor,
-            submeshes: []
+            submeshes: [submesh]
         )
 
         return mesh
