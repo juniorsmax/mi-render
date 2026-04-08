@@ -34,7 +34,7 @@ class MeshOptimizationManager {
         let cleaned = MDLAsset()
         for i in 0..<asset.count {
             guard let mesh = asset.object(at: i) as? MDLMesh else { continue }
-            mesh.makeVerticesUniqueAndReturnError()
+            try? mesh.makeVerticesUniqueAndReturnError()
             cleaned.add(mesh)
         }
         return cleaned

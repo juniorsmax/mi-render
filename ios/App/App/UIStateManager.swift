@@ -5,6 +5,7 @@
 // Desacopla el estado UI del código ARKit.
 
 import Foundation
+import ARKit
 
 class UIStateManager {
 
