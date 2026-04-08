@@ -18,6 +18,17 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		CC000001000000000000001B /* ScanManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000001000000000000001A /* ScanManager.swift */; };
+		CC000002000000000000001B /* MeshManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000002000000000000001A /* MeshManager.swift */; };
+		CC000003000000000000001B /* DepthManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000003000000000000001A /* DepthManager.swift */; };
+		CC000004000000000000001B /* RoomPlanManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000004000000000000001A /* RoomPlanManager.swift */; };
+		CC000005000000000000001B /* MeasurementManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000005000000000000001A /* MeasurementManager.swift */; };
+		CC000006000000000000001B /* WorldMapManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000006000000000000001A /* WorldMapManager.swift */; };
+		CC000007000000000000001B /* NavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000007000000000000001A /* NavigationManager.swift */; };
+		CC000008000000000000001B /* ExportManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000008000000000000001A /* ExportManager.swift */; };
+		CC000009000000000000001B /* ARViewContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000009000000000000001A /* ARViewContainer.swift */; };
+		CC00000A000000000000001B /* MeshRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000A000000000000001A /* MeshRenderer.swift */; };
+		CC00000B000000000000001B /* PlanRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000B000000000000001A /* PlanRenderer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +42,17 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* LiDARPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiDARPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F4 /* LiDARPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = LiDARPlugin.m; sourceTree = "<group>"; };
+		CC000001000000000000001A /* ScanManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanManager.swift; sourceTree = "<group>"; };
+		CC000002000000000000001A /* MeshManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshManager.swift; sourceTree = "<group>"; };
+		CC000003000000000000001A /* DepthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthManager.swift; sourceTree = "<group>"; };
+		CC000004000000000000001A /* RoomPlanManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomPlanManager.swift; sourceTree = "<group>"; };
+		CC000005000000000000001A /* MeasurementManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementManager.swift; sourceTree = "<group>"; };
+		CC000006000000000000001A /* WorldMapManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldMapManager.swift; sourceTree = "<group>"; };
+		CC000007000000000000001A /* NavigationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationManager.swift; sourceTree = "<group>"; };
+		CC000008000000000000001A /* ExportManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportManager.swift; sourceTree = "<group>"; };
+		CC000009000000000000001A /* ARViewContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ARViewContainer.swift; sourceTree = "<group>"; };
+		CC00000A000000000000001A /* MeshRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRenderer.swift; sourceTree = "<group>"; };
+		CC00000B000000000000001A /* PlanRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanRenderer.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -74,6 +96,17 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* LiDARPlugin.swift */,
 				A1B2C3D4E5F6A7B8C9D0E1F4 /* LiDARPlugin.m */,
+				CC000001000000000000001A /* ScanManager.swift */,
+				CC000002000000000000001A /* MeshManager.swift */,
+				CC000003000000000000001A /* DepthManager.swift */,
+				CC000004000000000000001A /* RoomPlanManager.swift */,
+				CC000005000000000000001A /* MeasurementManager.swift */,
+				CC000006000000000000001A /* WorldMapManager.swift */,
+				CC000007000000000000001A /* NavigationManager.swift */,
+				CC000008000000000000001A /* ExportManager.swift */,
+				CC000009000000000000001A /* ARViewContainer.swift */,
+				CC00000A000000000000001A /* MeshRenderer.swift */,
+				CC00000B000000000000001A /* PlanRenderer.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -168,6 +201,17 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F3 /* LiDARPlugin.swift in Sources */,
 				A1B2C3D4E5F6A7B8C9D0E1F5 /* LiDARPlugin.m in Sources */,
+				CC000001000000000000001B /* ScanManager.swift in Sources */,
+				CC000002000000000000001B /* MeshManager.swift in Sources */,
+				CC000003000000000000001B /* DepthManager.swift in Sources */,
+				CC000004000000000000001B /* RoomPlanManager.swift in Sources */,
+				CC000005000000000000001B /* MeasurementManager.swift in Sources */,
+				CC000006000000000000001B /* WorldMapManager.swift in Sources */,
+				CC000007000000000000001B /* NavigationManager.swift in Sources */,
+				CC000008000000000000001B /* ExportManager.swift in Sources */,
+				CC000009000000000000001B /* ARViewContainer.swift in Sources */,
+				CC00000A000000000000001B /* MeshRenderer.swift in Sources */,
+				CC00000B000000000000001B /* PlanRenderer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
