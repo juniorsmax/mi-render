@@ -32,8 +32,9 @@ export function BudgetView({ room, onRescan, onDone }) {
   const [clientName, setClientName] = useState('')
   const [roomName, setRoomName] = useState(room?.roomName || '')
   const [dimensions, setDimensions] = useState(room?.dimensions || '')
-  const [areaSqM, setAreaSqM] = useState(room?.areaSqM ?? 0)
-  const [services, setServices] = useState(() => defaultServices(room?.areaSqM ?? 0))
+  const defaultArea = room?.floorArea ?? room?.areaSqM ?? 0
+  const [areaSqM, setAreaSqM] = useState(defaultArea)
+  const [services, setServices] = useState(() => defaultServices(defaultArea))
   const [taxRate, setTaxRate] = useState(21)
   const [date, setDate] = useState(new Date().toLocaleDateString('es-ES'))
 
