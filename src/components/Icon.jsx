@@ -168,6 +168,21 @@ const icons = {
       <polyline points="20 6 9 17 4 12"/>
     </svg>
   ),
+  // Door
+  door: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z"/>
+      <circle cx="15" cy="12" r="1" fill="currentColor"/>
+    </svg>
+  ),
+  // Window
+  window: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <line x1="12" y1="4" x2="12" y2="20"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+    </svg>
+  ),
 }
 
 export function Icon({ name, size = 22, className = '', style = {} }) {

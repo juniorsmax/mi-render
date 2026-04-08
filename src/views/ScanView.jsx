@@ -2,19 +2,21 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useCamera } from '../hooks/useCamera'
 import { shoelace } from '../lib/shoelace'
 import { sanitizeNumber, sanitizeName } from '../lib/security'
-import { getScanMode, SCAN_MODE_LABELS } from '../lib/lidar'
+import { getScanMode, SCAN_MODE_LABELS, startLiDARScan, startObjectScan } from '../lib/lidar'
 import { Icon } from '../components/Icon.jsx'
 import './ScanView.css'
 
 /**
  * ScanView — escáner estilo Polycam
- * Agentes: Luna (UI) + Ares (Escáner) + Vera (Diseño)
+ * Agentes: Luna (UI) + Ares (Escáner) + Vera (Diseño) + Kai (LiDAR nativo)
  *
  * Pasos:
  *  'permission' → pantalla de inicio con consejos
- *  'corners'    → cámara fullscreen + toque de esquinas (estilo Polycam)
+ *  'scanning'   → LiDAR nativo en progreso (RoomPlan toma el control)
+ *  'corners'    → cámara fullscreen + toque de esquinas (fallback cámara)
  *  'scale'      → panel inferior para introducir distancia de referencia
  *  'manual'     → formulario ancho × largo
+ *  'result'     → resultados del escaneo LiDAR
  */
 export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   const [step, setStep]           = useState(initialStep)
@@ -24,6 +26,8 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   const [scanMode, setScanMode]   = useState(null)
   const [showTips, setShowTips]   = useState(false)
   const [activeTab, setActiveTab] = useState('espacio')
+  const [lidarError, setLidarError] = useState(null)
+  const [scanResult, setScanResult] = useState(null)
 
   const { videoRef, cameraState, errorMsg, start, stop } = useCamera()
   const canvasRef      = useRef(null)
@@ -31,7 +35,49 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
 
   useEffect(() => { getScanMode().then(setScanMode) }, [])
 
-  // ── Draw loop ─────────────────────────────────────────
+  // ── LiDAR nativo: inicia escaneo de habitación ────────────────────────────
+  async function handleStartLiDAR() {
+    setLidarError(null)
+    setStep('scanning')
+    try {
+      const result = await startLiDARScan()
+      setScanResult(result)
+      setStep('result')
+    } catch (err) {
+      setLidarError(err.message ?? 'Error en el escaneo LiDAR')
+      setStep('permission')
+    }
+  }
+
+  // ── LiDAR nativo: inicia escaneo de objeto 3D ─────────────────────────────
+  async function handleStartObjectScan() {
+    setLidarError(null)
+    setStep('scanning')
+    try {
+      const result = await startObjectScan()
+      setScanResult(result)
+      setStep('result')
+    } catch (err) {
+      setLidarError(err.message ?? 'Error en el escaneo de objeto')
+      setStep('permission')
+    }
+  }
+
+  // ── Iniciar escaneo según modo y tab ──────────────────────────────────────
+  async function handleStartScan() {
+    if (scanMode === 'lidar-native') {
+      if (activeTab === 'objeto') {
+        await handleStartObjectScan()
+      } else {
+        await handleStartLiDAR()
+      }
+    } else {
+      await start()
+      setStep('corners')
+    }
+  }
+
+  // ── Draw loop (fallback cámara) ───────────────────────────────────────────
   useEffect(() => {
     if (step !== 'corners') return
     let rafId
@@ -112,6 +158,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   }
 
   const modeInfo = scanMode ? SCAN_MODE_LABELS[scanMode] : null
+  const isLiDAR  = scanMode === 'lidar-native'
 
   // ════════════════════════════════════════════════════
   // STEP: permission — pantalla de inicio
@@ -121,29 +168,75 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
       <div className="scan-start-root">
         <div className="scan-start-content safe-top safe-bottom">
           <div className="scan-icon">
-            <Icon name={scanMode?.includes('lidar') ? 'lidar' : 'camera'} size={38} />
+            <Icon name={isLiDAR ? 'lidar' : 'camera'} size={38} />
           </div>
 
           <div>
-            <h2>Escaneo de espacio</h2>
+            <h2>{activeTab === 'objeto' ? 'Escaneo de objeto 3D' : 'Escaneo de espacio'}</h2>
             {modeInfo && (
               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
                 <span className="scan-mode-badge"
                   style={{ color: modeInfo.color, borderColor: modeInfo.color+'66', background: modeInfo.color+'11' }}>
-                  <Icon name={scanMode?.includes('lidar') ? 'lidar' : 'camera'} size={13} />
+                  <Icon name={isLiDAR ? 'lidar' : 'camera'} size={13} />
                   {modeInfo.label} · {modeInfo.desc}
                 </span>
               </div>
             )}
           </div>
 
-          <div className="scan-steps glass">
-            <ScanStep n={1} text="Apunta al suelo y toca las esquinas de la estancia en orden" />
-            <ScanStep n={2} text="Pulsa el botón grande cuando hayas marcado todas las esquinas" />
-            <ScanStep n={3} text="Toca dos puntos de una pared conocida e introduce su longitud" />
+          {/* Tabs modo */}
+          <div className="scan-mode-tabs" style={{ padding: '4px 0' }}>
+            {['espacio', 'objeto', 'manual'].map((tab) => (
+              <div key={tab}
+                className={`scan-mode-tab ${activeTab === tab ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab)}>
+                {tab === 'espacio' ? 'ESPACIO' : tab === 'objeto' ? 'OBJETO' : 'MANUAL'}
+              </div>
+            ))}
           </div>
 
-          {cameraState === 'error' && (
+          {activeTab === 'espacio' && (
+            <div className="scan-steps glass">
+              {isLiDAR ? (
+                <>
+                  <ScanStep n={1} text="La cámara LiDAR escanea la habitación automáticamente en 3D" />
+                  <ScanStep n={2} text="Mueve el iPhone lentamente por toda la estancia" />
+                  <ScanStep n={3} text="Pulsa Listo en la pantalla de escaneo cuando hayas cubierto todo" />
+                </>
+              ) : (
+                <>
+                  <ScanStep n={1} text="Apunta al suelo y toca las esquinas de la estancia en orden" />
+                  <ScanStep n={2} text="Pulsa el botón grande cuando hayas marcado todas las esquinas" />
+                  <ScanStep n={3} text="Toca dos puntos de una pared conocida e introduce su longitud" />
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'objeto' && (
+            <div className="scan-steps glass">
+              <ScanStep n={1} text="Coloca el objeto en el centro de la habitación con espacio a su alrededor" />
+              <ScanStep n={2} text="Mueve el iPhone lentamente alrededor del objeto a 50–80 cm de distancia" />
+              <ScanStep n={3} text="Pulsa Capturar cuando hayas cubierto todos los ángulos" />
+            </div>
+          )}
+
+          {activeTab === 'manual' && (
+            <div className="scan-steps glass">
+              <ScanStep n={1} text="Introduce el ancho y el largo de la estancia en metros" />
+              <ScanStep n={2} text="Puedes usar una cinta métrica o los datos del plano" />
+              <ScanStep n={3} text="Pulsa Continuar para guardar la medición" />
+            </div>
+          )}
+
+          {lidarError && (
+            <div className="scan-diag scan-diag-warn">
+              <span className="scan-diag-icon"><Icon name="warning" size={18} /></span>
+              <span>{lidarError}</span>
+            </div>
+          )}
+
+          {cameraState === 'error' && !isLiDAR && (
             <div className="scan-diag scan-diag-warn">
               <span className="scan-diag-icon"><Icon name="warning" size={18} /></span>
               <span>{errorMsg}</span>
@@ -151,16 +244,21 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           )}
 
           <div className="scan-actions">
-            <button className="btn btn-primary btn-lg"
-              onClick={async () => { await start(); setStep('corners') }}
-              disabled={cameraState === 'requesting'}>
-              {cameraState === 'requesting'
-                ? <><span className="spinner" style={{width:16,height:16}} /> Abriendo…</>
-                : <><Icon name="camera" size={18} /> Iniciar escaneo</>}
-            </button>
-            <button className="btn btn-ghost" onClick={() => setStep('manual')}>
-              Introducir m² manualmente
-            </button>
+            {activeTab !== 'manual' ? (
+              <button className="btn btn-primary btn-lg"
+                onClick={handleStartScan}
+                disabled={cameraState === 'requesting'}>
+                {cameraState === 'requesting'
+                  ? <><span className="spinner" style={{width:16,height:16}} /> Abriendo…</>
+                  : isLiDAR
+                    ? <><Icon name="lidar" size={18} /> {activeTab === 'objeto' ? 'Escanear objeto' : 'Escanear habitación'}</>
+                    : <><Icon name="camera" size={18} /> Iniciar escaneo</>}
+              </button>
+            ) : (
+              <button className="btn btn-primary btn-lg" onClick={() => setStep('manual')}>
+                <Icon name="manual" size={18} /> Introducir manualmente
+              </button>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={onCancel}>
               <Icon name="back" size={16} /> Volver
             </button>
@@ -171,20 +269,49 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   }
 
   // ════════════════════════════════════════════════════
+  // STEP: scanning — LiDAR nativo en progreso
+  // ════════════════════════════════════════════════════
+  if (step === 'scanning') {
+    return (
+      <div className="scan-start-root">
+        <div className="scan-start-content safe-top safe-bottom" style={{ gap: 28 }}>
+          <div className="scan-icon" style={{ animation: 'pulse 2s infinite' }}>
+            <Icon name="lidar" size={38} />
+          </div>
+          <h2>Escaneando con LiDAR…</h2>
+          <p className="muted" style={{ fontSize: 14, textAlign: 'center' }}>
+            La interfaz de escaneo se ha abierto.<br />
+            Sigue las instrucciones en pantalla y pulsa <strong>Listo</strong> cuando termines.
+          </p>
+          <div className="spinner" style={{ width: 40, height: 40 }} />
+        </div>
+      </div>
+    )
+  }
+
+  // ════════════════════════════════════════════════════
+  // STEP: result — resultados del escaneo LiDAR
+  // ════════════════════════════════════════════════════
+  if (step === 'result' && scanResult) {
+    return <LiDARResult
+      result={scanResult}
+      onAccept={() => onComplete(scanResult)}
+      onRescan={() => { setScanResult(null); setStep('permission') }}
+    />
+  }
+
+  // ════════════════════════════════════════════════════
   // STEP: corners — cámara fullscreen estilo Polycam
   // ════════════════════════════════════════════════════
   if (step === 'corners') {
     return (
       <div className="scan-camera-root">
-        {/* Vídeo en vivo */}
         <video ref={videoRef} className="scan-video" playsInline muted autoPlay />
 
-        {/* Canvas de toque */}
         <canvas ref={canvasRef} className="scan-canvas"
           onPointerDown={handleCornerTap}
           onTouchStart={(e) => { e.preventDefault(); handleCornerTap(e) }} />
 
-        {/* ── HUD superior ── */}
         <div className="scan-hud-top safe-top">
           <button className="scan-tips-btn" onClick={() => setShowTips(true)}>
             💡 Consejos
@@ -194,16 +321,13 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           </button>
         </div>
 
-        {/* Instrucción central */}
         <div className="scan-instruction-badge">
           {corners.length === 0 && 'Toca las esquinas del suelo en orden'}
           {corners.length > 0 && corners.length < 3 && `${corners.length} esquina${corners.length>1?'s':''} — toca más`}
           {corners.length >= 3 && `${corners.length} esquinas — pulsa Listo cuando acabes`}
         </div>
 
-        {/* ── HUD inferior estilo Polycam ── */}
         <div className="scan-hud-bottom">
-          {/* Tabs */}
           <div className="scan-mode-tabs">
             {['espacio','objeto','manual'].map((tab) => (
               <div key={tab} className={`scan-mode-tab ${activeTab===tab?'active':''}`}
@@ -213,21 +337,17 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
             ))}
           </div>
 
-          {/* Controles */}
           <div className="scan-controls-row">
-            {/* Deshacer */}
             <button className="scan-undo-btn" onClick={() => setCorners((p)=>p.slice(0,-1))} disabled={corners.length===0}>
               <Icon name="undo" size={20} />
               <span>Deshacer</span>
             </button>
 
-            {/* Botón captura central */}
             <button className={`scan-capture-btn ${corners.length>=3?'has-points':''}`}
               onClick={corners.length>=3 ? freezeAndNextStep : undefined}>
               <div className="scan-capture-inner" />
             </button>
 
-            {/* Listo */}
             <button className={`scan-done-btn ${corners.length>=3?'ready':''}`}
               onClick={corners.length>=3 ? freezeAndNextStep : undefined}
               disabled={corners.length<3}>
@@ -237,7 +357,6 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           </div>
         </div>
 
-        {/* Tips modal */}
         {showTips && <TipsModal onClose={() => setShowTips(false)} />}
       </div>
     )
@@ -255,7 +374,6 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           onTouchStart={(e) => { e.preventDefault(); handleRefTap(e) }}
           style={{ touchAction: 'none' }} />
 
-        {/* HUD superior */}
         <div className="scan-hud-top safe-top">
           <button className="scan-tips-btn" onClick={() => setShowTips(true)}>
             💡 Consejos
@@ -271,7 +389,6 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           {refPoints.length === 2 && '✓ Referencia marcada — introduce la distancia'}
         </div>
 
-        {/* Panel inferior */}
         <div className="scan-scale-panel">
           <div className="scan-scale-title">Referencia de escala</div>
           <div className="scan-scale-subtitle">¿Cuánto mide esa distancia en metros?</div>
@@ -307,6 +424,96 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   }
 
   return null
+}
+
+// ── Pantalla de resultados LiDAR ───────────────────────────────────────────────
+function LiDARResult({ result, onAccept, onRescan }) {
+  const isRoom   = result.scanMode === 'lidar-native'
+  const isObject = result.scanMode === 'object-mesh'
+
+  const confidenceColor = {
+    high:   '#2dd4bf',
+    medium: '#f0a500',
+    low:    '#ef4444',
+  }[result.confidence] ?? '#6b7280'
+
+  return (
+    <div className="scan-start-root">
+      <div className="scan-start-content safe-top safe-bottom">
+        <div className="scan-icon" style={{ background: 'rgba(45,212,191,0.1)', borderColor: 'rgba(45,212,191,0.25)' }}>
+          <Icon name={isObject ? 'model3d' : 'plan'} size={38} style={{ color: '#2dd4bf' }} />
+        </div>
+
+        <div>
+          <h2>{isObject ? 'Objeto escaneado' : 'Habitación escaneada'}</h2>
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center', gap: 8 }}>
+            <span className="scan-mode-badge"
+              style={{ color: '#2dd4bf', borderColor: '#2dd4bf66', background: '#2dd4bf11' }}>
+              <Icon name="lidar" size={13} /> LiDAR · Alta precisión
+            </span>
+            <span className="scan-mode-badge"
+              style={{ color: confidenceColor, borderColor: confidenceColor+'66', background: confidenceColor+'11' }}>
+              Confianza: {result.confidence}
+            </span>
+          </div>
+        </div>
+
+        <div className="glass" style={{ width: '100%', padding: '20px', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {isRoom && (
+            <>
+              <ResultRow icon="plan" label="Superficie"
+                value={result.areaSqM ? `${result.areaSqM.toFixed(2)} m²` : 'N/D'} accent />
+              <ResultRow icon="scan" label="Paredes"    value={`${result.wallCount ?? result.walls?.length ?? 0}`} />
+              <ResultRow icon="door" label="Puertas"    value={`${result.doors?.length ?? 0}`} />
+              <ResultRow icon="window" label="Ventanas" value={`${result.windows?.length ?? 0}`} />
+            </>
+          )}
+          {isObject && (
+            <>
+              <ResultRow icon="model3d" label="Dimensiones" value={result.dimensions || 'N/D'} accent />
+              <ResultRow icon="scan" label="Caras de malla" value={result.meshFaces?.toLocaleString() ?? '0'} />
+              <ResultRow icon="scan" label="Vértices"       value={result.meshVertices?.toLocaleString() ?? '0'} />
+              {result.boundingBox && (
+                <>
+                  <ResultRow label="Ancho"  value={`${(result.boundingBox.width  ?? 0).toFixed(2)} m`} />
+                  <ResultRow label="Alto"   value={`${(result.boundingBox.height ?? 0).toFixed(2)} m`} />
+                  <ResultRow label="Fondo"  value={`${(result.boundingBox.depth  ?? 0).toFixed(2)} m`} />
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="scan-actions">
+          <button className="btn btn-primary btn-lg" onClick={onAccept}>
+            <Icon name="check" size={18} /> Usar estos datos
+          </button>
+          <button className="btn btn-ghost" onClick={onRescan}>
+            <Icon name="scan" size={16} /> Re-escanear
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResultRow({ icon, label, value, accent }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ fontSize: 14, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+        {icon && <Icon name={icon} size={15} />}
+        {label}
+      </span>
+      <span style={{
+        fontSize: accent ? '1.3rem' : 14,
+        fontWeight: accent ? 700 : 500,
+        color: accent ? 'var(--accent)' : 'var(--text-strong)',
+        fontFamily: accent ? 'var(--font-mono)' : 'inherit',
+      }}>
+        {value}
+      </span>
+    </div>
+  )
 }
 
 // ── Modal de consejos ──────────────────────────────────────────────────────────
