@@ -43,7 +43,7 @@ class MeshManager {
             vertexBuffer: mdlVertexBuffer,
             vertexCount: vertexCount,
             descriptor: vertexDescriptor,
-            submeshes: nil
+            submeshes: []
         )
 
         return mesh
@@ -88,7 +88,7 @@ class MeshManager {
     // MARK: - Extraer clasificación de una cara del mesh
 
     func classification(of faceIndex: Int, in anchor: ARMeshAnchor) -> ARMeshClassification {
-        return anchor.geometry.classificationOf(faceWithIndex: faceIndex)
+        return anchor.geometry.faceClassification(at: faceIndex)
     }
 
     // MARK: - Filtrar mesh por clasificación (ej: solo paredes)
@@ -96,11 +96,23 @@ class MeshManager {
     func anchorsMatching(classification: ARMeshClassification) -> [ARMeshAnchor] {
         return meshAnchors.filter { anchor in
             for i in 0..<anchor.geometry.faces.count {
-                if anchor.geometry.classificationOf(faceWithIndex: i) == classification {
+                if anchor.geometry.faceClassification(at: i) == classification {
                     return true
                 }
             }
             return false
         }
+    }
+}
+
+// MARK: - ARMeshGeometry helper
+
+extension ARMeshGeometry {
+    func faceClassification(at index: Int) -> ARMeshClassification {
+        let offset = index * classification.stride + classification.offset
+        let rawValue = classification.buffer.contents()
+            .advanced(by: offset)
+            .load(as: UInt8.self)
+        return ARMeshClassification(rawValue: Int(rawValue)) ?? .none
     }
 }

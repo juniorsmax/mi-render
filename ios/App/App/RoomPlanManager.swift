@@ -4,6 +4,7 @@
 // Requiere iOS 16+ y dispositivo con LiDAR.
 
 import RoomPlan
+import simd
 
 @available(iOS 16.0, *)
 class RoomPlanManager: NSObject {
@@ -11,7 +12,7 @@ class RoomPlanManager: NSObject {
     static let shared = RoomPlanManager()
 
     var captureSession = RoomCaptureSession()
-    private(set) var lastCapturedRoom: CapturedRoom?
+    var lastCapturedRoom: CapturedRoom?
 
     var onRoomUpdated: ((CapturedRoom) -> Void)?
     var onScanComplete: ((CapturedRoom) -> Void)?

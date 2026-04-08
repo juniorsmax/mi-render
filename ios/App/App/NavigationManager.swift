@@ -30,7 +30,7 @@ class NavigationManager {
             nodes[i].addConnections(to: connections, bidirectional: true)
         }
 
-        let newGraph = GKGraph(nodes: nodes)
+        let newGraph = GKGraph(nodes)
         self.graph = newGraph
         return newGraph
     }
@@ -77,7 +77,7 @@ class NavigationManager {
             let geometry = anchor.geometry
 
             for i in 0..<geometry.faces.count {
-                guard geometry.classificationOf(faceWithIndex: i) == .floor else { continue }
+                guard geometry.faceClassification(at: i) == .floor else { continue }
 
                 let indices = geometry.faces
                 let stride  = geometry.faces.indexCountPerPrimitive

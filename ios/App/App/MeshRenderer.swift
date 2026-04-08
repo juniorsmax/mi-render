@@ -16,8 +16,8 @@ class MeshRenderer {
                         color: UIColor = .white) -> PhysicallyBasedMaterial {
 
         var material = PhysicallyBasedMaterial()
-        material.roughness = .float(roughness)
-        material.metallic  = .float(metallic)
+        material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: roughness)
+        material.metallic  = PhysicallyBasedMaterial.Metallic(floatLiteral: metallic)
         material.baseColor = .init(tint: color)
 
         return material
@@ -28,8 +28,8 @@ class MeshRenderer {
     func material(for classification: ARMeshClassification) -> PhysicallyBasedMaterial {
 
         var mat = PhysicallyBasedMaterial()
-        mat.roughness = .float(0.8)
-        mat.metallic  = .float(0.0)
+        mat.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.8)
+        mat.metallic  = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
 
         switch classification {
         case .wall:

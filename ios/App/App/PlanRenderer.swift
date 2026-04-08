@@ -6,6 +6,7 @@
 import CoreGraphics
 import UIKit
 import RoomPlan
+import simd
 
 class PlanRenderer {
 

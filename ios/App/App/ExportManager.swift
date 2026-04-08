@@ -118,7 +118,7 @@ class ExportManager {
     // MARK: - Generar DXF desde paredes (pipeline)
 
     @available(iOS 16.0, *)
-    func generateDXF(from walls: [CapturedRoom.Wall], named name: String) -> URL? {
+    func generateDXF(from walls: [CapturedRoom.Surface], named name: String) -> URL? {
 
         var dxfLines = "0\nSECTION\n2\nENTITIES\n"
 
