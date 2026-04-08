@@ -1,15 +1,17 @@
-/* ── Permission / Manual screens ─────────────────────────────────── */
+/* ══════════════════════════════════════════════════════
+   ScanView — UI estilo Polycam
+   Agentes: Luna (Frontend) + Vera (Diseño) + Ares (Escáner)
+   ══════════════════════════════════════════════════════ */
+
+/* ── Pantalla de inicio ─────────────────────────────── */
 .scan-start-root {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(ellipse 60% 50% at 50% 30%, rgba(240, 165, 0, 0.06) 0%, transparent 70%),
-    var(--bg);
+  background: radial-gradient(ellipse 60% 50% at 50% 30%, rgba(240,165,0,0.07) 0%, transparent 70%), var(--bg);
   overflow-y: auto;
 }
-
 .scan-start-content {
   display: flex;
   flex-direction: column;
@@ -20,208 +22,270 @@
   width: 100%;
   text-align: center;
 }
-
 .scan-icon {
   width: 80px; height: 80px;
   border-radius: var(--r-xl);
-  background: rgba(240, 165, 0, 0.1);
-  border: 1px solid rgba(240, 165, 0, 0.2);
+  background: rgba(240,165,0,0.1);
+  border: 1px solid rgba(240,165,0,0.25);
   display: flex; align-items: center; justify-content: center;
   color: var(--accent);
-  box-shadow: 0 0 40px rgba(240, 165, 0, 0.15);
+  box-shadow: 0 0 40px rgba(240,165,0,0.12);
 }
-
-/* LiDAR badge */
 .scan-mode-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: var(--r-full);
-  font: 600 12px var(--font);
-  border: 1px solid currentColor;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--r-full);
+  font: 600 12px var(--font); border: 1px solid currentColor;
 }
-
 .scan-steps {
-  padding: 18px 20px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  text-align: left;
+  padding: 18px 20px; width: 100%;
+  display: flex; flex-direction: column; gap: 14px; text-align: left;
 }
-
 .home-step { display: flex; align-items: flex-start; gap: 12px; }
 .home-step-n {
-  width: 26px; height: 26px;
-  border-radius: 50%;
+  width: 26px; height: 26px; border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 700; color: #0c0a08;
   flex-shrink: 0; margin-top: 1px;
 }
 .home-step p { color: var(--text); font-size: 13px; }
-
 .scan-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  align-items: center;
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; align-items: center;
 }
 .scan-actions .btn { width: 100%; max-width: 300px; }
 
-/* ── Camera / Canvas screens ─────────────────────────────────────── */
+/* ── Pantalla de cámara (estilo Polycam) ────────────── */
 .scan-camera-root {
-  position: fixed;
-  inset: 0;
+  position: fixed; inset: 0;
   background: #000;
-  z-index: 50;
-  overflow: hidden;
+  z-index: 50; overflow: hidden;
 }
-
 .scan-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
   object-fit: cover;
 }
-
 .scan-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  touch-action: none;
-  cursor: crosshair;
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  touch-action: none; cursor: crosshair;
 }
+.scan-canvas-static { background: #000; }
 
-.scan-canvas-static {
-  background: #000;
-}
-
-/* ── HUD top ─────────────────────────────────────────────────────── */
+/* ── HUD superior (Consejos + X) ────────────────────── */
 .scan-hud-top {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: calc(env(safe-area-inset-top, 20px) + 12px) 16px 12px;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.scan-tap-badge {
-  background: rgba(10, 8, 6, 0.85);
-  border: 1px solid rgba(240, 165, 0, 0.35);
-  color: var(--text-strong);
-  padding: 8px 20px;
-  border-radius: var(--r-full);
-  font: 600 14px var(--font);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  text-align: center;
-  pointer-events: none;
-}
-
-.scan-corner-count {
-  background: rgba(240, 165, 0, 0.15);
-  border: 1px solid rgba(240, 165, 0, 0.4);
-  color: var(--accent);
-  padding: 4px 12px;
-  border-radius: var(--r-full);
-  font: 700 13px var(--font-mono);
-  pointer-events: none;
-}
-
-/* ── HUD bottom ──────────────────────────────────────────────────── */
-.scan-hud-bottom {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  display: flex;
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px calc(env(safe-area-inset-bottom, 20px) + 16px);
-  z-index: 10;
-  background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
+  padding: calc(env(safe-area-inset-top, 20px) + 12px) 16px 0;
+  z-index: 10; pointer-events: none;
+}
+.scan-hud-top > * { pointer-events: auto; }
+
+.scan-tips-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(10,8,6,0.75);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; font: 600 14px var(--font);
+  padding: 9px 16px; border-radius: var(--r-full);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+.scan-close-btn {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(10,8,6,0.75);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  cursor: pointer;
 }
 
-/* ── Scale form ──────────────────────────────────────────────────── */
-.scan-scale-form {
+/* Badge instrucción central superior */
+.scan-instruction-badge {
+  position: absolute; top: calc(env(safe-area-inset-top, 20px) + 68px);
+  left: 50%; transform: translateX(-50%);
+  background: rgba(10,8,6,0.82);
+  border: 1px solid rgba(240,165,0,0.4);
+  color: var(--text-strong);
+  padding: 8px 20px; border-radius: var(--r-full);
+  font: 600 13px var(--font);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  white-space: nowrap; z-index: 10; pointer-events: none;
+}
+
+/* Botón plano de planta (top-left sobre cámara) */
+.scan-plan-btn {
   position: absolute;
-  bottom: 0; left: 0; right: 0;
-  padding: 20px 20px calc(env(safe-area-inset-bottom, 20px) + 16px);
-  border-radius: var(--r-xl) var(--r-xl) 0 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: rgba(12, 10, 8, 0.95);
-  border-top: 1px solid var(--border-med);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  top: calc(env(safe-area-inset-top, 20px) + 68px);
+  left: 16px;
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(10,8,6,0.75);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff; font: 600 13px var(--font);
+  padding: 8px 14px; border-radius: var(--r-full);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  cursor: pointer; z-index: 10;
 }
 
+/* ── HUD inferior (Polycam style) ───────────────────── */
+.scan-hud-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  z-index: 10;
+  background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+  padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 8px);
+}
+
+/* Tabs modo: ESPACIO | OBJETO | MANUAL */
+.scan-mode-tabs {
+  display: flex; justify-content: center; gap: 24px;
+  padding: 6px 0 14px;
+}
+.scan-mode-tab {
+  font: 700 13px var(--font); letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.45);
+  cursor: pointer; padding: 4px 0;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+}
+.scan-mode-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Controles principales */
+.scan-controls-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px 10px;
+  gap: 16px;
+}
+
+/* Botón deshacer (izquierda) */
+.scan-undo-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--r-full);
+  color: #fff; font: 600 11px var(--font);
+  width: 60px; height: 60px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.scan-undo-btn:disabled { opacity: 0.3; pointer-events: none; }
+
+/* Botón captura grande (centro) */
+.scan-capture-btn {
+  width: 78px; height: 78px; border-radius: 50%;
+  border: 3px solid #fff;
+  background: transparent;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: transform 0.15s;
+  position: relative;
+}
+.scan-capture-btn:active { transform: scale(0.94); }
+.scan-capture-inner {
+  width: 58px; height: 58px; border-radius: 50%;
+  background: #fff;
+  transition: background 0.2s, transform 0.15s;
+}
+.scan-capture-btn.has-points .scan-capture-inner {
+  background: var(--accent);
+  transform: scale(0.9);
+  border-radius: 14px;
+}
+
+/* Botón Listo (derecha) */
+.scan-done-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: var(--r-full);
+  color: #fff; font: 600 11px var(--font);
+  width: 60px; height: 60px;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
+}
+.scan-done-btn.ready {
+  background: rgba(240,165,0,0.25);
+  border-color: rgba(240,165,0,0.6);
+  color: var(--accent);
+}
+
+/* ── Panel de escala (inferior flotante) ────────────── */
+.scan-scale-panel {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(10,8,6,0.95);
+  border-top: 1px solid rgba(255,220,160,0.12);
+  border-radius: 24px 24px 0 0;
+  padding: 20px 20px calc(env(safe-area-inset-bottom, 20px) + 12px);
+  z-index: 10;
+  display: flex; flex-direction: column; gap: 14px;
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+}
+.scan-scale-title {
+  font: 700 16px var(--font); color: var(--text-strong); text-align: center;
+}
+.scan-scale-subtitle {
+  font: 400 13px var(--font); color: var(--text-muted); text-align: center; margin-top: -8px;
+}
 .scale-input-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: flex; align-items: center; gap: 10px;
 }
 .scale-input-row input { flex: 1; }
-.scale-unit {
-  font: 600 15px var(--font);
-  color: var(--text-muted);
-  min-width: 16px;
-}
-
-.scale-actions {
-  display: flex;
-  gap: 10px;
-}
+.scale-unit { font: 600 15px var(--font); color: var(--text-muted); min-width: 16px; }
+.scale-actions { display: flex; gap: 10px; }
 .scale-actions .btn { flex: 1; }
 
-/* ── Warning / Diag card ─────────────────────────────────────────── */
+/* ── Warning ─────────────────────────────────────────── */
 .scan-diag {
-  padding: 14px 18px;
-  width: 100%;
-  text-align: left;
-  font-size: 13px;
-  line-height: 1.6;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  padding: 14px 18px; width: 100%;
+  font-size: 13px; line-height: 1.6;
+  display: flex; align-items: flex-start; gap: 10px;
   border-radius: var(--r-md);
 }
 .scan-diag-warn {
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  background: rgba(251, 191, 36, 0.06);
+  border: 1px solid rgba(251,191,36,0.3);
+  background: rgba(251,191,36,0.06);
   color: var(--text);
 }
 .scan-diag-icon { flex-shrink: 0; margin-top: 1px; color: var(--warning); }
 
-/* ── Manual form ─────────────────────────────────────────────────── */
+/* ── Formulario manual ───────────────────────────────── */
 .manual-form {
-  padding: 22px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  padding: 22px; width: 100%;
+  display: flex; flex-direction: column; gap: 14px;
 }
 .manual-result {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(240, 165, 0, 0.07);
-  border: 1px solid rgba(240, 165, 0, 0.2);
-  border-radius: var(--r-md);
-  padding: 12px 16px;
-  font-size: 14px;
+  display: flex; justify-content: space-between; align-items: center;
+  background: rgba(240,165,0,0.07);
+  border: 1px solid rgba(240,165,0,0.2);
+  border-radius: var(--r-md); padding: 12px 16px; font-size: 14px;
 }
-.manual-area {
-  font: 700 1.4rem var(--font-mono);
-  color: var(--accent);
+.manual-area { font: 700 1.4rem var(--font-mono); color: var(--accent); }
+
+/* ── Tips modal ─────────────────────────────────────── */
+.scan-tips-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  z-index: 200; display: flex; align-items: flex-end;
+  animation: fadeIn 180ms ease;
 }
+.scan-tips-sheet {
+  width: 100%; background: var(--bg-2);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  border-top: 1px solid var(--border);
+  padding: 24px 20px calc(env(safe-area-inset-bottom,20px) + 20px);
+  display: flex; flex-direction: column; gap: 16px;
+}
+.scan-tips-title { font: 700 18px var(--font); color: var(--text-strong); }
+.scan-tip-item {
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.scan-tip-num {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  background: rgba(240,165,0,0.15); border: 1px solid rgba(240,165,0,0.3);
+  color: var(--accent); font: 700 13px var(--font);
+  display: flex; align-items: center; justify-content: center;
+}
+.scan-tip-text { font-size: 14px; color: var(--text); line-height: 1.5; }

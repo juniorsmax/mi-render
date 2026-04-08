@@ -7,31 +7,31 @@ import { Icon } from '../components/Icon.jsx'
 import './ScanView.css'
 
 /**
- * ScanView — escáner de habitaciones
+ * ScanView — escáner estilo Polycam
+ * Agentes: Luna (UI) + Ares (Escáner) + Vera (Diseño)
  *
  * Pasos:
- *  'permission'  → intro + detección de capacidades (LiDAR / cámara)
- *  'corners'     → cámara en vivo + toque de esquinas
- *  'scale'       → frame congelado + referencia de escala
- *  'manual'      → fallback: ancho × largo
+ *  'permission' → pantalla de inicio con consejos
+ *  'corners'    → cámara fullscreen + toque de esquinas (estilo Polycam)
+ *  'scale'      → panel inferior para introducir distancia de referencia
+ *  'manual'     → formulario ancho × largo
  */
 export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   const [step, setStep]           = useState(initialStep)
   const [corners, setCorners]     = useState([])
   const [refPoints, setRefPoints] = useState([])
   const [refDist, setRefDist]     = useState('')
-  const [scanMode, setScanMode]   = useState(null)  // detectado async
+  const [scanMode, setScanMode]   = useState(null)
+  const [showTips, setShowTips]   = useState(false)
+  const [activeTab, setActiveTab] = useState('espacio')
 
   const { videoRef, cameraState, errorMsg, start, stop } = useCamera()
   const canvasRef      = useRef(null)
   const frozenImageRef = useRef(null)
 
-  // Detectar capacidades al montar
-  useEffect(() => {
-    getScanMode().then(setScanMode)
-  }, [])
+  useEffect(() => { getScanMode().then(setScanMode) }, [])
 
-  // ── Draw loop: corners sobre cámara en vivo ───────────────────────
+  // ── Draw loop ─────────────────────────────────────────
   useEffect(() => {
     if (step !== 'corners') return
     let rafId
@@ -43,14 +43,13 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
       canvas.height = canvas.offsetHeight
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawPolygon(ctx, corners, canvas.width, canvas.height)
+      drawPolygon(ctx, corners)
       rafId = requestAnimationFrame(draw)
     }
     rafId = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(rafId)
   }, [step, corners, videoRef])
 
-  // ── Redraw en paso scale ──────────────────────────────────────────
   useEffect(() => {
     if (step !== 'scale') return
     const canvas = canvasRef.current
@@ -59,101 +58,89 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
     canvas.height = canvas.offsetHeight
     const ctx = canvas.getContext('2d')
     if (frozenImageRef.current) ctx.putImageData(frozenImageRef.current, 0, 0)
-    drawPolygon(ctx, corners, canvas.width, canvas.height)
+    drawPolygon(ctx, corners)
     drawRefPoints(ctx, refPoints)
   }, [step, refPoints, corners])
 
-  // ── Congelar frame y pasar a scale ───────────────────────────────
   function freezeAndNextStep() {
     const canvas = canvasRef.current
     const video  = videoRef.current
     if (!canvas || !video) return
-    canvas.width  = canvas.offsetWidth
+    canvas.width = canvas.offsetWidth
     canvas.height = canvas.offsetHeight
     const ctx = canvas.getContext('2d')
     const vw = video.videoWidth, vh = video.videoHeight
     const cw = canvas.width,     ch = canvas.height
     const s  = Math.max(cw / vw, ch / vh)
-    const dw = vw * s, dh = vh * s
-    const dx = (cw - dw) / 2, dy = (ch - dh) / 2
-    ctx.drawImage(video, dx, dy, dw, dh)
+    ctx.drawImage(video, (cw - vw*s)/2, (ch - vh*s)/2, vw*s, vh*s)
     frozenImageRef.current = ctx.getImageData(0, 0, cw, ch)
     stop()
     setStep('scale')
   }
 
-  // ── Tap: marcar esquinas ──────────────────────────────────────────
   const handleCornerTap = useCallback((e) => {
     if (step !== 'corners') return
     const rect  = canvasRef.current.getBoundingClientRect()
     const touch = e.touches?.[0] ?? e
-    const x = touch.clientX - rect.left
-    const y = touch.clientY - rect.top
-    setCorners((prev) => [...prev, { x, y }])
+    setCorners((prev) => [...prev, {
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+    }])
   }, [step])
 
-  // ── Tap: marcar puntos de referencia ─────────────────────────────
   const handleRefTap = useCallback((e) => {
     if (step !== 'scale' || refPoints.length >= 2) return
     const rect  = canvasRef.current.getBoundingClientRect()
     const touch = e.touches?.[0] ?? e
-    const x = touch.clientX - rect.left
-    const y = touch.clientY - rect.top
-    setRefPoints((prev) => [...prev, { x, y }])
+    setRefPoints((prev) => [...prev, {
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+    }])
   }, [step, refPoints.length])
 
-  // ── Calcular m² ───────────────────────────────────────────────────
   function handleCalculate() {
     const d = sanitizeNumber(refDist, { min: 0.01, max: 100 })
     if (d === null || refPoints.length < 2) return
-
     const px = refPoints[1].x - refPoints[0].x
     const py = refPoints[1].y - refPoints[0].y
-    const pixelDist = Math.sqrt(px * px + py * py)
+    const pixelDist = Math.sqrt(px*px + py*py)
     if (pixelDist < 5) return
-
-    const scale     = d / pixelDist
+    const scale    = d / pixelDist
     const pixelArea = shoelace(corners.map((p) => ({ x: p.x, z: p.y })))
-    const areaSqM   = parseFloat((pixelArea * scale * scale).toFixed(2))
-
+    const areaSqM  = parseFloat((pixelArea * scale * scale).toFixed(2))
     onComplete({ areaSqM, points: corners, scanMode: 'camera' })
   }
 
   const modeInfo = scanMode ? SCAN_MODE_LABELS[scanMode] : null
 
-  // ── STEP: permission ──────────────────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // STEP: permission — pantalla de inicio
+  // ════════════════════════════════════════════════════
   if (step === 'permission') {
     return (
       <div className="scan-start-root">
         <div className="scan-start-content safe-top safe-bottom">
-
           <div className="scan-icon">
-            <Icon name={scanMode === 'camera' || !scanMode ? 'camera' : 'lidar'} size={38} />
+            <Icon name={scanMode?.includes('lidar') ? 'lidar' : 'camera'} size={38} />
           </div>
 
           <div>
-            <h2>Escaneo de habitación</h2>
+            <h2>Escaneo de espacio</h2>
             {modeInfo && (
               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
-                <span
-                  className="scan-mode-badge"
-                  style={{ color: modeInfo.color, borderColor: modeInfo.color + '66', background: modeInfo.color + '11' }}
-                >
-                  <Icon name={scanMode?.includes('lidar') ? 'lidar' : 'camera'} size={14} />
+                <span className="scan-mode-badge"
+                  style={{ color: modeInfo.color, borderColor: modeInfo.color+'66', background: modeInfo.color+'11' }}>
+                  <Icon name={scanMode?.includes('lidar') ? 'lidar' : 'camera'} size={13} />
                   {modeInfo.label} · {modeInfo.desc}
                 </span>
               </div>
             )}
           </div>
 
-          <p className="muted" style={{ textAlign: 'center', fontSize: 14 }}>
-            Apunta la cámara al suelo y toca las esquinas de la estancia para calcular los m².
-          </p>
-
           <div className="scan-steps glass">
-            <ScanStep n={1} text="Apunta la cámara al suelo de la habitación" />
-            <ScanStep n={2} text="Toca las esquinas del suelo en orden" />
-            <ScanStep n={3} text="Marca una distancia de referencia conocida" />
+            <ScanStep n={1} text="Apunta al suelo y toca las esquinas de la estancia en orden" />
+            <ScanStep n={2} text="Pulsa el botón grande cuando hayas marcado todas las esquinas" />
+            <ScanStep n={3} text="Toca dos puntos de una pared conocida e introduce su longitud" />
           </div>
 
           {cameraState === 'error' && (
@@ -164,15 +151,12 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           )}
 
           <div className="scan-actions">
-            <button
-              className="btn btn-primary btn-lg"
+            <button className="btn btn-primary btn-lg"
               onClick={async () => { await start(); setStep('corners') }}
-              disabled={cameraState === 'requesting'}
-            >
+              disabled={cameraState === 'requesting'}>
               {cameraState === 'requesting'
-                ? <><span className="spinner" style={{ width: 16, height: 16 }} /> Abriendo cámara…</>
-                : <><Icon name="camera" size={18} /> Abrir cámara</>
-              }
+                ? <><span className="spinner" style={{width:16,height:16}} /> Abriendo…</>
+                : <><Icon name="camera" size={18} /> Iniciar escaneo</>}
             </button>
             <button className="btn btn-ghost" onClick={() => setStep('manual')}>
               Introducir m² manualmente
@@ -186,112 +170,138 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
     )
   }
 
-  // ── STEP: corners (cámara en vivo) ────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // STEP: corners — cámara fullscreen estilo Polycam
+  // ════════════════════════════════════════════════════
   if (step === 'corners') {
     return (
       <div className="scan-camera-root">
+        {/* Vídeo en vivo */}
         <video ref={videoRef} className="scan-video" playsInline muted autoPlay />
 
-        <canvas
-          ref={canvasRef}
-          className="scan-canvas"
+        {/* Canvas de toque */}
+        <canvas ref={canvasRef} className="scan-canvas"
           onPointerDown={handleCornerTap}
-          onTouchStart={(e) => { e.preventDefault(); handleCornerTap(e) }}
-        />
+          onTouchStart={(e) => { e.preventDefault(); handleCornerTap(e) }} />
 
+        {/* ── HUD superior ── */}
         <div className="scan-hud-top safe-top">
-          <div className="scan-tap-badge">
-            {corners.length === 0
-              ? 'Toca las esquinas del suelo en orden'
-              : `${corners.length} esquina${corners.length !== 1 ? 's' : ''} marcada${corners.length !== 1 ? 's' : ''}`
-            }
-          </div>
-          {corners.length > 0 && (
-            <div className="scan-corner-count">{corners.length} pts</div>
-          )}
+          <button className="scan-tips-btn" onClick={() => setShowTips(true)}>
+            💡 Consejos
+          </button>
+          <button className="scan-close-btn" onClick={onCancel}>
+            <Icon name="close" size={16} />
+          </button>
         </div>
 
-        <div className="scan-hud-bottom safe-bottom">
-          <button
-            className="btn btn-ghost"
-            onClick={() => setCorners((p) => p.slice(0, -1))}
-            disabled={corners.length === 0}
-          >
-            <Icon name="undo" size={16} /> Deshacer
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={freezeAndNextStep}
-            disabled={corners.length < 3}
-          >
-            Listo ({corners.length}) →
-          </button>
+        {/* Instrucción central */}
+        <div className="scan-instruction-badge">
+          {corners.length === 0 && 'Toca las esquinas del suelo en orden'}
+          {corners.length > 0 && corners.length < 3 && `${corners.length} esquina${corners.length>1?'s':''} — toca más`}
+          {corners.length >= 3 && `${corners.length} esquinas — pulsa Listo cuando acabes`}
         </div>
+
+        {/* ── HUD inferior estilo Polycam ── */}
+        <div className="scan-hud-bottom">
+          {/* Tabs */}
+          <div className="scan-mode-tabs">
+            {['espacio','objeto','manual'].map((tab) => (
+              <div key={tab} className={`scan-mode-tab ${activeTab===tab?'active':''}`}
+                onClick={() => { setActiveTab(tab); if(tab==='manual'){stop();setStep('manual')} }}>
+                {tab === 'espacio' ? 'ESPACIO' : tab === 'objeto' ? 'OBJETO' : 'MANUAL'}
+              </div>
+            ))}
+          </div>
+
+          {/* Controles */}
+          <div className="scan-controls-row">
+            {/* Deshacer */}
+            <button className="scan-undo-btn" onClick={() => setCorners((p)=>p.slice(0,-1))} disabled={corners.length===0}>
+              <Icon name="undo" size={20} />
+              <span>Deshacer</span>
+            </button>
+
+            {/* Botón captura central */}
+            <button className={`scan-capture-btn ${corners.length>=3?'has-points':''}`}
+              onClick={corners.length>=3 ? freezeAndNextStep : undefined}>
+              <div className="scan-capture-inner" />
+            </button>
+
+            {/* Listo */}
+            <button className={`scan-done-btn ${corners.length>=3?'ready':''}`}
+              onClick={corners.length>=3 ? freezeAndNextStep : undefined}
+              disabled={corners.length<3}>
+              <Icon name="check" size={20} />
+              <span>Listo</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Tips modal */}
+        {showTips && <TipsModal onClose={() => setShowTips(false)} />}
       </div>
     )
   }
 
-  // ── STEP: scale reference ─────────────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // STEP: scale — panel de referencia
+  // ════════════════════════════════════════════════════
   if (step === 'scale') {
-    const canProceed = refPoints.length === 2 && sanitizeNumber(refDist, { min: 0.01 }) !== null
+    const canProceed = refPoints.length === 2 && sanitizeNumber(refDist,{min:0.01}) !== null
     return (
       <div className="scan-camera-root">
-        <canvas
-          ref={canvasRef}
-          className="scan-canvas scan-canvas-static"
+        <canvas ref={canvasRef} className="scan-canvas scan-canvas-static"
           onPointerDown={handleRefTap}
           onTouchStart={(e) => { e.preventDefault(); handleRefTap(e) }}
-          style={{ touchAction: 'none' }}
-        />
+          style={{ touchAction: 'none' }} />
 
+        {/* HUD superior */}
         <div className="scan-hud-top safe-top">
-          <div className="scan-tap-badge">
-            {refPoints.length === 0 && 'Toca el inicio de una pared conocida'}
-            {refPoints.length === 1 && 'Toca el final de esa pared'}
-            {refPoints.length === 2 && <><Icon name="check" size={14} style={{ display: 'inline' }} /> Referencia marcada</>}
-          </div>
+          <button className="scan-tips-btn" onClick={() => setShowTips(true)}>
+            💡 Consejos
+          </button>
+          <button className="scan-close-btn" onClick={onCancel}>
+            <Icon name="close" size={16} />
+          </button>
         </div>
 
-        <div className="scan-scale-form">
-          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            ¿Cuánto mide esa distancia en metros?
-          </p>
+        <div className="scan-instruction-badge">
+          {refPoints.length === 0 && 'Toca el inicio de una pared conocida'}
+          {refPoints.length === 1 && 'Toca el final de esa misma pared'}
+          {refPoints.length === 2 && '✓ Referencia marcada — introduce la distancia'}
+        </div>
+
+        {/* Panel inferior */}
+        <div className="scan-scale-panel">
+          <div className="scan-scale-title">Referencia de escala</div>
+          <div className="scan-scale-subtitle">¿Cuánto mide esa distancia en metros?</div>
           <div className="scale-input-row">
-            <input
-              type="number"
-              placeholder="Ej. 3.50"
-              min="0.01"
-              max="100"
-              step="0.01"
-              value={refDist}
-              onChange={(e) => setRefDist(e.target.value)}
-              inputMode="decimal"
-            />
+            <input type="number" placeholder="Ej. 3.50"
+              min="0.01" max="100" step="0.01"
+              value={refDist} onChange={(e)=>setRefDist(e.target.value)}
+              inputMode="decimal" autoFocus />
             <span className="scale-unit">m</span>
           </div>
           <div className="scale-actions">
             <button className="btn btn-ghost btn-sm" onClick={() => {
-              setRefPoints([])
-              setStep('corners')
-              setCorners([])
-              start()
+              setRefPoints([]); setStep('corners'); setCorners([]); start()
             }}>
               <Icon name="undo" size={14} /> Re-escanear
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleCalculate}
-              disabled={!canProceed}
-            >
+            <button className="btn btn-primary" onClick={handleCalculate} disabled={!canProceed}>
               Calcular m²
             </button>
           </div>
         </div>
+
+        {showTips && <TipsModal onClose={() => setShowTips(false)} />}
       </div>
     )
   }
 
-  // ── STEP: manual ──────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // STEP: manual
+  // ════════════════════════════════════════════════════
   if (step === 'manual') {
     return <ManualForm onComplete={onComplete} onBack={() => setStep('permission')} />
   }
@@ -299,68 +309,70 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   return null
 }
 
+// ── Modal de consejos ──────────────────────────────────────────────────────────
+function TipsModal({ onClose }) {
+  const TIPS = [
+    'Apunta la cámara hacia el suelo de la habitación',
+    'Toca cada esquina del suelo siguiendo el perímetro en orden (horario o antihorario)',
+    'Cuantas más esquinas marques, más precisa será la medición',
+    'Para la referencia de escala, elige una pared recta cuya longitud conozcas',
+    'Usa el botón Deshacer si te equivocas al marcar una esquina',
+  ]
+  return (
+    <div className="scan-tips-overlay" onClick={(e)=>e.target===e.currentTarget&&onClose()}>
+      <div className="scan-tips-sheet">
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div className="scan-tips-title">💡 Consejos de escaneo</div>
+          <button className="sheet-close" onClick={onClose} style={{position:'static'}}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+        {TIPS.map((tip, i) => (
+          <div key={i} className="scan-tip-item">
+            <div className="scan-tip-num">{i+1}</div>
+            <div className="scan-tip-text">{tip}</div>
+          </div>
+        ))}
+        <button className="btn btn-primary" onClick={onClose}>Entendido</button>
+      </div>
+    </div>
+  )
+}
+
 // ── Formulario manual ──────────────────────────────────────────────────────────
 function ManualForm({ onComplete, onBack }) {
   const [width, setWidth]       = useState('')
   const [length, setLength]     = useState('')
   const [roomName, setRoomName] = useState('')
-
-  const w = sanitizeNumber(width,  { min: 0.1, max: 999 })
-  const l = sanitizeNumber(length, { min: 0.1, max: 999 })
-  const computed = w && l ? (w * l).toFixed(2) : null
+  const w = sanitizeNumber(width,  { min:0.1, max:999 })
+  const l = sanitizeNumber(length, { min:0.1, max:999 })
+  const computed = w && l ? (w*l).toFixed(2) : null
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!computed) return
-    const name = sanitizeName(roomName) || 'Habitación'
-    onComplete({
-      areaSqM:    parseFloat(computed),
-      roomName:   name,
-      dimensions: `${w} m × ${l} m`,
-      scanMode:   'manual',
-    })
+    onComplete({ areaSqM: parseFloat(computed), roomName: sanitizeName(roomName)||'Habitación', dimensions:`${w} m × ${l} m`, scanMode:'manual' })
   }
 
   return (
     <div className="scan-start-root">
       <div className="scan-start-content safe-top safe-bottom">
-        <div className="scan-icon">
-          <Icon name="manual" size={38} />
-        </div>
+        <div className="scan-icon"><Icon name="manual" size={38} /></div>
         <h2>Medición manual</h2>
-        <p className="muted" style={{ fontSize: 14 }}>Introduce las dimensiones de la estancia.</p>
-
+        <p className="muted" style={{fontSize:14}}>Introduce las dimensiones de la estancia.</p>
         <form className="manual-form glass" onSubmit={handleSubmit}>
           <div className="form-field">
             <label>Nombre de la estancia</label>
-            <input
-              type="text"
-              placeholder="Ej. Salón"
-              value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
-              maxLength={100}
-            />
+            <input type="text" placeholder="Ej. Salón" value={roomName} onChange={(e)=>setRoomName(e.target.value)} maxLength={100} />
           </div>
           <div className="form-row">
             <div className="form-field">
               <label>Ancho (m)</label>
-              <input
-                type="number" placeholder="4.20"
-                min="0.1" max="999" step="0.01"
-                value={width}
-                onChange={(e) => setWidth(e.target.value)}
-                inputMode="decimal"
-              />
+              <input type="number" placeholder="4.20" min="0.1" max="999" step="0.01" value={width} onChange={(e)=>setWidth(e.target.value)} inputMode="decimal" />
             </div>
             <div className="form-field">
               <label>Largo (m)</label>
-              <input
-                type="number" placeholder="3.80"
-                min="0.1" max="999" step="0.01"
-                value={length}
-                onChange={(e) => setLength(e.target.value)}
-                inputMode="decimal"
-              />
+              <input type="number" placeholder="3.80" min="0.1" max="999" step="0.01" value={length} onChange={(e)=>setLength(e.target.value)} inputMode="decimal" />
             </div>
           </div>
           {computed && (
@@ -370,89 +382,13 @@ function ManualForm({ onComplete, onBack }) {
             </div>
           )}
           <div className="form-actions">
-            <button type="button" className="btn btn-ghost" onClick={onBack}>
-              <Icon name="back" size={16} /> Volver
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={!computed}>
-              Continuar →
-            </button>
+            <button type="button" className="btn btn-ghost" onClick={onBack}><Icon name="back" size={16} /> Volver</button>
+            <button type="submit" className="btn btn-primary" disabled={!computed}>Continuar →</button>
           </div>
         </form>
       </div>
     </div>
   )
-}
-
-// ── Helpers de canvas ──────────────────────────────────────────────────────────
-function drawPolygon(ctx, points, w, h) {
-  if (points.length === 0) return
-
-  if (points.length >= 3) {
-    ctx.beginPath()
-    ctx.moveTo(points[0].x, points[0].y)
-    points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y))
-    ctx.closePath()
-    ctx.fillStyle = 'rgba(240, 165, 0, 0.15)'
-    ctx.fill()
-  }
-
-  if (points.length >= 2) {
-    ctx.beginPath()
-    ctx.moveTo(points[0].x, points[0].y)
-    points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y))
-    if (points.length >= 3) ctx.closePath()
-    ctx.strokeStyle = 'rgba(240, 165, 0, 0.85)'
-    ctx.lineWidth = 2
-    ctx.setLineDash([6, 4])
-    ctx.stroke()
-    ctx.setLineDash([])
-  }
-
-  points.forEach((p, i) => {
-    // Halo
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, 14, 0, Math.PI * 2)
-    ctx.fillStyle = i === 0 ? 'rgba(45, 212, 191, 0.2)' : 'rgba(240, 165, 0, 0.2)'
-    ctx.fill()
-
-    // Punto
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, 9, 0, Math.PI * 2)
-    ctx.fillStyle = i === 0 ? 'rgba(45, 212, 191, 0.95)' : 'rgba(240, 165, 0, 0.95)'
-    ctx.fill()
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 2
-    ctx.stroke()
-
-    // Número
-    ctx.fillStyle = '#0c0a08'
-    ctx.font = 'bold 11px -apple-system, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(i + 1, p.x, p.y)
-  })
-}
-
-function drawRefPoints(ctx, points) {
-  points.forEach((p) => {
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, 10, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.95)'
-    ctx.fill()
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 2
-    ctx.stroke()
-  })
-  if (points.length === 2) {
-    ctx.beginPath()
-    ctx.moveTo(points[0].x, points[0].y)
-    ctx.lineTo(points[1].x, points[1].y)
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.9)'
-    ctx.lineWidth = 2
-    ctx.setLineDash([5, 3])
-    ctx.stroke()
-    ctx.setLineDash([])
-  }
 }
 
 function ScanStep({ n, text }) {
@@ -462,4 +398,46 @@ function ScanStep({ n, text }) {
       <p>{text}</p>
     </div>
   )
+}
+
+// ── Canvas helpers ─────────────────────────────────────────────────────────────
+function drawPolygon(ctx, points) {
+  if (points.length === 0) return
+  if (points.length >= 3) {
+    ctx.beginPath()
+    ctx.moveTo(points[0].x, points[0].y)
+    points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y))
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(240,165,0,0.12)'
+    ctx.fill()
+  }
+  if (points.length >= 2) {
+    ctx.beginPath()
+    ctx.moveTo(points[0].x, points[0].y)
+    points.slice(1).forEach((p) => ctx.lineTo(p.x, p.y))
+    if (points.length >= 3) ctx.closePath()
+    ctx.strokeStyle = 'rgba(240,165,0,0.9)'
+    ctx.lineWidth = 2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([])
+  }
+  points.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 14, 0, Math.PI*2)
+    ctx.fillStyle = i===0 ? 'rgba(45,212,191,0.2)' : 'rgba(240,165,0,0.2)'; ctx.fill()
+    ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI*2)
+    ctx.fillStyle = i===0 ? 'rgba(45,212,191,0.95)' : 'rgba(240,165,0,0.95)'; ctx.fill()
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke()
+    ctx.fillStyle='#0c0a08'; ctx.font='bold 11px -apple-system,sans-serif'
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(i+1, p.x, p.y)
+  })
+}
+
+function drawRefPoints(ctx, points) {
+  points.forEach((p) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI*2)
+    ctx.fillStyle='rgba(251,191,36,0.95)'; ctx.fill()
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke()
+  })
+  if (points.length === 2) {
+    ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); ctx.lineTo(points[1].x, points[1].y)
+    ctx.strokeStyle='rgba(251,191,36,0.9)'; ctx.lineWidth=2; ctx.setLineDash([5,3]); ctx.stroke(); ctx.setLineDash([])
+  }
 }
