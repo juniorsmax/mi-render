@@ -3,55 +3,46 @@ import Capacitor
 import ARKit
 
 /**
- * LiDARPlugin — Plugin Capacitor nativo para LiDAR / RoomPlan
+ * LiDARPlugin — Plugin Capacitor para escaneo LiDAR / ARKit
  * Agentes: Kai (iOS) + Ares (Escáner)
  *
- * Registrado en LiDARPlugin.m via CAP_PLUGIN macro.
- * Llamado desde JavaScript via Capacitor.Plugins.LiDARPlugin
+ * Estrategia:
+ *  - iPhone con LiDAR (12 Pro+): ARKit sceneReconstruction .mesh → alta precisión
+ *  - iPhone sin LiDAR: ARKit planeDetection → precisión media
+ *
+ * RoomPlan (iOS 16+) se carga dinámicamente cuando está disponible.
+ * Registrado via LiDARPlugin.m con CAP_PLUGIN macro.
  */
 @objc(LiDARPlugin)
-public class LiDARPlugin: CAPPlugin, CAPBridgedPlugin {
-
-    public let identifier = "LiDARPlugin"
-    public let jsName = "LiDARPlugin"
-    public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "isAvailable",  returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "startScan",    returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stopScan",     returnType: CAPPluginReturnPromise),
-    ]
+public class LiDARPlugin: CAPPlugin {
 
     private var pendingCall: CAPPluginCall?
 
     // ── isAvailable ──────────────────────────────────────────────────────────
     @objc func isAvailable(_ call: CAPPluginCall) {
-        var result: [String: Any] = [:]
+        let hasLiDAR   = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
+        let hasARKit   = ARWorldTrackingConfiguration.isSupported
+        let iosVersion = UIDevice.current.systemVersion
 
+        var roomPlan = false
         if #available(iOS 16.0, *) {
-            let roomPlanSupported = checkRoomPlanSupport()
-            result["available"]  = roomPlanSupported
-            result["roomPlan"]   = roomPlanSupported
-            result["lidar"]      = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
-            result["arKit"]      = ARWorldTrackingConfiguration.isSupported
-            result["iosVersion"] = UIDevice.current.systemVersion
-        } else {
-            result["available"]  = false
-            result["roomPlan"]   = false
-            result["lidar"]      = false
-            result["arKit"]      = ARWorldTrackingConfiguration.isSupported
-            result["iosVersion"] = UIDevice.current.systemVersion
+            roomPlan = hasLiDAR
         }
 
-        call.resolve(result)
+        call.resolve([
+            "available":   hasLiDAR || hasARKit,
+            "lidar":       hasLiDAR,
+            "roomPlan":    roomPlan,
+            "arKit":       hasARKit,
+            "iosVersion":  iosVersion,
+            "scanMode":    hasLiDAR ? "lidar" : "arkit",
+        ])
     }
 
     // ── startScan ────────────────────────────────────────────────────────────
     @objc func startScan(_ call: CAPPluginCall) {
-        guard #available(iOS 16.0, *) else {
-            call.reject("RoomPlan requiere iOS 16+")
-            return
-        }
-        guard checkRoomPlanSupport() else {
-            call.reject("Este dispositivo no tiene sensor LiDAR")
+        guard ARWorldTrackingConfiguration.isSupported else {
+            call.reject("ARKit no disponible en este dispositivo")
             return
         }
 
@@ -59,7 +50,9 @@ public class LiDARPlugin: CAPPlugin, CAPBridgedPlugin {
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let vc = RoomScanViewController()
+
+            let vc = ARScanViewController()
+            vc.hasLiDAR = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
             vc.onComplete = { [weak self] result in
                 if let result = result {
                     self?.pendingCall?.resolve(result)
@@ -78,109 +71,177 @@ public class LiDARPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             self.bridge?.viewController?.presentedViewController?.dismiss(animated: true)
         }
-        pendingCall?.reject("Escaneo detenido manualmente")
+        pendingCall?.reject("Escaneo detenido")
         pendingCall = nil
         call.resolve(["stopped": true])
     }
-
-    // ── Detectar RoomPlan sin importarlo directamente ─────────────────────────
-    private func checkRoomPlanSupport() -> Bool {
-        if #available(iOS 16.0, *) {
-            return ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
-        }
-        return false
-    }
 }
 
-// ── ViewController del escaneo ────────────────────────────────────────────────
-@available(iOS 16.0, *)
-class RoomScanViewController: UIViewController {
+// ── ViewController de escaneo AR ──────────────────────────────────────────────
+class ARScanViewController: UIViewController, ARSessionDelegate {
 
+    var hasLiDAR = false
     var onComplete: (([String: Any]?) -> Void)?
-    private var session: ARSession!
-    private var sceneView: ARSCNView!
-    private var isScanning = false
-    private var scanStartTime: Date?
+
+    private var arSession   = ARSession()
+    private var sceneView   = ARSCNView()
+    private var scanTimer: Timer?
+    private var scanSeconds = 0
+    private var timerLabel  = UILabel()
+    private var statusLabel = UILabel()
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        setupARView()
+        setupSceneView()
         setupHUD()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         startARSession()
+        startTimer()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        session?.pause()
+        arSession.pause()
+        scanTimer?.invalidate()
     }
 
-    // ── Configurar vista AR ──────────────────────────────────────────────────
-    private func setupARView() {
-        session = ARSession()
-        sceneView = ARSCNView(frame: view.bounds)
+    // ── AR Session ───────────────────────────────────────────────────────────
+    private func setupSceneView() {
+        sceneView.frame = view.bounds
         sceneView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        sceneView.session = session
+        sceneView.session = arSession
         sceneView.automaticallyUpdatesLighting = true
+        sceneView.delegate = nil
         view.addSubview(sceneView)
+
+        arSession.delegate = self
     }
 
     private func startARSession() {
         let config = ARWorldTrackingConfiguration()
-        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
-            config.sceneReconstruction = .mesh
-        }
         config.planeDetection = [.horizontal, .vertical]
         config.environmentTexturing = .automatic
-        session.run(config, options: [.resetTracking, .removeExistingAnchors])
-        isScanning = true
-        scanStartTime = Date()
+
+        if hasLiDAR {
+            config.sceneReconstruction = .mesh
+            config.frameSemantics = .sceneDepth
+        }
+
+        arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
     }
 
     // ── HUD ──────────────────────────────────────────────────────────────────
     private func setupHUD() {
+        let w = view.bounds.width
+        let topInset = UIApplication.shared.windows.first?.safeAreaInsets.top ?? 44
+
+        // Barra superior oscura
+        let topBar = UIView(frame: CGRect(x: 0, y: 0, width: w, height: topInset + 60))
+        topBar.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        view.addSubview(topBar)
+
         // Botón cerrar
-        let closeBtn = makeButton(title: "✕", x: 20, y: 60, w: 44, h: 44)
+        let closeBtn = makeRoundBtn(title: "✕", x: 16, y: topInset + 10, size: 40)
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
+        // Modo badge
+        let modeBadge = UILabel(frame: CGRect(x: w/2 - 70, y: topInset + 10, width: 140, height: 36))
+        modeBadge.text = hasLiDAR ? "⚡ LiDAR activo" : "📷 ARKit"
+        modeBadge.textColor = hasLiDAR ? UIColor(red:0.2,green:0.83,blue:0.75,alpha:1) : UIColor(red:0.94,green:0.65,blue:0,alpha:1)
+        modeBadge.font = .systemFont(ofSize: 13, weight: .bold)
+        modeBadge.textAlignment = .center
+        modeBadge.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        modeBadge.layer.cornerRadius = 18
+        modeBadge.layer.masksToBounds = true
+        view.addSubview(modeBadge)
+
+        // Timer
+        timerLabel.frame = CGRect(x: w - 70, y: topInset + 10, width: 54, height: 36)
+        timerLabel.text = "0s"
+        timerLabel.textColor = .white
+        timerLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+        timerLabel.textAlignment = .center
+        timerLabel.backgroundColor = UIColor.black.withAlphaComponent(0.5)
+        timerLabel.layer.cornerRadius = 18
+        timerLabel.layer.masksToBounds = true
+        view.addSubview(timerLabel)
+
         // Instrucción
-        let label = UILabel()
-        label.text = "Mueve el iPhone por la habitación"
-        label.textColor = .white
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textAlignment = .center
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        label.layer.cornerRadius = 20
-        label.layer.masksToBounds = true
-        label.frame = CGRect(x: 20, y: 70, width: view.bounds.width - 40, height: 40)
-        view.addSubview(label)
+        statusLabel.frame = CGRect(x: 16, y: topInset + 64, width: w - 32, height: 36)
+        statusLabel.text = "Mueve el iPhone por toda la habitación"
+        statusLabel.textColor = .white
+        statusLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        statusLabel.textAlignment = .center
+        statusLabel.backgroundColor = UIColor(red:0.94,green:0.65,blue:0,alpha:0.2)
+        statusLabel.layer.cornerRadius = 18
+        statusLabel.layer.borderWidth = 1
+        statusLabel.layer.borderColor = UIColor(red:0.94,green:0.65,blue:0,alpha:0.5).cgColor
+        statusLabel.layer.masksToBounds = true
+        view.addSubview(statusLabel)
+
+        // Barra inferior
+        let bottomInset = UIApplication.shared.windows.first?.safeAreaInsets.bottom ?? 34
+        let barH: CGFloat = 100 + bottomInset
+        let bottomBar = UIView(frame: CGRect(x: 0, y: view.bounds.height - barH, width: w, height: barH))
+        bottomBar.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        view.addSubview(bottomBar)
 
         // Botón Listo
-        let doneBtn = makeButton(title: "✓ Listo", x: view.bounds.width - 110, y: 60, w: 90, h: 44)
-        doneBtn.backgroundColor = UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 0.9)
-        doneBtn.setTitleColor(.black, for: .normal)
-        doneBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+        let doneBtn = UIButton(type: .system)
+        doneBtn.setTitle("✓  Listo", for: .normal)
+        doneBtn.titleLabel?.font = .systemFont(ofSize: 17, weight: .bold)
+        doneBtn.setTitleColor(UIColor(red:0.94,green:0.65,blue:0,alpha:1), for: .normal)
+        doneBtn.backgroundColor = UIColor(red:0.94,green:0.65,blue:0,alpha:0.15)
+        doneBtn.layer.cornerRadius = 24
+        doneBtn.layer.borderWidth = 1.5
+        doneBtn.layer.borderColor = UIColor(red:0.94,green:0.65,blue:0,alpha:0.5).cgColor
+        doneBtn.frame = CGRect(x: w/2 - 90, y: view.bounds.height - barH + 20, width: 180, height: 50)
         doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
         view.addSubview(doneBtn)
     }
 
-    private func makeButton(title: String, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat) -> UIButton {
+    private func makeRoundBtn(title: String, x: CGFloat, y: CGFloat, size: CGFloat) -> UIButton {
         let btn = UIButton(type: .system)
         btn.setTitle(title, for: .normal)
-        btn.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        btn.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
         btn.tintColor = .white
         btn.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        btn.layer.cornerRadius = h / 2
-        btn.frame = CGRect(x: x, y: y, width: w, height: h)
+        btn.layer.cornerRadius = size / 2
+        btn.frame = CGRect(x: x, y: y, width: size, height: size)
         return btn
     }
 
-    // ── Acciones ─────────────────────────────────────────────────────────────
+    // ── Timer ─────────────────────────────────────────────────────────────────
+    private func startTimer() {
+        scanTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.scanSeconds += 1
+            self.timerLabel.text = "\(self.scanSeconds)s"
+
+            // Actualizar instrucción conforme pasa el tiempo
+            if self.scanSeconds == 5  { self.statusLabel.text = "Apunta a las paredes y esquinas" }
+            if self.scanSeconds == 12 { self.statusLabel.text = "Gira para capturar todos los ángulos" }
+            if self.scanSeconds == 20 { self.statusLabel.text = "Puedes pulsar Listo cuando acabes" }
+        }
+    }
+
+    // ── ARSessionDelegate ─────────────────────────────────────────────────────
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        // Actualizar conteo de planos detectados
+        let planeCount = frame.anchors.filter { $0 is ARPlaneAnchor }.count
+        if planeCount > 0 && scanSeconds < 5 {
+            DispatchQueue.main.async {
+                self.statusLabel.text = "\(planeCount) superficie\(planeCount > 1 ? "s" : "") detectada\(planeCount > 1 ? "s" : "") — sigue escaneando"
+            }
+        }
+    }
+
+    // ── Acciones ──────────────────────────────────────────────────────────────
     @objc private func closeTapped() {
         dismiss(animated: true) { [weak self] in
             self?.onComplete?(nil)
@@ -188,45 +249,49 @@ class RoomScanViewController: UIViewController {
     }
 
     @objc private func doneTapped() {
-        session.pause()
+        arSession.pause()
+        scanTimer?.invalidate()
         let result = buildResult()
         dismiss(animated: true) { [weak self] in
             self?.onComplete?(result)
         }
     }
 
-    // ── Construir resultado desde anchors de ARKit ────────────────────────────
+    // ── Construir resultado desde ARKit anchors ────────────────────────────────
     private func buildResult() -> [String: Any] {
-        var floorArea: Float = 0
-        var wallCount = 0
-        var walls: [[String: Any]] = []
-
-        for anchor in session.currentFrame?.anchors ?? [] {
-            if let planeAnchor = anchor as? ARPlaneAnchor {
-                if planeAnchor.alignment == .horizontal && planeAnchor.classification == .floor {
-                    let ext = planeAnchor.planeExtent
-                    floorArea += ext.width * ext.height
-                }
-                if planeAnchor.alignment == .vertical {
-                    wallCount += 1
-                    let ext = planeAnchor.planeExtent
-                    walls.append([
-                        "width":  ext.width,
-                        "height": ext.height,
-                    ])
-                }
-            }
+        guard let frame = arSession.currentFrame else {
+            return ["floorArea": 0, "walls": [], "scanMode": "arkit"]
         }
 
-        let duration = scanStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        var floorArea: Float  = 0
+        var wallArea:  Float  = 0
+        var walls: [[String: Any]] = []
+
+        for anchor in frame.anchors {
+            guard let plane = anchor as? ARPlaneAnchor else { continue }
+            let ext = plane.planeExtent
+
+            if plane.alignment == .horizontal && plane.classification == .floor {
+                floorArea += ext.width * ext.height
+            }
+            if plane.alignment == .vertical {
+                wallArea += ext.width * ext.height
+                walls.append([
+                    "width":  ext.width,
+                    "height": ext.height,
+                    "confidence": "medium",
+                ])
+            }
+        }
 
         return [
             "floorArea":    floorArea,
             "walls":        walls,
-            "wallCount":    wallCount,
-            "scanDuration": duration,
-            "scanMode":     "lidar-native",
-            "confidence":   floorArea > 0 ? "high" : "medium",
+            "wallCount":    walls.count,
+            "wallArea":     wallArea,
+            "scanDuration": scanSeconds,
+            "scanMode":     hasLiDAR ? "lidar-native" : "arkit",
+            "confidence":   floorArea > 0 ? "high" : "low",
         ]
     }
 }
