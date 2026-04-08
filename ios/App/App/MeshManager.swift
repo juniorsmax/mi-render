@@ -109,9 +109,10 @@ class MeshManager {
 
 extension ARMeshGeometry {
     func faceClassification(at index: Int) -> ARMeshClassification {
-        let offset = index * classification.stride + classification.offset
-        let rawValue = classification.buffer.contents()
-            .advanced(by: offset)
+        guard let src = classification else { return .none }
+        let byteOffset = index * src.stride + src.offset
+        let rawValue = src.buffer.contents()
+            .advanced(by: byteOffset)
             .load(as: UInt8.self)
         return ARMeshClassification(rawValue: Int(rawValue)) ?? .none
     }
