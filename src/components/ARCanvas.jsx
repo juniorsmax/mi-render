@@ -15,6 +15,15 @@ export function ARCanvas({ xrSession, onScanComplete }) {
 
   const { hitPose, tapCount, points } = useHitTest(xrSession, glCanvasRef)
 
+  // Iniciar escaneo LiDAR automáticamente en iOS nativo
+  useEffect(() => {
+    if (!window.Capacitor?.isNativePlatform()) return
+
+    window.Capacitor.Plugins.LiDARPlugin.startScan({ mode: 'room' })
+      .then(() => console.log('LiDAR scan started'))
+      .catch(console.error)
+  }, [])
+
   // Set up WebGL base layer once session is active
   useEffect(() => {
     if (!xrSession || !glCanvasRef.current) return
@@ -97,10 +106,48 @@ export function ARCanvas({ xrSession, onScanComplete }) {
   }, [xrSession, hitPose, points])
 
   function handleDone() {
-    if (points.length < 3) return
-    const area = shoelace(points)
     xrSession?.end()
-    onScanComplete({ points: [...points], areaSqM: parseFloat(area.toFixed(2)) })
+
+    if (window.Capacitor?.isNativePlatform()) {
+      window.Capacitor.Plugins.LiDARPlugin.stopScan()
+        .then(result => {
+          console.log('LiDAR scan result:', result)
+          onScanComplete({
+            floorArea:   result.areaSqM      ?? 0,
+            wallArea:    result.wallArea      ?? 0,
+            windowArea:  result.windowArea    ?? 0,
+            totalVolume: result.volume        ?? 0,
+            perimeter:   result.perimeterM    ?? 0,
+            avgHeight:   result.avgHeight     ?? 2.5,
+            walls:       result.walls         ?? [],
+            doors:       result.doors         ?? [],
+            windows:     result.windows       ?? [],
+            openings:    result.openings      ?? [],
+            wallCount:   result.walls?.length ?? 0,
+            confidence:  'high',
+            scanMode:    'lidar-native',
+          })
+        })
+        .catch(err => console.error('LiDAR stopScan error:', err))
+    } else {
+      if (points.length < 3) return
+      const area = shoelace(points)
+      onScanComplete({
+        floorArea:   parseFloat(area.toFixed(2)),
+        wallArea:    0,
+        windowArea:  0,
+        totalVolume: 0,
+        perimeter:   0,
+        avgHeight:   2.5,
+        walls:       [],
+        doors:       [],
+        windows:     [],
+        openings:    [],
+        wallCount:   0,
+        confidence:  'low',
+        scanMode:    'camera',
+      })
+    }
   }
 
   return (
