@@ -48,11 +48,15 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>mi-render necesita acceso a la cámara para escanear habitaciones y calcular m².</string>
+	<string>mi-render necesita la cámara para escanear habitaciones y calcular m².</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>mi-render puede usar el micrófono durante el escaneo de habitaciones.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>mi-render necesita acceso a fotos para adjuntar imágenes a tus proyectos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>mi-render puede guardar capturas de tus proyectos en la galería.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>mi-render puede usar tu ubicación para asociar proyectos a direcciones.</string>
+	<string>mi-render usa tu ubicación para asociar proyectos a direcciones.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
