@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import ARKit
+import RoomPlan
 
 /**
  * LiDARPlugin — RoomPlan para mi-render
