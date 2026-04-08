@@ -100,13 +100,19 @@ export async function startLiDARScan() {
 function parseLiDARResult(raw) {
   if (!raw) return null
   return {
-    areaSqM:    raw.floorArea  ?? null,
-    walls:      raw.walls      ?? [],
-    wallCount:  raw.wallCount  ?? 0,
-    doors:      raw.doors      ?? [],
-    windows:    raw.windows    ?? [],
-    scanMode:   'lidar-native',
-    confidence: raw.confidence ?? 'medium',
+    floorArea:   raw.areaSqM      ?? raw.floorArea   ?? 0,
+    wallArea:    raw.wallArea      ?? 0,
+    windowArea:  raw.windowArea    ?? 0,
+    totalVolume: raw.volume        ?? raw.totalVolume ?? 0,
+    perimeter:   raw.perimeterM    ?? raw.perimeter   ?? 0,
+    avgHeight:   raw.avgHeight     ?? 2.5,
+    walls:       raw.walls         ?? [],
+    doors:       raw.doors         ?? [],
+    windows:     raw.windows       ?? [],
+    openings:    raw.openings      ?? [],
+    wallCount:   raw.wallCount     ?? raw.walls?.length ?? 0,
+    confidence:  raw.confidence    ?? 'high',
+    scanMode:    'lidar-native',
   }
 }
 
