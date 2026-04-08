@@ -197,9 +197,19 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
     // ── Convertir CapturedRoom → JSON ─────────────────────────────────────────
     private func buildResult(from room: CapturedRoom) -> [String: Any] {
 
-        // Área del suelo
-        let floorArea = room.floors.reduce(Float(0)) { acc, floor in
-            acc + floor.dimensions.x * floor.dimensions.z
+        // Área del suelo (floors disponible en iOS 17+)
+        var floorArea = Float(0)
+        if #available(iOS 17.0, *) {
+            floorArea = room.floors.reduce(Float(0)) { acc, floor in
+                acc + floor.dimensions.x * floor.dimensions.z
+            }
+        }
+        // iOS 16: estimar área desde paredes (perímetro aproximado)
+        if floorArea == 0 && !room.walls.isEmpty {
+            let widths  = room.walls.map { $0.dimensions.x }
+            let maxW    = widths.max() ?? 0
+            let maxL    = widths.sorted().dropLast().last ?? maxW
+            floorArea   = maxW * maxL
         }
 
         // Paredes
@@ -230,7 +240,7 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         ]
     }
 
-    private func confidenceString(_ c: CapturedRoom.Surface.Confidence) -> String {
+    private func confidenceString(_ c: CapturedRoom.Confidence) -> String {
         switch c {
         case .high:   return "high"
         case .medium: return "medium"
