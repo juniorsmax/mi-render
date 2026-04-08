@@ -1,35 +1,44 @@
 import Foundation
 import Capacitor
 import ARKit
-import RoomPlan
 
 /**
- * LiDARPlugin — Plugin Capacitor para escaneo LiDAR nativo
+ * LiDARPlugin — Plugin Capacitor nativo para LiDAR / RoomPlan
  * Agentes: Kai (iOS) + Ares (Escáner)
  *
- * Usa RoomPlan (iOS 16+) para escanear habitaciones automáticamente.
- * En dispositivos sin LiDAR usa ARKit para estimación básica.
+ * Registrado en LiDARPlugin.m via CAP_PLUGIN macro.
+ * Llamado desde JavaScript via Capacitor.Plugins.LiDARPlugin
  */
 @objc(LiDARPlugin)
-public class LiDARPlugin: CAPPlugin {
+public class LiDARPlugin: CAPPlugin, CAPBridgedPlugin {
 
-    private var scanSession: Any? = nil  // RoomCaptureSession (iOS 16+)
-    private var savedCall: CAPPluginCall? = nil
+    public let identifier = "LiDARPlugin"
+    public let jsName = "LiDARPlugin"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "isAvailable",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startScan",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopScan",     returnType: CAPPluginReturnPromise),
+    ]
 
-    // ── isAvailable ─────────────────────────────────────────────────────────
+    private var pendingCall: CAPPluginCall?
+
+    // ── isAvailable ──────────────────────────────────────────────────────────
     @objc func isAvailable(_ call: CAPPluginCall) {
         var result: [String: Any] = [:]
 
         if #available(iOS 16.0, *) {
-            result["available"] = RoomCaptureSession.isSupported
-            result["roomPlan"]  = RoomCaptureSession.isSupported
-            result["arKit"]     = ARWorldTrackingConfiguration.isSupported
-            result["lidar"]     = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
+            let roomPlanSupported = checkRoomPlanSupport()
+            result["available"]  = roomPlanSupported
+            result["roomPlan"]   = roomPlanSupported
+            result["lidar"]      = ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
+            result["arKit"]      = ARWorldTrackingConfiguration.isSupported
+            result["iosVersion"] = UIDevice.current.systemVersion
         } else {
-            result["available"] = false
-            result["roomPlan"]  = false
-            result["arKit"]     = ARWorldTrackingConfiguration.isSupported
-            result["lidar"]     = false
+            result["available"]  = false
+            result["roomPlan"]   = false
+            result["lidar"]      = false
+            result["arKit"]      = ARWorldTrackingConfiguration.isSupported
+            result["iosVersion"] = UIDevice.current.systemVersion
         }
 
         call.resolve(result)
@@ -38,226 +47,186 @@ public class LiDARPlugin: CAPPlugin {
     // ── startScan ────────────────────────────────────────────────────────────
     @objc func startScan(_ call: CAPPluginCall) {
         guard #available(iOS 16.0, *) else {
-            call.reject("RoomPlan requiere iOS 16 o superior")
+            call.reject("RoomPlan requiere iOS 16+")
+            return
+        }
+        guard checkRoomPlanSupport() else {
+            call.reject("Este dispositivo no tiene sensor LiDAR")
             return
         }
 
-        guard RoomCaptureSession.isSupported else {
-            call.reject("Este dispositivo no tiene LiDAR")
-            return
-        }
+        pendingCall = call
 
-        savedCall = call
-
-        DispatchQueue.main.async {
-            self.presentRoomScan()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let vc = RoomScanViewController()
+            vc.onComplete = { [weak self] result in
+                if let result = result {
+                    self?.pendingCall?.resolve(result)
+                } else {
+                    self?.pendingCall?.reject("Escaneo cancelado")
+                }
+                self?.pendingCall = nil
+            }
+            vc.modalPresentationStyle = .fullScreen
+            self.bridge?.viewController?.present(vc, animated: true)
         }
     }
 
     // ── stopScan ─────────────────────────────────────────────────────────────
     @objc func stopScan(_ call: CAPPluginCall) {
-        if #available(iOS 16.0, *) {
-            if let session = scanSession as? RoomCaptureSession {
-                session.stop()
-            }
+        DispatchQueue.main.async {
+            self.bridge?.viewController?.presentedViewController?.dismiss(animated: true)
         }
+        pendingCall?.reject("Escaneo detenido manualmente")
+        pendingCall = nil
         call.resolve(["stopped": true])
     }
 
-    // ── Presentar UI de RoomPlan ─────────────────────────────────────────────
-    @available(iOS 16.0, *)
-    private func presentRoomScan() {
-        let controller = RoomScanViewController()
-        controller.delegate = self
-        controller.modalPresentationStyle = .fullScreen
-
-        self.bridge?.viewController?.present(controller, animated: true)
+    // ── Detectar RoomPlan sin importarlo directamente ─────────────────────────
+    private func checkRoomPlanSupport() -> Bool {
+        if #available(iOS 16.0, *) {
+            return ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh)
+        }
+        return false
     }
 }
 
-// ── Delegate para recibir resultado del scan ─────────────────────────────────
+// ── ViewController del escaneo ────────────────────────────────────────────────
 @available(iOS 16.0, *)
-extension LiDARPlugin: RoomScanDelegate {
-    func roomScanDidComplete(room: CapturedRoom?) {
-        guard let call = savedCall else { return }
+class RoomScanViewController: UIViewController {
 
-        if let room = room {
-            let result = buildRoomResult(room)
-            call.resolve(result)
-        } else {
-            call.reject("Escaneo cancelado o sin datos")
-        }
-
-        savedCall = nil
-    }
-
-    func roomScanDidFail(error: Error) {
-        savedCall?.reject("Error en escaneo: \(error.localizedDescription)")
-        savedCall = nil
-    }
-
-    // ── Convertir CapturedRoom a diccionario JSON ────────────────────────────
-    @available(iOS 16.0, *)
-    private func buildRoomResult(_ room: CapturedRoom) -> [String: Any] {
-        // Calcular área del suelo aproximada
-        var floorArea: Float = 0
-        for surface in room.floors {
-            let d = surface.dimensions
-            floorArea += d.x * d.z
-        }
-
-        // Paredes
-        var walls: [[String: Any]] = []
-        for wall in room.walls {
-            walls.append([
-                "width":     wall.dimensions.x,
-                "height":    wall.dimensions.y,
-                "confidence": confidenceLabel(wall.confidence),
-            ])
-        }
-
-        // Puertas y ventanas
-        var doors: [[String: Any]] = []
-        for door in room.doors {
-            doors.append([
-                "width":  door.dimensions.x,
-                "height": door.dimensions.y,
-            ])
-        }
-
-        var windows: [[String: Any]] = []
-        for window in room.windows {
-            windows.append([
-                "width":  window.dimensions.x,
-                "height": window.dimensions.y,
-            ])
-        }
-
-        return [
-            "floorArea":  floorArea,
-            "walls":      walls,
-            "doors":      doors,
-            "windows":    windows,
-            "wallCount":  room.walls.count,
-            "confidence": "high",
-            "scanMode":   "lidar-native",
-        ]
-    }
-
-    private func confidenceLabel(_ confidence: CapturedRoom.Surface.Confidence) -> String {
-        switch confidence {
-        case .high:   return "high"
-        case .medium: return "medium"
-        case .low:    return "low"
-        @unknown default: return "unknown"
-        }
-    }
-}
-
-// ── Protocolo delegate ────────────────────────────────────────────────────────
-protocol RoomScanDelegate: AnyObject {
-    @available(iOS 16.0, *)
-    func roomScanDidComplete(room: CapturedRoom?)
-    func roomScanDidFail(error: Error)
-}
-
-// ── ViewController del escáner ────────────────────────────────────────────────
-@available(iOS 16.0, *)
-class RoomScanViewController: UIViewController, RoomCaptureSessionDelegate {
-
-    weak var delegate: RoomScanDelegate?
-    private var captureSession: RoomCaptureSession!
-    private var captureView: RoomCaptureView!
+    var onComplete: (([String: Any]?) -> Void)?
+    private var session: ARSession!
+    private var sceneView: ARSCNView!
+    private var isScanning = false
+    private var scanStartTime: Date?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-
-        captureSession = RoomCaptureSession()
-        captureView    = RoomCaptureView(frame: view.bounds)
-        captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        captureView.captureSession = captureSession
-        captureSession.delegate    = self
-
-        view.addSubview(captureView)
-        addCloseButton()
-        addDoneButton()
+        setupARView()
+        setupHUD()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        let config = RoomCaptureSession.Configuration()
-        captureSession.run(configuration: config)
+        startARSession()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        captureSession.stop()
+        session?.pause()
     }
 
-    // ── Botón Cerrar ─────────────────────────────────────────────────────────
-    private func addCloseButton() {
+    // ── Configurar vista AR ──────────────────────────────────────────────────
+    private func setupARView() {
+        session = ARSession()
+        sceneView = ARSCNView(frame: view.bounds)
+        sceneView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        sceneView.session = session
+        sceneView.automaticallyUpdatesLighting = true
+        view.addSubview(sceneView)
+    }
+
+    private func startARSession() {
+        let config = ARWorldTrackingConfiguration()
+        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            config.sceneReconstruction = .mesh
+        }
+        config.planeDetection = [.horizontal, .vertical]
+        config.environmentTexturing = .automatic
+        session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        isScanning = true
+        scanStartTime = Date()
+    }
+
+    // ── HUD ──────────────────────────────────────────────────────────────────
+    private func setupHUD() {
+        // Botón cerrar
+        let closeBtn = makeButton(title: "✕", x: 20, y: 60, w: 44, h: 44)
+        closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        view.addSubview(closeBtn)
+
+        // Instrucción
+        let label = UILabel()
+        label.text = "Mueve el iPhone por la habitación"
+        label.textColor = .white
+        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        label.textAlignment = .center
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        label.layer.cornerRadius = 20
+        label.layer.masksToBounds = true
+        label.frame = CGRect(x: 20, y: 70, width: view.bounds.width - 40, height: 40)
+        view.addSubview(label)
+
+        // Botón Listo
+        let doneBtn = makeButton(title: "✓ Listo", x: view.bounds.width - 110, y: 60, w: 90, h: 44)
+        doneBtn.backgroundColor = UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 0.9)
+        doneBtn.setTitleColor(.black, for: .normal)
+        doneBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+        doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
+        view.addSubview(doneBtn)
+    }
+
+    private func makeButton(title: String, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat) -> UIButton {
         let btn = UIButton(type: .system)
-        btn.setTitle("✕", for: .normal)
-        btn.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
+        btn.setTitle(title, for: .normal)
+        btn.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
         btn.tintColor = .white
-        btn.backgroundColor = UIColor.black.withAlphaComponent(0.5)
-        btn.layer.cornerRadius = 20
-        btn.frame = CGRect(x: 20, y: 60, width: 40, height: 40)
-        btn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        view.addSubview(btn)
+        btn.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        btn.layer.cornerRadius = h / 2
+        btn.frame = CGRect(x: x, y: y, width: w, height: h)
+        return btn
     }
 
-    // ── Botón Listo ──────────────────────────────────────────────────────────
-    private func addDoneButton() {
-        let btn = UIButton(type: .system)
-        btn.setTitle("Listo", for: .normal)
-        btn.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
-        btn.tintColor = UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1)
-        btn.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        btn.layer.cornerRadius = 20
-        btn.frame = CGRect(x: UIScreen.main.bounds.width - 100, y: 60, width: 80, height: 40)
-        btn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
-        view.addSubview(btn)
-    }
-
+    // ── Acciones ─────────────────────────────────────────────────────────────
     @objc private func closeTapped() {
-        captureSession.stop()
-        dismiss(animated: true)
-        delegate?.roomScanDidComplete(room: nil)
+        dismiss(animated: true) { [weak self] in
+            self?.onComplete?(nil)
+        }
     }
 
     @objc private func doneTapped() {
-        captureSession.stop()
+        session.pause()
+        let result = buildResult()
+        dismiss(animated: true) { [weak self] in
+            self?.onComplete?(result)
+        }
     }
 
-    // ── RoomCaptureSessionDelegate ────────────────────────────────────────────
-    func captureSession(_ session: RoomCaptureSession,
-                        didEndWith data: CapturedRoomData,
-                        error: Error?) {
-        if let error = error {
-            DispatchQueue.main.async {
-                self.dismiss(animated: true)
-                self.delegate?.roomScanDidFail(error: error)
+    // ── Construir resultado desde anchors de ARKit ────────────────────────────
+    private func buildResult() -> [String: Any] {
+        var floorArea: Float = 0
+        var wallCount = 0
+        var walls: [[String: Any]] = []
+
+        for anchor in session.currentFrame?.anchors ?? [] {
+            if let planeAnchor = anchor as? ARPlaneAnchor {
+                if planeAnchor.alignment == .horizontal && planeAnchor.classification == .floor {
+                    let ext = planeAnchor.planeExtent
+                    floorArea += ext.width * ext.height
+                }
+                if planeAnchor.alignment == .vertical {
+                    wallCount += 1
+                    let ext = planeAnchor.planeExtent
+                    walls.append([
+                        "width":  ext.width,
+                        "height": ext.height,
+                    ])
+                }
             }
-            return
         }
 
-        // Procesar y generar modelo final
-        let processor = RoomBuilder(options: [.beautifyObjects])
-        Task {
-            do {
-                let room = try await processor.capturedRoom(from: data)
-                await MainActor.run {
-                    self.dismiss(animated: true)
-                    self.delegate?.roomScanDidComplete(room: room)
-                }
-            } catch {
-                await MainActor.run {
-                    self.dismiss(animated: true)
-                    self.delegate?.roomScanDidFail(error: error)
-                }
-            }
-        }
+        let duration = scanStartTime.map { Date().timeIntervalSince($0) } ?? 0
+
+        return [
+            "floorArea":    floorArea,
+            "walls":        walls,
+            "wallCount":    wallCount,
+            "scanDuration": duration,
+            "scanMode":     "lidar-native",
+            "confidence":   floorArea > 0 ? "high" : "medium",
+        ]
     }
 }
