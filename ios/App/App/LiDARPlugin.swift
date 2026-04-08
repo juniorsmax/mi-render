@@ -2,16 +2,24 @@ import Foundation
 import Capacitor
 import ARKit
 import RoomPlan
+import CoreLocation
 
 /**
  * LiDARPlugin — RoomPlan + ARKit para mi-render
- * Usa RoomCaptureView (Apple RoomPlan API, iOS 16+, requiere LiDAR)
- * Añade escaneo de objetos 3D via ARKit Scene Reconstruction (.mesh)
+ *
+ * Métodos:
+ *  isAvailable     → capacidades del dispositivo
+ *  startScan       → escaneo de habitación con RoomPlan (iOS 16+)
+ *  startObjectScan → escaneo 3D de objeto con ARKit .mesh
+ *  exportUSDZ      → exporta último escaneo como USDZ y abre share sheet
+ *  stopScan        → para cualquier escaneo en curso
  */
 @objc(LiDARPlugin)
-public class LiDARPlugin: CAPPlugin {
+public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
 
     private var pendingCall: CAPPluginCall?
+    private var locationManager: CLLocationManager?
+    private var lastLocation: CLLocation?
 
     // ── isAvailable ──────────────────────────────────────────────────────────
     @objc func isAvailable(_ call: CAPPluginCall) {
@@ -41,36 +49,46 @@ public class LiDARPlugin: CAPPlugin {
         }
     }
 
-    // ── startScan (RoomPlan — escaneo de habitación) ─────────────────────────
+    // ── startScan (RoomPlan) ─────────────────────────────────────────────────
     @objc func startScan(_ call: CAPPluginCall) {
         guard #available(iOS 16.0, *) else {
             call.reject("RoomPlan requiere iOS 16 o superior")
             return
         }
         guard ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) else {
-            call.reject("Este dispositivo no tiene sensor LiDAR. RoomPlan requiere iPhone 12 Pro o superior.")
+            call.reject("Este dispositivo no tiene sensor LiDAR. Se requiere iPhone 12 Pro o superior.")
             return
         }
 
+        // Iniciar geolocalización para incluir en el resultado
+        requestLocation()
         pendingCall = call
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             let vc = RoomPlanViewController()
             vc.onResult = { [weak self] result in
-                if let result = result {
-                    self?.pendingCall?.resolve(result)
+                guard let self = self else { return }
+                if var result = result {
+                    // Inyectar GPS si disponible
+                    if let loc = self.lastLocation {
+                        result["latitude"]  = loc.coordinate.latitude
+                        result["longitude"] = loc.coordinate.longitude
+                        result["altitude"]  = loc.altitude
+                    }
+                    self.pendingCall?.resolve(result)
                 } else {
-                    self?.pendingCall?.reject("Escaneo cancelado")
+                    self.pendingCall?.reject("Escaneo cancelado")
                 }
-                self?.pendingCall = nil
+                self.pendingCall = nil
+                self.locationManager?.stopUpdatingLocation()
             }
             vc.modalPresentationStyle = .fullScreen
             self.bridge?.viewController?.present(vc, animated: true)
         }
     }
 
-    // ── startObjectScan (ARKit .mesh — escaneo de objetos 3D) ────────────────
+    // ── startObjectScan (ARKit .mesh) ────────────────────────────────────────
     @objc func startObjectScan(_ call: CAPPluginCall) {
         guard ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) else {
             call.reject("Este dispositivo no tiene sensor LiDAR para escaneo de objetos.")
@@ -95,6 +113,28 @@ public class LiDARPlugin: CAPPlugin {
         }
     }
 
+    // ── exportUSDZ ───────────────────────────────────────────────────────────
+    @objc func exportUSDZ(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            // Buscar el VC presentado con datos de exportación
+            if let vc = self.bridge?.viewController {
+                // Compartir el último archivo USDZ generado
+                let tmpDir = FileManager.default.temporaryDirectory
+                let usdzUrl = tmpDir.appendingPathComponent("mi-render-scan.usdz")
+                if FileManager.default.fileExists(atPath: usdzUrl.path) {
+                    let activity = UIActivityViewController(
+                        activityItems: [usdzUrl],
+                        applicationActivities: nil
+                    )
+                    vc.present(activity, animated: true)
+                    call.resolve(["path": usdzUrl.path])
+                } else {
+                    call.reject("No hay escaneo guardado para exportar")
+                }
+            }
+        }
+    }
+
     // ── stopScan ─────────────────────────────────────────────────────────────
     @objc func stopScan(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
@@ -104,9 +144,22 @@ public class LiDARPlugin: CAPPlugin {
         pendingCall = nil
         call.resolve(["stopped": true])
     }
+
+    // ── GPS ──────────────────────────────────────────────────────────────────
+    private func requestLocation() {
+        locationManager = CLLocationManager()
+        locationManager?.delegate = self
+        locationManager?.desiredAccuracy = kCLLocationAccuracyBest
+        locationManager?.requestWhenInUseAuthorization()
+        locationManager?.startUpdatingLocation()
+    }
+
+    public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        lastLocation = locations.last
+    }
 }
 
-// ── RoomPlan ViewController (iOS 16+, LiDAR) ─────────────────────────────────
+// ── RoomPlan ViewController (iOS 16+) ────────────────────────────────────────
 @available(iOS 16.0, *)
 class RoomPlanViewController: UIViewController {
 
@@ -114,12 +167,12 @@ class RoomPlanViewController: UIViewController {
 
     private var captureView:    RoomCaptureView!
     private var captureSession: RoomCaptureSession!
+    private var capturedRoomData: CapturedRoomData?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
 
-        // RoomCaptureView — UI nativa de Apple con guías AR automáticas
         captureView = RoomCaptureView(frame: view.bounds)
         captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(captureView)
@@ -132,28 +185,46 @@ class RoomPlanViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // Evitar que la pantalla se oscurezca durante el escaneo
+        UIApplication.shared.isIdleTimerDisabled = true
         let config = RoomCaptureSession.Configuration()
         captureSession.run(configuration: config)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        UIApplication.shared.isIdleTimerDisabled = false
         captureSession.stop()
     }
 
     // ── Botones ───────────────────────────────────────────────────────────────
     private func addButtons() {
-        let topInset = view.safeAreaInsets.top > 0 ? view.safeAreaInsets.top : 44
+        // Usamos viewDidLayoutSubviews para calcular safe area correctamente
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Solo añadir botones una vez
+        if view.viewWithTag(101) != nil { return }
+
+        let topInset = view.safeAreaInsets.top + 12
         let w = view.bounds.width
 
         // Cerrar
-        let closeBtn = circleButton(title: "✕", color: .white)
-        closeBtn.frame = CGRect(x: 16, y: topInset + 12, width: 44, height: 44)
+        let closeBtn = UIButton(type: .system)
+        closeBtn.tag = 101
+        closeBtn.setTitle("✕", for: .normal)
+        closeBtn.tintColor = .white
+        closeBtn.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        closeBtn.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        closeBtn.layer.cornerRadius = 22
+        closeBtn.frame = CGRect(x: 16, y: topInset, width: 44, height: 44)
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
         // Listo
         let doneBtn = UIButton(type: .system)
+        doneBtn.tag = 102
         doneBtn.setTitle("✓  Listo", for: .normal)
         doneBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
         doneBtn.setTitleColor(UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1), for: .normal)
@@ -161,19 +232,9 @@ class RoomPlanViewController: UIViewController {
         doneBtn.layer.cornerRadius = 22
         doneBtn.layer.borderWidth  = 1.5
         doneBtn.layer.borderColor  = UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 0.6).cgColor
-        doneBtn.frame = CGRect(x: w - 110, y: topInset + 12, width: 94, height: 44)
+        doneBtn.frame = CGRect(x: w - 110, y: topInset, width: 94, height: 44)
         doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
         view.addSubview(doneBtn)
-    }
-
-    private func circleButton(title: String, color: UIColor) -> UIButton {
-        let btn = UIButton(type: .system)
-        btn.setTitle(title, for: .normal)
-        btn.tintColor = color
-        btn.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
-        btn.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        btn.layer.cornerRadius = 22
-        return btn
     }
 
     @objc private func closeTapped() {
@@ -190,7 +251,6 @@ class RoomPlanViewController: UIViewController {
 @available(iOS 16.0, *)
 extension RoomPlanViewController: RoomCaptureSessionDelegate {
 
-    // Llamado al finalizar el escaneo
     func captureSession(_ session: RoomCaptureSession,
                         didEndWith data: CapturedRoomData,
                         error: Error?) {
@@ -201,10 +261,15 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             return
         }
 
-        // Procesar con RoomBuilder para obtener el modelo final
         Task {
             do {
                 let room = try await RoomBuilder(options: []).capturedRoom(from: data)
+
+                // Exportar USDZ al directorio temporal
+                let usdzUrl = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("mi-render-scan.usdz")
+                try? room.export(to: usdzUrl, exportOptions: .parametric)
+
                 let result = self.buildResult(from: room)
                 await MainActor.run {
                     self.dismiss(animated: true) { [weak self] in
@@ -221,49 +286,107 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
     }
 
-    // ── Convertir CapturedRoom → JSON ─────────────────────────────────────────
+    // ── CapturedRoom → JSON con posiciones para plano 2D ─────────────────────
     private func buildResult(from room: CapturedRoom) -> [String: Any] {
 
-        // Área del suelo (floors disponible en iOS 17+)
-        var floorArea = Float(0)
+        // Área del suelo
+        var floorArea  = Float(0)
+        var wallArea   = Float(0)
+        var totalVolume = Float(0)
+        var perimeter  = Float(0)
+
         if #available(iOS 17.0, *) {
-            floorArea = room.floors.reduce(Float(0)) { acc, floor in
-                acc + floor.dimensions.x * floor.dimensions.z
+            floorArea = room.floors.reduce(Float(0)) { acc, f in
+                acc + f.dimensions.x * f.dimensions.z
             }
         }
-        // iOS 16: estimar área desde paredes (perímetro aproximado)
         if floorArea == 0 && !room.walls.isEmpty {
-            let widths  = room.walls.map { $0.dimensions.x }
-            let maxW    = widths.max() ?? 0
-            let maxL    = widths.sorted().dropLast().last ?? maxW
-            floorArea   = maxW * maxL
+            let widths = room.walls.map { $0.dimensions.x }
+            let maxW   = widths.max() ?? 0
+            let maxL   = widths.sorted().dropLast().last ?? maxW
+            floorArea  = maxW * maxL
         }
 
-        // Paredes
+        // Paredes — incluye posición y ángulo para renderizar plano 2D
         let walls: [[String: Any]] = room.walls.map { wall in
-            [
-                "width":      wall.dimensions.x,
-                "height":     wall.dimensions.y,
+            let t = wall.transform
+            wallArea += wall.dimensions.x * wall.dimensions.y
+            perimeter += wall.dimensions.x
+            return [
+                "width":      Double(wall.dimensions.x),
+                "height":     Double(wall.dimensions.y),
+                "depth":      Double(wall.dimensions.z),
                 "confidence": confidenceString(wall.confidence),
+                "posX":       Double(t.columns.3.x),
+                "posY":       Double(t.columns.3.y),
+                "posZ":       Double(t.columns.3.z),
+                "angle":      Double(atan2(t.columns.0.z, t.columns.0.x)),
             ]
         }
 
-        // Puertas y ventanas
-        let doors: [[String: Any]] = room.doors.map { d in
-            ["width": d.dimensions.x, "height": d.dimensions.y]
-        }
+        // Altura media de habitación
+        let avgHeight = room.walls.isEmpty ? Float(2.5) :
+            room.walls.map { $0.dimensions.y }.reduce(0, +) / Float(room.walls.count)
+        totalVolume = floorArea * avgHeight
+
+        // Ventanas
         let windows: [[String: Any]] = room.windows.map { w in
-            ["width": w.dimensions.x, "height": w.dimensions.y]
+            let t = w.transform
+            return [
+                "width":  Double(w.dimensions.x),
+                "height": Double(w.dimensions.y),
+                "posX":   Double(t.columns.3.x),
+                "posY":   Double(t.columns.3.y),
+                "posZ":   Double(t.columns.3.z),
+                "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
+            ]
+        }
+        let windowArea = room.windows.reduce(Float(0)) { $0 + Float($1.dimensions.x * $1.dimensions.y) }
+
+        // Puertas
+        let doors: [[String: Any]] = room.doors.map { d in
+            let t = d.transform
+            return [
+                "width":  Double(d.dimensions.x),
+                "height": Double(d.dimensions.y),
+                "posX":   Double(t.columns.3.x),
+                "posY":   Double(t.columns.3.y),
+                "posZ":   Double(t.columns.3.z),
+                "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
+                "isOpen": d.isOpen,
+            ]
+        }
+
+        // Aberturas (openings)
+        let openings: [[String: Any]] = room.openings.map { o in
+            let t = o.transform
+            return [
+                "width":  Double(o.dimensions.x),
+                "height": Double(o.dimensions.y),
+                "posX":   Double(t.columns.3.x),
+                "posZ":   Double(t.columns.3.z),
+                "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
+            ]
         }
 
         return [
-            "floorArea":  floorArea,
-            "walls":      walls,
-            "wallCount":  room.walls.count,
-            "doors":      doors,
-            "windows":    windows,
-            "scanMode":   "roomplan",
-            "confidence": "high",
+            "floorArea":   Double(floorArea),
+            "wallArea":    Double(wallArea),
+            "windowArea":  Double(windowArea),
+            "totalVolume": Double(totalVolume),
+            "perimeter":   Double(perimeter),
+            "avgHeight":   Double(avgHeight),
+            "walls":       walls,
+            "wallCount":   room.walls.count,
+            "doors":       doors,
+            "windows":     windows,
+            "openings":    openings,
+            "scanMode":    "roomplan",
+            "confidence":  "high",
+            "usdzExported": FileManager.default.fileExists(
+                atPath: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("mi-render-scan.usdz").path
+            ),
         ]
     }
 
@@ -277,18 +400,16 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
     }
 }
 
-// ── ObjectScan ViewController (ARKit Scene Reconstruction .mesh) ──────────────
+// ── ObjectScan ViewController (ARKit .mesh) ───────────────────────────────────
 class ObjectScanViewController: UIViewController, ARSessionDelegate {
 
     var onResult: (([String: Any]?) -> Void)?
 
-    private var arView:   ARSCNView!
-    private var session:  ARSession { arView.session }
+    private var arView:      ARSCNView!
     private var meshAnchors: [ARMeshAnchor] = []
-    private var scanTimer: Timer?
+    private var scanTimer:   Timer?
     private var isProcessing = false
 
-    // UI
     private var progressLabel: UILabel!
     private var captureBtn:    UIButton!
     private var closeBtn:      UIButton!
@@ -296,24 +417,26 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-
-        // AR Scene View con mesh reconstruction
         arView = ARSCNView(frame: view.bounds)
         arView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         arView.session.delegate = self
-        view.addSubview(arView)
 
+        // Mostrar wireframe de malla en tiempo real
+        arView.debugOptions = [.showSceneUnderstanding]
+        view.addSubview(arView)
         setupUI()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        UIApplication.shared.isIdleTimerDisabled = true
         startARSession()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        session.pause()
+        UIApplication.shared.isIdleTimerDisabled = false
+        arView.session.pause()
         scanTimer?.invalidate()
     }
 
@@ -324,9 +447,7 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
             config.frameSemantics = .sceneDepth
         }
-        session.run(config, options: [.resetTracking, .removeExistingAnchors])
-
-        // Auto-capture después de 15 segundos si el usuario no pulsa
+        arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
         scanTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
             self?.finalizeScan()
         }
@@ -336,30 +457,27 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
         let topInset = max(view.safeAreaInsets.top, 44)
         let w = view.bounds.width
 
-        // Instrucción
         progressLabel = UILabel()
         progressLabel.text = "Mueve el iPhone alrededor del objeto"
         progressLabel.textColor = .white
-        progressLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        progressLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         progressLabel.textAlignment = .center
         progressLabel.backgroundColor = UIColor.black.withAlphaComponent(0.65)
         progressLabel.layer.cornerRadius = 16
         progressLabel.clipsToBounds = true
-        progressLabel.frame = CGRect(x: (w-280)/2, y: topInset + 12, width: 280, height: 36)
+        progressLabel.frame = CGRect(x: (w-280)/2, y: topInset + 8, width: 280, height: 36)
         view.addSubview(progressLabel)
 
-        // Cerrar
         closeBtn = UIButton(type: .system)
         closeBtn.setTitle("✕", for: .normal)
         closeBtn.tintColor = .white
         closeBtn.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
         closeBtn.backgroundColor = UIColor.black.withAlphaComponent(0.6)
         closeBtn.layer.cornerRadius = 22
-        closeBtn.frame = CGRect(x: 16, y: topInset + 12, width: 44, height: 44)
+        closeBtn.frame = CGRect(x: 16, y: topInset + 8, width: 44, height: 44)
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
-        // Botón captura
         captureBtn = UIButton(type: .system)
         captureBtn.setTitle("✓  Capturar objeto", for: .normal)
         captureBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
@@ -375,31 +493,26 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
     }
 
     @objc private func closeTapped() {
-        session.pause()
+        arView.session.pause()
         scanTimer?.invalidate()
         dismiss(animated: true) { [weak self] in self?.onResult?(nil) }
     }
 
-    @objc private func captureTapped() {
-        finalizeScan()
-    }
+    @objc private func captureTapped() { finalizeScan() }
 
     private func finalizeScan() {
         guard !isProcessing else { return }
         isProcessing = true
         scanTimer?.invalidate()
-
         DispatchQueue.main.async {
             self.progressLabel.text = "Procesando malla 3D…"
             self.captureBtn.isEnabled = false
         }
-
-        // Recopilar datos de malla de ARMeshAnchor
         let anchors = meshAnchors
         DispatchQueue.global(qos: .userInitiated).async {
             let result = self.buildMeshResult(from: anchors)
             DispatchQueue.main.async {
-                self.session.pause()
+                self.arView.session.pause()
                 self.dismiss(animated: true) { [weak self] in
                     self?.onResult?(result)
                 }
@@ -407,41 +520,30 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
         }
     }
 
-    // ── ARSessionDelegate ─────────────────────────────────────────────────────
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
         let meshes = anchors.compactMap { $0 as? ARMeshAnchor }
-        if !meshes.isEmpty {
-            meshAnchors.append(contentsOf: meshes)
-            updateProgressLabel()
-        }
+        if !meshes.isEmpty { meshAnchors.append(contentsOf: meshes); updateLabel() }
     }
-
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
         for anchor in anchors.compactMap({ $0 as? ARMeshAnchor }) {
             if let idx = meshAnchors.firstIndex(where: { $0.identifier == anchor.identifier }) {
                 meshAnchors[idx] = anchor
             }
         }
-        updateProgressLabel()
+        updateLabel()
     }
 
-    private func updateProgressLabel() {
-        let totalFaces = meshAnchors.reduce(0) { $0 + $1.geometry.faces.count }
+    private func updateLabel() {
+        let faces = meshAnchors.reduce(0) { $0 + $1.geometry.faces.count }
         DispatchQueue.main.async {
-            if totalFaces < 500 {
-                self.progressLabel.text = "Mueve alrededor del objeto…"
-            } else if totalFaces < 2000 {
-                self.progressLabel.text = "Buen progreso — sigue escaneando"
-            } else {
-                self.progressLabel.text = "Listo para capturar ✓"
-            }
+            self.progressLabel.text = faces < 500 ? "Mueve alrededor del objeto…"
+                : faces < 2000 ? "Buen progreso — sigue escaneando"
+                : "Listo para capturar ✓"
         }
     }
 
-    // ── Construir resultado desde mallas ARKit ────────────────────────────────
     private func buildMeshResult(from anchors: [ARMeshAnchor]) -> [String: Any] {
-        var totalFaces    = 0
-        var totalVertices = 0
+        var totalFaces = 0, totalVertices = 0
         var minX = Float.infinity, minY = Float.infinity, minZ = Float.infinity
         var maxX = -Float.infinity, maxY = -Float.infinity, maxZ = -Float.infinity
 
@@ -449,40 +551,27 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
             let geo = anchor.geometry
             totalFaces    += geo.faces.count
             totalVertices += geo.vertices.count
-
-            // Calcular bounding box en coordenadas mundo
             let transform = anchor.transform
             let vBuf = geo.vertices
-            let stride = vBuf.stride
-            let count  = vBuf.count
-
-            for i in 0..<count {
-                let offset = i * stride
-                let ptr = vBuf.buffer.contents().advanced(by: vBuf.offset + offset)
+            for i in 0..<vBuf.count {
+                let ptr = vBuf.buffer.contents()
+                    .advanced(by: vBuf.offset + i * vBuf.stride)
                     .assumingMemoryBound(to: Float.self)
-                let lx = ptr[0], ly = ptr[1], lz = ptr[2]
-                let world = transform * simd_float4(lx, ly, lz, 1)
-                minX = min(minX, world.x); maxX = max(maxX, world.x)
-                minY = min(minY, world.y); maxY = max(maxY, world.y)
-                minZ = min(minZ, world.z); maxZ = max(maxZ, world.z)
+                let w = transform * simd_float4(ptr[0], ptr[1], ptr[2], 1)
+                minX = min(minX, w.x); maxX = max(maxX, w.x)
+                minY = min(minY, w.y); maxY = max(maxY, w.y)
+                minZ = min(minZ, w.z); maxZ = max(maxZ, w.z)
             }
         }
 
-        let width  = maxX - minX
-        let height = maxY - minY
-        let depth  = maxZ - minZ
-
+        let width = maxX - minX, height = maxY - minY, depth = maxZ - minZ
         return [
             "scanMode":     "object-mesh",
             "meshFaces":    totalFaces,
             "meshVertices": totalVertices,
             "anchorCount":  anchors.count,
-            "boundingBox": [
-                "width":  width,
-                "height": height,
-                "depth":  depth,
-            ],
-            "dimensions": String(format: "%.2f m × %.2f m × %.2f m", width, height, depth),
+            "boundingBox":  ["width": Double(width), "height": Double(height), "depth": Double(depth)],
+            "dimensions":   String(format: "%.2f m × %.2f m × %.2f m", width, height, depth),
             "confidence":   totalFaces > 2000 ? "high" : totalFaces > 500 ? "medium" : "low",
         ]
     }

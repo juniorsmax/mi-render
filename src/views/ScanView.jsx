@@ -4,6 +4,7 @@ import { shoelace } from '../lib/shoelace'
 import { sanitizeNumber, sanitizeName } from '../lib/security'
 import { getScanMode, SCAN_MODE_LABELS, startLiDARScan, startObjectScan } from '../lib/lidar'
 import { Icon } from '../components/Icon.jsx'
+import { ScanExport } from '../components/ScanExport.jsx'
 import './ScanView.css'
 
 /**
@@ -290,10 +291,10 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   }
 
   // ════════════════════════════════════════════════════
-  // STEP: result — resultados del escaneo LiDAR
+  // STEP: result — resultados del escaneo LiDAR (plano + stats + export)
   // ════════════════════════════════════════════════════
   if (step === 'result' && scanResult) {
-    return <LiDARResult
+    return <ScanExport
       result={scanResult}
       onAccept={() => onComplete(scanResult)}
       onRescan={() => { setScanResult(null); setStep('permission') }}
@@ -424,96 +425,6 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   }
 
   return null
-}
-
-// ── Pantalla de resultados LiDAR ───────────────────────────────────────────────
-function LiDARResult({ result, onAccept, onRescan }) {
-  const isRoom   = result.scanMode === 'lidar-native'
-  const isObject = result.scanMode === 'object-mesh'
-
-  const confidenceColor = {
-    high:   '#2dd4bf',
-    medium: '#f0a500',
-    low:    '#ef4444',
-  }[result.confidence] ?? '#6b7280'
-
-  return (
-    <div className="scan-start-root">
-      <div className="scan-start-content safe-top safe-bottom">
-        <div className="scan-icon" style={{ background: 'rgba(45,212,191,0.1)', borderColor: 'rgba(45,212,191,0.25)' }}>
-          <Icon name={isObject ? 'model3d' : 'plan'} size={38} style={{ color: '#2dd4bf' }} />
-        </div>
-
-        <div>
-          <h2>{isObject ? 'Objeto escaneado' : 'Habitación escaneada'}</h2>
-          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center', gap: 8 }}>
-            <span className="scan-mode-badge"
-              style={{ color: '#2dd4bf', borderColor: '#2dd4bf66', background: '#2dd4bf11' }}>
-              <Icon name="lidar" size={13} /> LiDAR · Alta precisión
-            </span>
-            <span className="scan-mode-badge"
-              style={{ color: confidenceColor, borderColor: confidenceColor+'66', background: confidenceColor+'11' }}>
-              Confianza: {result.confidence}
-            </span>
-          </div>
-        </div>
-
-        <div className="glass" style={{ width: '100%', padding: '20px', borderRadius: 'var(--r-lg)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {isRoom && (
-            <>
-              <ResultRow icon="plan" label="Superficie"
-                value={result.areaSqM ? `${result.areaSqM.toFixed(2)} m²` : 'N/D'} accent />
-              <ResultRow icon="scan" label="Paredes"    value={`${result.wallCount ?? result.walls?.length ?? 0}`} />
-              <ResultRow icon="door" label="Puertas"    value={`${result.doors?.length ?? 0}`} />
-              <ResultRow icon="window" label="Ventanas" value={`${result.windows?.length ?? 0}`} />
-            </>
-          )}
-          {isObject && (
-            <>
-              <ResultRow icon="model3d" label="Dimensiones" value={result.dimensions || 'N/D'} accent />
-              <ResultRow icon="scan" label="Caras de malla" value={result.meshFaces?.toLocaleString() ?? '0'} />
-              <ResultRow icon="scan" label="Vértices"       value={result.meshVertices?.toLocaleString() ?? '0'} />
-              {result.boundingBox && (
-                <>
-                  <ResultRow label="Ancho"  value={`${(result.boundingBox.width  ?? 0).toFixed(2)} m`} />
-                  <ResultRow label="Alto"   value={`${(result.boundingBox.height ?? 0).toFixed(2)} m`} />
-                  <ResultRow label="Fondo"  value={`${(result.boundingBox.depth  ?? 0).toFixed(2)} m`} />
-                </>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="scan-actions">
-          <button className="btn btn-primary btn-lg" onClick={onAccept}>
-            <Icon name="check" size={18} /> Usar estos datos
-          </button>
-          <button className="btn btn-ghost" onClick={onRescan}>
-            <Icon name="scan" size={16} /> Re-escanear
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ResultRow({ icon, label, value, accent }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontSize: 14, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-        {icon && <Icon name={icon} size={15} />}
-        {label}
-      </span>
-      <span style={{
-        fontSize: accent ? '1.3rem' : 14,
-        fontWeight: accent ? 700 : 500,
-        color: accent ? 'var(--accent)' : 'var(--text-strong)',
-        fontFamily: accent ? 'var(--font-mono)' : 'inherit',
-      }}>
-        {value}
-      </span>
-    </div>
-  )
 }
 
 // ── Modal de consejos ──────────────────────────────────────────────────────────
