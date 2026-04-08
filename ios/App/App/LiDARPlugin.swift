@@ -353,7 +353,7 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
                 "posY":   Double(t.columns.3.y),
                 "posZ":   Double(t.columns.3.z),
                 "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
-                "isOpen": d.isOpen,
+                "isOpen": false,
             ]
         }
 
@@ -421,8 +421,6 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
         arView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         arView.session.delegate = self
 
-        // Mostrar wireframe de malla en tiempo real
-        arView.debugOptions = [.showSceneUnderstanding]
         view.addSubview(arView)
         setupUI()
     }
