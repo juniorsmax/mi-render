@@ -44,9 +44,8 @@ class RoomPlanManager: NSObject {
 
     // MARK: - Datos de la habitación
 
-    func roomData() -> RoomData? {
-        guard let room = lastCapturedRoom else { return nil }
-        return RoomData(from: room)
+    func roomData() -> CapturedRoom? {
+        return lastCapturedRoom
     }
 }
 
@@ -79,54 +78,5 @@ extension RoomPlanManager: RoomCaptureSessionDelegate {
     }
 }
 
-// MARK: - Modelo de datos extraído de CapturedRoom
-
-@available(iOS 16.0, *)
-struct RoomData {
-
-    let areaSqM: Float
-    let perimeterM: Float
-    let walls: [WallData]
-    let doors: [OpeningData]
-    let windows: [OpeningData]
-
-    init(from room: CapturedRoom) {
-
-        var perimeter: Float = 0
-        var wallsData: [WallData] = []
-
-        for wall in room.walls {
-            let w = wall.dimensions.x
-            let h = wall.dimensions.y
-            perimeter += w
-            wallsData.append(WallData(
-                width:  w,
-                height: h,
-                transform: wall.transform
-            ))
-        }
-
-        var area: Float = 0
-        if let maxWall = room.walls.max(by: { $0.dimensions.x < $1.dimensions.x }),
-           let perpWall = room.walls.max(by: { $0.dimensions.z < $1.dimensions.z }) {
-            area = maxWall.dimensions.x * perpWall.dimensions.z
-        }
-
-        self.areaSqM    = area
-        self.perimeterM = perimeter
-        self.walls      = wallsData
-        self.doors      = room.doors.map   { OpeningData(dimensions: $0.dimensions, transform: $0.transform) }
-        self.windows    = room.windows.map { OpeningData(dimensions: $0.dimensions, transform: $0.transform) }
-    }
-}
-
-struct WallData {
-    let width: Float
-    let height: Float
-    let transform: simd_float4x4
-}
-
-struct OpeningData {
-    let dimensions: simd_float3
-    let transform: simd_float4x4
-}
+// Métricas calculadas exclusivamente en RoomPlanViewController.buildResult()
+// RoomPlanManager actúa solo como almacenamiento de CapturedRoom.

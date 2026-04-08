@@ -195,6 +195,56 @@ export async function exportSTL(name = 'mi-render-mesh') {
   return callNative('exportSTL', { name })
 }
 
+/**
+ * Exporta la malla 3D capturada como archivo DAE (Collada)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportDAE(name = 'mi-render-mesh') {
+  return callNative('exportDAE', { name })
+}
+
+/**
+ * Exporta el plano de la habitación como archivo SVG vectorial
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportSVG(name = 'mi-render-plan') {
+  return callNative('exportSVG', { name })
+}
+
+/**
+ * Exporta el plano de la habitación como PDF arquitectónico A4
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportPDF(name = 'mi-render-plan') {
+  return callNative('exportPDF', { name })
+}
+
+/**
+ * Exporta la malla 3D capturada como archivo GLTF (web 3D estándar)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportGLTF(name = 'mi-render-mesh') {
+  return callNative('exportGLTF', { name })
+}
+
+/**
+ * Exporta la malla 3D capturada como archivo GLB (GLTF binario)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportGLB(name = 'mi-render-mesh') {
+  return callNative('exportGLB', { name })
+}
+
+/**
+ * Exporta el escaneo completo en todos los formatos disponibles
+ * OBJ, PLY, STL, USDZ, DAE, DXF, SVG, PDF, GLTF, GLB
+ * @param {string} name — prefijo para todos los archivos
+ * @returns {{ files: Array<{path, format}>, count: number }}
+ */
+export async function exportAllFormats(name = 'mi-render-export') {
+  return callNative('exportAllFormats', { name })
+}
+
 // ── Etiquetas para UI ─────────────────────────────────────────────────────────
 
 export const SCAN_MODE_LABELS = {
