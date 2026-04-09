@@ -155,7 +155,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
     const scale    = d / pixelDist
     const pixelArea = shoelace(corners.map((p) => ({ x: p.x, z: p.y })))
     const areaSqM  = parseFloat((pixelArea * scale * scale).toFixed(2))
-    onComplete({ areaSqM, points: corners, scanMode: 'camera' })
+    onComplete({ floorArea: areaSqM, areaSqM, points: corners, scanMode: 'camera' })
   }
 
   const modeInfo = scanMode ? SCAN_MODE_LABELS[scanMode] : null
@@ -483,7 +483,8 @@ function ManualForm({ onComplete, onBack }) {
   function handleSubmit(e) {
     e.preventDefault()
     if (!computed) return
-    onComplete({ areaSqM: parseFloat(computed), roomName: sanitizeName(roomName)||'Habitación', dimensions:`${w} m × ${l} m`, scanMode:'manual' })
+    const area = parseFloat(computed)
+    onComplete({ floorArea: area, areaSqM: area, roomName: sanitizeName(roomName)||'Habitación', dimensions:`${w} m × ${l} m`, scanMode:'manual' })
   }
 
   return (

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { FloorPlan } from './FloorPlan'
 import { Icon } from './Icon'
 import { Capacitor } from '@capacitor/core'
-import { exportOBJ, exportPLY, exportSTL, saveWorldMap } from '../lib/lidar'
+import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative } from '../lib/lidar'
 import './ScanExport.css'
 
 /**
@@ -123,7 +123,8 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
       return
     }
     try {
-      await Capacitor.nativePromise('LiDARPlugin', 'exportUSDZ', {})
+      const name = projectName.replace(/\s+/g, '-').toLowerCase()
+      await exportUSDZNative(name)
     } catch (err) {
       console.error('Error exportando USDZ:', err)
     }

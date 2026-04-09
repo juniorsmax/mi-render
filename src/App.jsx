@@ -42,9 +42,9 @@ export default function App() {
     const newProject = {
       id: Date.now(),
       name: scannedRoom?.roomName || 'Proyecto ' + (projects.length + 1),
-      areaSqM: scannedRoom?.areaSqM,
+      areaSqM: scannedRoom?.floorArea ?? scannedRoom?.areaSqM ?? 0,
       date: new Date().toLocaleDateString('es-ES'),
-      type: scannedRoom?.dimensions ? 'manual' : 'scan',
+      type: scannedRoom?.scanMode === 'manual' ? 'manual' : 'scan',
     }
     setProjects((p) => [newProject, ...p])
     setFlow(null)

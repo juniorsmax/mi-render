@@ -202,6 +202,22 @@ export async function exportSTL(name = 'mi-render-mesh') {
 }
 
 /**
+ * Exporta el último escaneo RoomPlan como USDZ (AR QuickLook)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportUSDZ(name = 'mi-render-scan') {
+  return callNative('exportUSDZ', { name })
+}
+
+/**
+ * Exporta el plano de la habitación como archivo DXF (AutoCAD)
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportDXF(name = 'mi-render-plan') {
+  return callNative('exportDXF', { name })
+}
+
+/**
  * Exporta la malla 3D capturada como archivo DAE (Collada)
  * @param {string} name — nombre del archivo (sin extensión)
  */
