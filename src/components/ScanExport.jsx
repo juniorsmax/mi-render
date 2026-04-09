@@ -339,6 +339,31 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           )}
         </div>
 
+        {/* Exportar todo */}
+        {Capacitor.isNativePlatform() && (
+          <div style={{ padding: '0 14px' }}>
+            <button
+              className="export-btn accent"
+              style={{ width: '100%' }}
+              onClick={async () => {
+                try {
+                  const name = projectName.replace(/\s+/g, '-').toLowerCase()
+                  await exportAllFormats(name)
+                  alert('Todos los formatos exportados a Documents/Exports')
+                } catch (err) {
+                  console.error('exportAllFormats error:', err)
+                }
+              }}
+            >
+              <div className="export-btn-icon">ALL</div>
+              <div>
+                <div className="export-btn-label">Exportar todos los formatos</div>
+                <div className="export-btn-sub">OBJ · PLY · STL · USDZ · DAE · DXF · SVG · PDF · GLTF · GLB</div>
+              </div>
+            </button>
+          </div>
+        )}
+
         {/* Acciones principales */}
         <div className="scan-export-main-actions">
           <button className="btn btn-primary btn-lg" onClick={onAccept}>

@@ -27,6 +27,37 @@ function defaultServices(areaSqM) {
   ]
 }
 
+// Materiales y mobiliario predefinidos
+const MATERIAL_CATALOG = [
+  { description: 'Pintura interior (bote 15L)', unit: 'ud', unitPrice: 42, category: 'material' },
+  { description: 'Rodillo + bandeja', unit: 'set', unitPrice: 12, category: 'herramienta' },
+  { description: 'Cinta de carrocero', unit: 'ud', unitPrice: 4, category: 'material' },
+  { description: 'Plástico protector suelo', unit: 'm²', unitPrice: 0.8, category: 'material' },
+  { description: 'Imprimación selladora', unit: 'm²', unitPrice: 3.5, category: 'material' },
+  { description: 'Masilla para grietas', unit: 'ud', unitPrice: 8, category: 'material' },
+  { description: 'Lija de pared', unit: 'ud', unitPrice: 2, category: 'herramienta' },
+]
+
+const FURNITURE_CATALOG = [
+  { description: 'Sofá 3 plazas', unit: 'ud', unitPrice: 650, category: 'mobiliario' },
+  { description: 'Mesa de comedor', unit: 'ud', unitPrice: 320, category: 'mobiliario' },
+  { description: 'Silla', unit: 'ud', unitPrice: 85, category: 'mobiliario' },
+  { description: 'Armario (por módulo)', unit: 'ud', unitPrice: 280, category: 'mobiliario' },
+  { description: 'Cama 150×200', unit: 'ud', unitPrice: 420, category: 'mobiliario' },
+  { description: 'Mesita de noche', unit: 'ud', unitPrice: 95, category: 'mobiliario' },
+  { description: 'Escritorio', unit: 'ud', unitPrice: 180, category: 'mobiliario' },
+  { description: 'Luminaria de techo', unit: 'ud', unitPrice: 120, category: 'mobiliario' },
+  { description: 'Persiana/cortina', unit: 'ud', unitPrice: 75, category: 'mobiliario' },
+]
+
+function defaultMaterials(areaSqM) {
+  const litros = Math.ceil(areaSqM / 12) // 1 bote 15L cubre ~12m² con 2 manos
+  return [
+    newService({ description: 'Pintura interior (bote 15L)', unit: 'ud', unitPrice: 42, quantity: litros }),
+    newService({ description: 'Plástico protector suelo', unit: 'm²', unitPrice: 0.8, quantity: areaSqM }),
+  ]
+}
+
 export function BudgetView({ room, onRescan, onDone }) {
   const [company, setCompany] = useState('Zerbitecni')
   const [clientName, setClientName] = useState('')
@@ -35,12 +66,16 @@ export function BudgetView({ room, onRescan, onDone }) {
   const defaultArea = room?.floorArea ?? room?.areaSqM ?? 0
   const [areaSqM, setAreaSqM] = useState(defaultArea)
   const [services, setServices] = useState(() => defaultServices(defaultArea))
+  const [materials, setMaterials] = useState(() => defaultMaterials(defaultArea))
+  const [furniture, setFurniture] = useState([])
+  const [showMatCatalog, setShowMatCatalog]  = useState(false)
+  const [showFurnCatalog, setShowFurnCatalog] = useState(false)
   const [taxRate, setTaxRate] = useState(21)
   const [date, setDate] = useState(new Date().toLocaleDateString('es-ES'))
 
   const subtotalBeforeTax = useMemo(
-    () => services.reduce((s, r) => s + r.quantity * r.unitPrice, 0),
-    [services]
+    () => [...services, ...materials, ...furniture].reduce((s, r) => s + r.quantity * r.unitPrice, 0),
+    [services, materials, furniture]
   )
   const taxAmount = subtotalBeforeTax * (taxRate / 100)
   const total = subtotalBeforeTax + taxAmount
@@ -61,9 +96,21 @@ export function BudgetView({ room, onRescan, onDone }) {
     return {
       company, clientName, roomName, dimensions,
       areaSqM: parseFloat(areaSqM) || 0,
-      services, taxRate,
+      services, materials, furniture,
+      allRows: [...services, ...materials, ...furniture],
+      taxRate,
       subtotalBeforeTax, taxAmount, total, date,
     }
+  }
+
+  function addMaterialFromCatalog(item) {
+    setMaterials(prev => [...prev, newService({ ...item, quantity: item.unit === 'm²' ? defaultArea : 1 })])
+    setShowMatCatalog(false)
+  }
+
+  function addFurnitureFromCatalog(item) {
+    setFurniture(prev => [...prev, newService({ ...item, quantity: 1 })])
+    setShowFurnCatalog(false)
   }
 
   function money(n) {
@@ -194,6 +241,82 @@ export function BudgetView({ room, onRescan, onDone }) {
               <span>Total</span>
               <span className="text-mono text-accent">{money(total)}</span>
             </div>
+          </div>
+        </div>
+
+        {/* ── Materiales ────────────────────────────── */}
+        <div className="glass budget-services-section">
+          <div className="budget-services-header">
+            <h3>Materiales</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowMatCatalog(v => !v)} type="button">
+                + Catálogo
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setMaterials(prev => [...prev, newService({ unit: 'ud' })])} type="button">
+                + Manual
+              </button>
+            </div>
+          </div>
+          {showMatCatalog && (
+            <div style={{ padding: '8px 0', display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 8, paddingRight: 8 }}>
+              {MATERIAL_CATALOG.map((item, i) => (
+                <button key={i} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => addMaterialFromCatalog(item)}>
+                  + {item.description}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="divider" />
+          <div className="budget-table-wrapper">
+            <table className="budget-table">
+              <thead><tr><th>Descripción</th><th>Unidad</th><th>Precio u.</th><th>Cant.</th><th style={{ textAlign: 'right' }}>Subtotal</th><th></th></tr></thead>
+              <tbody>
+                {materials.map((s) => (
+                  <ServiceRow key={s.id} service={s}
+                    onChange={(u) => setMaterials(prev => prev.map(r => r.id === s.id ? u : r))}
+                    onRemove={() => setMaterials(prev => prev.filter(r => r.id !== s.id))} />
+                ))}
+                {materials.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'rgba(150,130,100,0.5)', fontSize: 12, padding: 12 }}>Sin materiales — añade desde catálogo</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ── Mobiliario ────────────────────────────── */}
+        <div className="glass budget-services-section">
+          <div className="budget-services-header">
+            <h3>Mobiliario y equipamiento</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowFurnCatalog(v => !v)} type="button">
+                + Catálogo
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setFurniture(prev => [...prev, newService({ unit: 'ud' })])} type="button">
+                + Manual
+              </button>
+            </div>
+          </div>
+          {showFurnCatalog && (
+            <div style={{ padding: '8px 0', display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 8, paddingRight: 8 }}>
+              {FURNITURE_CATALOG.map((item, i) => (
+                <button key={i} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => addFurnitureFromCatalog(item)}>
+                  + {item.description}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="divider" />
+          <div className="budget-table-wrapper">
+            <table className="budget-table">
+              <thead><tr><th>Descripción</th><th>Unidad</th><th>Precio u.</th><th>Cant.</th><th style={{ textAlign: 'right' }}>Subtotal</th><th></th></tr></thead>
+              <tbody>
+                {furniture.map((s) => (
+                  <ServiceRow key={s.id} service={s}
+                    onChange={(u) => setFurniture(prev => prev.map(r => r.id === s.id ? u : r))}
+                    onRemove={() => setFurniture(prev => prev.filter(r => r.id !== s.id))} />
+                ))}
+                {furniture.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'rgba(150,130,100,0.5)', fontSize: 12, padding: 12 }}>Sin mobiliario — añade desde catálogo</td></tr>}
+              </tbody>
+            </table>
           </div>
         </div>
 
