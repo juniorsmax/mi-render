@@ -134,7 +134,7 @@ input, select, textarea {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   color: var(--text-strong);
-  font: 14px var(--font);
+  font: 16px var(--font);
   padding: 9px 12px;
   width: 100%;
   transition: border-color var(--ease);

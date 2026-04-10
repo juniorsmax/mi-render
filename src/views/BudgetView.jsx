@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { ServiceRow } from '../components/ServiceRow'
 import { ExportButtons } from '../components/ExportButtons'
+import { RenovationPicker } from '../components/RenovationPicker'
 // Lazy imports to keep initial bundle small
 async function exportWord(data) { const m = await import('../lib/exportWord'); return m.exportWord(data) }
 async function exportPdf(data)  { const m = await import('../lib/exportPdf');  return m.exportPdf(data)  }
@@ -68,8 +69,9 @@ export function BudgetView({ room, initialData, onRescan, onDone }) {
   const [services, setServices]   = useState(() => initialData?.services   || defaultServices(defaultArea))
   const [materials, setMaterials] = useState(() => initialData?.materials  || defaultMaterials(defaultArea))
   const [furniture, setFurniture] = useState(() => initialData?.furniture  || [])
-  const [showMatCatalog, setShowMatCatalog]   = useState(false)
-  const [showFurnCatalog, setShowFurnCatalog] = useState(false)
+  const [showMatCatalog, setShowMatCatalog]     = useState(false)
+  const [showFurnCatalog, setShowFurnCatalog]   = useState(false)
+  const [showRenovPicker, setShowRenovPicker]   = useState(false)
   const [taxRate, setTaxRate] = useState(initialData?.taxRate ?? 21)
   const [date, setDate]       = useState(initialData?.date    || new Date().toLocaleDateString('es-ES'))
 
@@ -196,9 +198,19 @@ export function BudgetView({ room, initialData, onRescan, onDone }) {
         <div className="glass budget-services-section">
           <div className="budget-services-header">
             <h3>Partidas</h3>
-            <button className="btn btn-ghost btn-sm" onClick={addService} type="button">
-              + Añadir
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--accent)', borderColor: 'rgba(240,165,0,0.3)', fontSize: 12 }}
+                onClick={() => setShowRenovPicker(true)}
+                type="button"
+              >
+                🏗️ Reforma
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={addService} type="button">
+                + Manual
+              </button>
+            </div>
           </div>
           <div className="divider" />
           <div className="budget-table-wrapper">
@@ -343,6 +355,17 @@ export function BudgetView({ room, initialData, onRescan, onDone }) {
           Generado con mi-render · Zerbitecni
         </p>
       </div>
+
+      {showRenovPicker && (
+        <RenovationPicker
+          areaSqM={parseFloat(areaSqM) || 0}
+          onAdd={(item) => {
+            setServices(prev => [...prev, { id: _nextId++, ...item }])
+            setShowRenovPicker(false)
+          }}
+          onClose={() => setShowRenovPicker(false)}
+        />
+      )}
     </div>
   )
 }
