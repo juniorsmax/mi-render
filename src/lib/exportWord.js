@@ -19,9 +19,25 @@ function money(n) {
   return n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 }
 
+async function shareOrSave(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename })
+  } else {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+}
+
 export async function exportWord(budgetData) {
-  const { roomName, dimensions, areaSqM, services, taxRate,
+  const { roomName, dimensions, areaSqM, allRows, services, taxRate,
     subtotalBeforeTax, taxAmount, total, company, clientName, date } = budgetData
+
+  const rows = allRows ?? services ?? []
 
   const headerRows = [
     new TableRow({
@@ -35,7 +51,7 @@ export async function exportWord(budgetData) {
     }),
   ]
 
-  const serviceRows = services.map((s) =>
+  const serviceRows = rows.map((s) =>
     new TableRow({
       children: [
         cell(s.description, { width: 40 }),
@@ -103,7 +119,7 @@ export async function exportWord(budgetData) {
             new TextRun({ text: `     Dimensiones: `, bold: true }),
             new TextRun({ text: dimensions || '—' }),
             new TextRun({ text: `     Superficie: `, bold: true }),
-            new TextRun({ text: `${areaSqM.toFixed(2)} m²` }),
+            new TextRun({ text: `${parseFloat(areaSqM || 0).toFixed(2)} m²` }),
           ],
         }),
         new Paragraph({ text: '' }),
@@ -121,10 +137,6 @@ export async function exportWord(budgetData) {
   })
 
   const blob = await Packer.toBlob(doc)
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `presupuesto-${(roomName || 'habitacion').replace(/\s+/g, '-')}.docx`
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 5000)
+  const filename = `presupuesto-${(roomName || 'habitacion').replace(/\s+/g, '-')}.docx`
+  await shareOrSave(blob, filename)
 }

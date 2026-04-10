@@ -68,6 +68,12 @@ class MeshManager {
         meshAnchors.append(anchor)
     }
 
+    // MARK: - Reemplazar todos los anchors (para ObjectScanViewController)
+
+    func setMeshAnchors(_ anchors: [ARMeshAnchor]) {
+        meshAnchors = anchors
+    }
+
     // MARK: - Obtener todos los meshes acumulados
 
     func getAllMeshes() -> [MDLMesh] {

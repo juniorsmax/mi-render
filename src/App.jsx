@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { LangProvider } from './i18n/index.jsx'
 import { BottomNav }    from './components/BottomNav.jsx'
 import { CreateSheet }  from './components/CreateSheet.jsx'
@@ -19,7 +19,15 @@ export default function App() {
   const [showCreate, setCreate] = useState(false)
   const [flow, setFlow]         = useState(null)  // null | 'scan' | 'manual' | 'budget'
   const [scannedRoom, setRoom]  = useState(null)
-  const [projects, setProjects] = useState([])
+  const [projects, setProjects] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('mi-render-projects') || '[]') }
+    catch { return [] }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem('mi-render-projects', JSON.stringify(projects)) }
+    catch {}
+  }, [projects])
 
   function handleSelect(optionId) {
     setCreate(false)
@@ -37,14 +45,16 @@ export default function App() {
     setFlow('budget')
   }
 
-  function handleBudgetDone() {
-    // Save project
+  function handleBudgetDone(budgetData) {
     const newProject = {
       id: Date.now(),
-      name: scannedRoom?.roomName || 'Proyecto ' + (projects.length + 1),
-      areaSqM: scannedRoom?.floorArea ?? scannedRoom?.areaSqM ?? 0,
-      date: new Date().toLocaleDateString('es-ES'),
+      name: budgetData?.roomName || scannedRoom?.roomName || 'Proyecto ' + (projects.length + 1),
+      clientName: budgetData?.clientName || '',
+      areaSqM: budgetData?.areaSqM ?? scannedRoom?.floorArea ?? scannedRoom?.areaSqM ?? 0,
+      total: budgetData?.total ?? 0,
+      date: budgetData?.date || new Date().toLocaleDateString('es-ES'),
       type: scannedRoom?.scanMode === 'manual' ? 'manual' : 'scan',
+      room: scannedRoom,
     }
     setProjects((p) => [newProject, ...p])
     setFlow(null)

@@ -329,6 +329,16 @@ export function BudgetView({ room, onRescan, onDone }) {
           />
         </div>
 
+        <div style={{ padding: '0 0 8px' }}>
+          <button
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+            onClick={() => onDone?.(buildBudgetData())}
+          >
+            Guardar proyecto
+          </button>
+        </div>
+
         <p className="budget-footer text-muted">
           Generado con mi-render · Zerbitecni
         </p>

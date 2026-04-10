@@ -1,5 +1,8 @@
 .budget-root {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background:
     radial-gradient(ellipse 50% 30% at 80% 10%, rgba(167, 139, 250, 0.07) 0%, transparent 60%),
     var(--color-bg);

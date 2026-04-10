@@ -5,10 +5,25 @@ function money(n) {
   return n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
 }
 
-export function exportPdf(budgetData) {
-  const { roomName, dimensions, areaSqM, services, taxRate,
-    subtotalBeforeTax, taxAmount, total, company, clientName, date } = budgetData
+async function shareOrSave(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/pdf' })
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename })
+  } else {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+}
 
+export async function exportPdf(budgetData) {
+  const { roomName, dimensions, areaSqM, allRows, services, materials, furniture,
+    taxRate, subtotalBeforeTax, taxAmount, total, company, clientName, date } = budgetData
+
+  const rows = allRows ?? services ?? []
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const pageW = doc.internal.pageSize.getWidth()
 
@@ -44,7 +59,7 @@ export function exportPdf(budgetData) {
   doc.setFont('helvetica', 'bold')
   doc.text(clientName || '—', 14, 47)
   doc.text(roomName || '—', 80, 47)
-  doc.text(`${areaSqM.toFixed(2)} m²`, 146, 47)
+  doc.text(`${parseFloat(areaSqM || 0).toFixed(2)} m²`, 146, 47)
 
   if (dimensions) {
     doc.setFont('helvetica', 'normal')
@@ -53,11 +68,11 @@ export function exportPdf(budgetData) {
     doc.text(dimensions, 80, 53)
   }
 
-  // Services table
+  // Table with all rows
   autoTable(doc, {
     startY: 62,
     head: [['Servicio / Descripción', 'Unidad', 'Precio unit.', 'Cantidad', 'Subtotal']],
-    body: services.map((s) => [
+    body: rows.map((s) => [
       s.description,
       s.unit,
       money(s.unitPrice),
@@ -93,7 +108,6 @@ export function exportPdf(budgetData) {
       3: { cellWidth: 22, halign: 'right' },
       4: { cellWidth: 30, halign: 'right' },
     },
-    // Highlight TOTAL row
     didParseCell(data) {
       if (data.section === 'foot' && data.row.index === 2) {
         data.cell.styles.fillColor = [108, 143, 255]
@@ -110,5 +124,7 @@ export function exportPdf(budgetData) {
   doc.setFont('helvetica', 'italic')
   doc.text('Generado con mi-render · Zerbitecni', pageW / 2, finalY, { align: 'center' })
 
-  doc.save(`presupuesto-${(roomName || 'habitacion').replace(/\s+/g, '-')}.pdf`)
+  const filename = `presupuesto-${(roomName || 'habitacion').replace(/\s+/g, '-')}.pdf`
+  const blob = doc.output('blob')
+  await shareOrSave(blob, filename)
 }

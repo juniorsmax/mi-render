@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { FloorPlan } from './FloorPlan'
 import { Icon } from './Icon'
 import { Capacitor } from '@capacitor/core'
-import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative } from '../lib/lidar'
+import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative } from '../lib/lidar'
 import './ScanExport.css'
 
 /**
@@ -139,9 +139,15 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     setExportingFormat(format)
     try {
       const name = projectName.replace(/\s+/g, '-').toLowerCase()
-      if (format === 'obj') await exportOBJ(name)
-      if (format === 'ply') await exportPLY(name)
-      if (format === 'stl') await exportSTL(name)
+      if (format === 'obj')  await exportOBJ(name)
+      if (format === 'ply')  await exportPLY(name)
+      if (format === 'stl')  await exportSTL(name)
+      if (format === 'dae')  await exportDAE(name)
+      if (format === 'gltf') await exportGLTF(name)
+      if (format === 'glb')  await exportGLB(name)
+      if (format === 'svg')  await exportSVG(name)
+      if (format === 'dxf')  await exportDXF(name)
+      if (format === 'pdf')  await exportPDFNative(name)
     } catch (err) {
       console.error(`Error exportando ${format}:`, err)
     } finally {
@@ -305,7 +311,25 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
                 <Icon name="scan" size={11} /> Malla 3D
               </div>
               <div className="export-3d-row">
-                {['obj', 'ply', 'stl'].map(fmt => (
+                {['obj', 'ply', 'stl', 'dae', 'gltf', 'glb'].map(fmt => (
+                  <button
+                    key={fmt}
+                    className={`export-3d-btn ${exportingFormat === fmt ? 'loading' : ''}`}
+                    onClick={() => handle3DExport(fmt)}
+                    disabled={!!exportingFormat}
+                  >
+                    {exportingFormat === fmt
+                      ? <span className="spinner" style={{ width: 12, height: 12 }} />
+                      : fmt.toUpperCase()
+                    }
+                  </button>
+                ))}
+              </div>
+              <div className="export-3d-label" style={{ marginTop: 8 }}>
+                <Icon name="plan" size={11} /> Plano vectorial
+              </div>
+              <div className="export-3d-row">
+                {['svg', 'dxf', 'pdf'].map(fmt => (
                   <button
                     key={fmt}
                     className={`export-3d-btn ${exportingFormat === fmt ? 'loading' : ''}`}
