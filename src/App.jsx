@@ -17,8 +17,9 @@ import { BudgetView }   from './views/BudgetView.jsx'
 export default function App() {
   const [tab, setTab]           = useState('projects')
   const [showCreate, setCreate] = useState(false)
-  const [flow, setFlow]         = useState(null)  // null | 'scan' | 'manual' | 'budget'
+  const [flow, setFlow]         = useState(null)  // null | 'scan' | 'manual' | 'budget' | 'view-project'
   const [scannedRoom, setRoom]  = useState(null)
+  const [openProject, setOpenProject] = useState(null)
   const [projects, setProjects] = useState(() => {
     try { return JSON.parse(localStorage.getItem('mi-render-projects') || '[]') }
     catch { return [] }
@@ -45,21 +46,41 @@ export default function App() {
     setFlow('budget')
   }
 
+  function handleOpenProject(project) {
+    setOpenProject(project)
+    setRoom(project.room || null)
+    setFlow('view-project')
+  }
+
   function handleBudgetDone(budgetData) {
-    const newProject = {
-      id: Date.now(),
-      name: budgetData?.roomName || scannedRoom?.roomName || 'Proyecto ' + (projects.length + 1),
-      clientName: budgetData?.clientName || '',
-      areaSqM: budgetData?.areaSqM ?? scannedRoom?.floorArea ?? scannedRoom?.areaSqM ?? 0,
-      total: budgetData?.total ?? 0,
-      date: budgetData?.date || new Date().toLocaleDateString('es-ES'),
-      type: scannedRoom?.scanMode === 'manual' ? 'manual' : 'scan',
-      room: scannedRoom,
+    if (openProject) {
+      // Actualizar proyecto existente
+      setProjects((p) => p.map((proj) =>
+        proj.id === openProject.id
+          ? { ...proj, ...buildProjectFromBudget(budgetData, scannedRoom, proj) }
+          : proj
+      ))
+      setOpenProject(null)
+    } else {
+      // Proyecto nuevo
+      setProjects((p) => [buildProjectFromBudget(budgetData, scannedRoom, { id: Date.now(), type: scannedRoom?.scanMode === 'manual' ? 'manual' : 'scan' }), ...p])
     }
-    setProjects((p) => [newProject, ...p])
     setFlow(null)
     setRoom(null)
     setTab('projects')
+  }
+
+  function buildProjectFromBudget(budgetData, room, base) {
+    return {
+      ...base,
+      name: budgetData?.roomName || room?.roomName || base.name || 'Proyecto',
+      clientName: budgetData?.clientName || base.clientName || '',
+      areaSqM: budgetData?.areaSqM ?? room?.floorArea ?? room?.areaSqM ?? base.areaSqM ?? 0,
+      total: budgetData?.total ?? base.total ?? 0,
+      date: budgetData?.date || new Date().toLocaleDateString('es-ES'),
+      room: room || base.room,
+      budgetData,
+    }
   }
 
   // ── Full-screen flows (scanner / budget) ─────────────────────────
@@ -75,12 +96,13 @@ export default function App() {
     )
   }
 
-  if (flow === 'budget') {
+  if (flow === 'budget' || flow === 'view-project') {
     return (
       <LangProvider>
         <BudgetView
           room={scannedRoom}
-          onRescan={() => setFlow('scan')}
+          initialData={openProject?.budgetData}
+          onRescan={() => { setOpenProject(null); setFlow('scan') }}
           onDone={handleBudgetDone}
         />
       </LangProvider>
@@ -91,7 +113,7 @@ export default function App() {
   return (
     <LangProvider>
       {/* Active tab content */}
-      {tab === 'projects' && <ProjectsView projects={projects} onOpen={() => {}} />}
+      {tab === 'projects' && <ProjectsView projects={projects} onOpen={handleOpenProject} />}
       {tab === 'explore'  && <ExploreView />}
       {tab === 'team'     && <TeamPlaceholder />}
       {tab === 'profile'  && <ProfileView />}

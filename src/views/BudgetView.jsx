@@ -58,20 +58,20 @@ function defaultMaterials(areaSqM) {
   ]
 }
 
-export function BudgetView({ room, onRescan, onDone }) {
-  const [company, setCompany] = useState('Zerbitecni')
-  const [clientName, setClientName] = useState('')
-  const [roomName, setRoomName] = useState(room?.roomName || '')
-  const [dimensions, setDimensions] = useState(room?.dimensions || '')
-  const defaultArea = room?.floorArea ?? room?.areaSqM ?? 0
-  const [areaSqM, setAreaSqM] = useState(defaultArea)
-  const [services, setServices] = useState(() => defaultServices(defaultArea))
-  const [materials, setMaterials] = useState(() => defaultMaterials(defaultArea))
-  const [furniture, setFurniture] = useState([])
-  const [showMatCatalog, setShowMatCatalog]  = useState(false)
+export function BudgetView({ room, initialData, onRescan, onDone }) {
+  const defaultArea = room?.floorArea ?? room?.areaSqM ?? initialData?.areaSqM ?? 0
+  const [company, setCompany]     = useState(initialData?.company     || 'Zerbitecni')
+  const [clientName, setClientName] = useState(initialData?.clientName || '')
+  const [roomName, setRoomName]   = useState(initialData?.roomName    || room?.roomName || '')
+  const [dimensions, setDimensions] = useState(initialData?.dimensions || room?.dimensions || '')
+  const [areaSqM, setAreaSqM]     = useState(initialData?.areaSqM     ?? defaultArea)
+  const [services, setServices]   = useState(() => initialData?.services   || defaultServices(defaultArea))
+  const [materials, setMaterials] = useState(() => initialData?.materials  || defaultMaterials(defaultArea))
+  const [furniture, setFurniture] = useState(() => initialData?.furniture  || [])
+  const [showMatCatalog, setShowMatCatalog]   = useState(false)
   const [showFurnCatalog, setShowFurnCatalog] = useState(false)
-  const [taxRate, setTaxRate] = useState(21)
-  const [date, setDate] = useState(new Date().toLocaleDateString('es-ES'))
+  const [taxRate, setTaxRate] = useState(initialData?.taxRate ?? 21)
+  const [date, setDate]       = useState(initialData?.date    || new Date().toLocaleDateString('es-ES'))
 
   const subtotalBeforeTax = useMemo(
     () => [...services, ...materials, ...furniture].reduce((s, r) => s + r.quantity * r.unitPrice, 0),
