@@ -5,6 +5,18 @@ import { Capacitor } from '@capacitor/core'
 import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative } from '../lib/lidar'
 import './ScanExport.css'
 
+async function shareOrSavePDF(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/pdf' })
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    await navigator.share({ files: [file], title: filename })
+  } else {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+}
+
 /**
  * ScanExport — Pantalla de resultados + exportación
  * Agentes: Luna (UI) + Atlas (datos) + Ares (export)
@@ -43,77 +55,79 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     usdzExported = false,
   } = result
 
-  // ── Exportar PDF via print ─────────────────────────────────────────────────
-  function handleExportPDF() {
-    const printWindow = window.open('', '_blank')
-    const canvas = reportRef.current?.querySelector('canvas')
-    const planDataUrl = canvas?.toDataURL('image/png') ?? ''
-    const date = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })
+  // ── Exportar PDF del informe de escaneo ───────────────────────────────────
+  async function handleExportPDF() {
+    try {
+      const { default: jsPDF } = await import('jspdf')
+      const canvas = reportRef.current?.querySelector('canvas')
+      const planDataUrl = canvas?.toDataURL('image/png') ?? null
+      const date = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })
 
-    printWindow.document.write(`
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Informe de escaneo — ${projectName}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1a1a1a; background: #fff; }
-    .page { width: 210mm; min-height: 297mm; padding: 20mm 18mm; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 12px; border-bottom: 2px solid #1a1a1a; margin-bottom: 20px; }
-    .title h1 { font-size: 22px; font-weight: 700; }
-    .title p  { font-size: 12px; color: #666; margin-top: 4px; }
-    .brand { font-size: 13px; font-weight: 700; color: #f0a500; }
-    .content { display: flex; gap: 24px; }
-    .plan { flex: 1; }
-    .plan img { width: 100%; border: 1px solid #ddd; }
-    .stats { width: 200px; }
-    .stats h2 { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
-    .stat-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #eee; font-size: 12px; }
-    .stat-row .label { color: #555; }
-    .stat-row .value { font-weight: 600; }
-    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; font-size: 10px; color: #999; text-align: center; }
-    .date { font-size: 11px; color: #888; }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <div class="header">
-      <div class="title">
-        <h1>${projectName}</h1>
-        ${address ? `<p>${address}</p>` : ''}
-        <p class="date">Generado el ${date}</p>
-      </div>
-      <div class="brand">mi-render · zerbitecni</div>
-    </div>
-    <div class="content">
-      <div class="plan">
-        ${planDataUrl ? `<img src="${planDataUrl}" alt="Plano 2D">` : '<p style="color:#999;font-size:12px;">Plano no disponible</p>'}
-      </div>
-      <div class="stats">
-        <h2>Métricas</h2>
-        <div class="stat-row"><span class="label">Superficie total</span><span class="value">${floorArea.toFixed(1)} m²</span></div>
-        <div class="stat-row"><span class="label">Área de paredes</span><span class="value">${wallArea.toFixed(1)} m²</span></div>
-        <div class="stat-row"><span class="label">Área de ventanas</span><span class="value">${windowArea.toFixed(2)} m²</span></div>
-        <div class="stat-row"><span class="label">Volumen total</span><span class="value">${totalVolume.toFixed(2)} m³</span></div>
-        <div class="stat-row"><span class="label">Perímetro</span><span class="value">${perimeter.toFixed(1)} m</span></div>
-        <div class="stat-row"><span class="label">Altura media</span><span class="value">${avgHeight.toFixed(2)} m</span></div>
-        <div class="stat-row"><span class="label">Nº paredes</span><span class="value">${wallCount}</span></div>
-        <div class="stat-row"><span class="label">Puertas</span><span class="value">${doors.length}</span></div>
-        <div class="stat-row"><span class="label">Ventanas</span><span class="value">${windows.length}</span></div>
-        ${latitude != null ? `<div class="stat-row"><span class="label">Latitud</span><span class="value">${latitude.toFixed(6)} N</span></div>` : ''}
-        ${longitude != null ? `<div class="stat-row"><span class="label">Longitud</span><span class="value">${longitude.toFixed(6)} E</span></div>` : ''}
-        ${altitude != null ? `<div class="stat-row"><span class="label">Altitud</span><span class="value">${Math.round(altitude)} m</span></div>` : ''}
-      </div>
-    </div>
-    <div class="footer">
-      Resultados estimados por sensor LiDAR. Generado con mi-render · zerbitecni.com
-    </div>
-  </div>
-  <script>window.onload=()=>window.print()</script>
-</body>
-</html>`)
-    printWindow.document.close()
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const W = doc.internal.pageSize.getWidth()
+
+      // Header
+      doc.setFillColor(10, 12, 18)
+      doc.rect(0, 0, W, 28, 'F')
+      doc.setTextColor(240, 165, 0)
+      doc.setFontSize(20); doc.setFont('helvetica', 'bold')
+      doc.text(projectName || 'Informe de escaneo', 14, 16)
+      doc.setTextColor(107, 115, 133)
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+      doc.text('mi-render · zerbitecni', W - 14, 16, { align: 'right' })
+      doc.text(date, W - 14, 22, { align: 'right' })
+      if (address) {
+        doc.setTextColor(200, 205, 216); doc.setFontSize(9)
+        doc.text(address, 14, 22)
+      }
+
+      let y = 36
+
+      // Plano 2D
+      if (planDataUrl) {
+        doc.addImage(planDataUrl, 'PNG', 14, y, 90, 70)
+      }
+
+      // Métricas
+      const mx = planDataUrl ? 112 : 14
+      doc.setTextColor(238, 240, 245); doc.setFontSize(10); doc.setFont('helvetica', 'bold')
+      doc.text('Métricas', mx, y + 4)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+
+      const stats = [
+        ['Superficie', `${floorArea.toFixed(1)} m²`],
+        ['Área paredes', `${wallArea.toFixed(1)} m²`],
+        ['Área ventanas', `${windowArea.toFixed(2)} m²`],
+        ['Volumen', `${totalVolume.toFixed(2)} m³`],
+        ['Perímetro', `${perimeter.toFixed(1)} m`],
+        ['Altura media', `${avgHeight.toFixed(2)} m`],
+        ['Paredes', wallCount],
+        ['Puertas', doors.length],
+        ['Ventanas', windows.length],
+        ...(latitude  != null ? [['Latitud',  `${latitude.toFixed(4)} N`]] : []),
+        ...(longitude != null ? [['Longitud', `${longitude.toFixed(4)} E`]] : []),
+        ...(altitude  != null ? [['Altitud',  `${Math.round(altitude)} m`]] : []),
+      ]
+
+      stats.forEach(([label, value], i) => {
+        const row = y + 12 + i * 7
+        doc.setTextColor(107, 115, 133); doc.text(String(label), mx, row)
+        doc.setTextColor(238, 240, 245); doc.text(String(value), mx + 62, row, { align: 'right' })
+        doc.setDrawColor(30, 35, 50); doc.line(mx, row + 1.5, mx + 62, row + 1.5)
+      })
+
+      // Footer
+      const footerY = doc.internal.pageSize.getHeight() - 10
+      doc.setFontSize(8); doc.setTextColor(107, 115, 133); doc.setFont('helvetica', 'italic')
+      doc.text('Resultados estimados por sensor LiDAR. mi-render · zerbitecni.com', W / 2, footerY, { align: 'center' })
+
+      const filename = `informe-${(projectName || 'escaneo').replace(/\s+/g, '-').toLowerCase()}.pdf`
+      const blob = doc.output('blob')
+      await shareOrSavePDF(blob, filename)
+    } catch (err) {
+      console.error('Error generando PDF:', err)
+      alert('Error al generar el PDF: ' + err.message)
+    }
   }
 
   // ── Exportar USDZ (share sheet nativa) ────────────────────────────────────
