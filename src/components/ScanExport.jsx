@@ -225,12 +225,12 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
         </div>
 
         {/* Plano 2D */}
-        {walls.length > 0 && (
-          <div className="scan-export-plan">
-            <div className="scan-export-plan-label">
-              <Icon name="plan" size={13} />
-              Plano de planta
-            </div>
+        <div className="scan-export-plan">
+          <div className="scan-export-plan-label">
+            <Icon name="plan" size={13} />
+            Plano de planta
+          </div>
+          {walls.length > 0 ? (
             <FloorPlan
               walls={walls}
               doors={doors}
@@ -239,6 +239,22 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
               size={Math.min(window.innerWidth - 56, 360)}
               padding={28}
             />
+          ) : (
+            <div className="scan-export-plan-empty">
+              <div className="scan-export-plan-empty-icon">🏠</div>
+              <p className="scan-export-plan-empty-text">No se detectó geometría de habitación</p>
+              <p className="scan-export-plan-empty-sub">
+                Mueve el iPhone más despacio y cubre todas las paredes, suelo y techo. El escaneo necesita al menos 15–20 segundos.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Aviso si todo es cero */}
+        {floorArea === 0 && walls.length === 0 && (
+          <div className="scan-export-warning">
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <span>Escaneo incompleto — pulsa <strong>Re-escanear</strong> y mueve el iPhone lentamente por toda la estancia.</span>
           </div>
         )}
 
