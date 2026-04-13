@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { LangProvider } from './i18n/index.jsx'
 import { BottomNav }    from './components/BottomNav.jsx'
 import { CreateSheet }  from './components/CreateSheet.jsx'
+import { HomeView }     from './views/HomeView.jsx'
 import { ProjectsView } from './views/ProjectsView.jsx'
 import { ExploreView }  from './views/ExploreView.jsx'
 import { ProfileView }  from './views/ProfileView.jsx'
@@ -113,7 +114,10 @@ export default function App() {
   return (
     <LangProvider>
       {/* Active tab content */}
-      {tab === 'projects' && <ProjectsView projects={projects} onOpen={handleOpenProject} />}
+      {tab === 'projects' && projects.length === 0
+        ? <HomeView onStart={() => setFlow('scan')} />
+        : tab === 'projects' && <ProjectsView projects={projects} onOpen={handleOpenProject} />
+      }
       {tab === 'explore'  && <ExploreView />}
       {tab === 'team'     && <TeamPlaceholder />}
       {tab === 'profile'  && <ProfileView />}

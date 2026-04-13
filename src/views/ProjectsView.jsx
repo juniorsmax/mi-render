@@ -2,9 +2,15 @@ import { useState } from 'react'
 import { useLang } from '../i18n/index.jsx'
 import './ProjectsView.css'
 
+const RECENT_COUNT = 5
+
 export function ProjectsView({ projects, onOpen }) {
   const { t } = useLang()
   const [filter, setFilter] = useState('recent')
+
+  // Ordenar por id desc (más reciente primero) y aplicar filtro
+  const sorted = [...projects].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
+  const visible = filter === 'recent' ? sorted.slice(0, RECENT_COUNT) : sorted
 
   return (
     <div className="page">
@@ -21,7 +27,7 @@ export function ProjectsView({ projects, onOpen }) {
             className={`pill ${filter === f ? 'pill-active' : ''}`}
             onClick={() => setFilter(f)}
           >
-            {f === 'recent' ? t.home.recent : t.home.all}
+            {f === 'recent' ? `${t.home.recent} (${Math.min(projects.length, RECENT_COUNT)})` : `${t.home.all} (${projects.length})`}
           </button>
         ))}
       </div>
@@ -34,7 +40,7 @@ export function ProjectsView({ projects, onOpen }) {
             <p className="muted" style={{ fontSize: 13 }}>{t.home.emptyHint}</p>
           </div>
         ) : (
-          projects.map((p) => (
+          visible.map((p) => (
             <ProjectCard key={p.id} project={p} onClick={() => onOpen(p)} />
           ))
         )}
