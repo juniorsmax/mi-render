@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { FloorPlan } from './FloorPlan'
 import { Icon } from './Icon'
 import { Capacitor } from '@capacitor/core'
-import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative } from '../lib/lidar'
+import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative, startWalkthrough } from '../lib/lidar'
 import './ScanExport.css'
 
 async function shareOrSavePDF(blob, filename) {
@@ -284,12 +284,18 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
               <div className="scan-photogram-title">Modelo 3D fotogramétrico</div>
               <div className="scan-photogram-sub">{photoCount} fotos procesadas · USDZ con texturas reales</div>
             </div>
-            <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
-              onClick={handleSharePhotogrammetry}>
-              🥽 Abrir recorrido AR
-            </button>
+            <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 12 }}>
+              <button className="btn btn-primary" style={{ flex: 1 }}
+                onClick={() => usdzPath && startWalkthrough(usdzPath)}>
+                🚶 Recorrido interior
+              </button>
+              <button className="btn btn-ghost" style={{ flex: 1 }}
+                onClick={handleSharePhotogrammetry}>
+                🥽 AR Quick Look
+              </button>
+            </div>
             <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center', lineHeight: 1.5 }}>
-              Se abre en AR Quick Look · Puedes caminar por el modelo en realidad aumentada
+              Recorrido interior · Desliza para mirar · Botones para moverte
             </p>
           </div>
         )}

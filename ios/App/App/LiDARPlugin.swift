@@ -150,6 +150,25 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
     }
 
+    // ── startWalkthrough (recorrido interior SceneKit) ───────────────────────
+    @objc func startWalkthrough(_ call: CAPPluginCall) {
+        guard let path = call.getString("path"), !path.isEmpty else {
+            call.reject("Se requiere la ruta del modelo USDZ")
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let vc = WalkthroughViewController()
+            vc.usdzPath = path
+            vc.modalPresentationStyle = .fullScreen
+            vc.modalTransitionStyle   = .crossDissolve
+            self.bridge?.viewController?.present(vc, animated: true) {
+                call.resolve(["opened": true])
+            }
+        }
+    }
+
     // ── stopScan ─────────────────────────────────────────────────────────────
     @objc func stopScan(_ call: CAPPluginCall) {
         ScanManager.shared.stopScan()

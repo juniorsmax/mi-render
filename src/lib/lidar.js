@@ -123,6 +123,14 @@ function parseLiDARResult(raw) {
  * mediante Object Capture API (PhotogrammetrySession).
  * Devuelve { usdzPath, photoCount, scanMode: 'photogrammetry' }
  */
+/**
+ * Abre el recorrido interior en primera persona (SceneKit)
+ * path — ruta local al archivo USDZ
+ */
+export async function startWalkthrough(path) {
+  return callNative('startWalkthrough', { path })
+}
+
 export async function startPhotogrammetry() {
   const result = await callNative('startPhotogrammetry', {})
   if (!result) return null
