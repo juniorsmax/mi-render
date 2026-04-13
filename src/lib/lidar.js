@@ -116,6 +116,32 @@ function parseLiDARResult(raw) {
   }
 }
 
+// ── Fotogrametría on-device (iOS 17+) ─────────────────────────────────────────
+
+/**
+ * Abre la cámara para capturar fotos y procesa un modelo 3D texturizado
+ * mediante Object Capture API (PhotogrammetrySession).
+ * Devuelve { usdzPath, photoCount, scanMode: 'photogrammetry' }
+ */
+export async function startPhotogrammetry() {
+  const result = await callNative('startPhotogrammetry', {})
+  if (!result) return null
+  return {
+    usdzPath:     result.usdzPath   ?? null,
+    usdzExported: !!result.usdzPath,
+    photoCount:   result.photoCount ?? 0,
+    scanMode:     'photogrammetry',
+    floorArea:    0,
+    wallArea:     0,
+    wallCount:    0,
+    walls:        [],
+    doors:        [],
+    windows:      [],
+    openings:     [],
+    confidence:   'high',
+  }
+}
+
 // ── Bridge nativo LiDAR — Objeto 3D ──────────────────────────────────────────
 
 /**

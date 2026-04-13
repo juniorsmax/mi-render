@@ -33,6 +33,7 @@
 		CC00000D000000000000001B /* ScanQualityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000D000000000000001A /* ScanQualityManager.swift */; };
 		CC00000E000000000000001B /* UIStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000E000000000000001A /* UIStateManager.swift */; };
 		CC00000F000000000000001B /* ThermalBatteryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000F000000000000001A /* ThermalBatteryManager.swift */; };
+		CC000010000000000000001B /* PhotogrammetryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000010000000000000001A /* PhotogrammetryViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +62,7 @@
 		CC00000D000000000000001A /* ScanQualityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanQualityManager.swift; sourceTree = "<group>"; };
 		CC00000E000000000000001A /* UIStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIStateManager.swift; sourceTree = "<group>"; };
 		CC00000F000000000000001A /* ThermalBatteryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalBatteryManager.swift; sourceTree = "<group>"; };
+		CC000010000000000000001A /* PhotogrammetryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotogrammetryViewController.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -119,6 +121,7 @@
 				CC00000D000000000000001A /* ScanQualityManager.swift */,
 				CC00000E000000000000001A /* UIStateManager.swift */,
 				CC00000F000000000000001A /* ThermalBatteryManager.swift */,
+				CC000010000000000000001A /* PhotogrammetryViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -228,6 +231,7 @@
 				CC00000D000000000000001B /* ScanQualityManager.swift in Sources */,
 				CC00000E000000000000001B /* UIStateManager.swift in Sources */,
 				CC00000F000000000000001B /* ThermalBatteryManager.swift in Sources */,
+				CC000010000000000000001B /* PhotogrammetryViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

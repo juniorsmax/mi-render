@@ -53,7 +53,33 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     longitude,
     altitude,
     usdzExported = false,
+    usdzPath     = null,
+    photoCount   = 0,
   } = result
+
+  const isPhotogrammetry = scanMode === 'photogrammetry'
+
+  // ── Compartir modelo USDZ fotogramétrico ─────────────────────────────────
+  async function handleSharePhotogrammetry() {
+    if (!Capacitor.isNativePlatform()) {
+      alert('Solo disponible en la app iOS')
+      return
+    }
+    try {
+      // El USDZ ya está en disco — lo compartimos vía share sheet → AR Quick Look
+      const { Filesystem } = await import('@capacitor/filesystem')
+      const { Share }      = await import('@capacitor/share')
+      await Share.share({
+        title: projectName,
+        url:   'file://' + usdzPath,
+        dialogTitle: 'Abrir recorrido 3D',
+      })
+    } catch (err) {
+      // Fallback: exportar desde el plugin
+      try { await exportUSDZNative(projectName.replace(/\s+/g, '-').toLowerCase()) }
+      catch {}
+    }
+  }
 
   // ── Exportar PDF del informe de escaneo ───────────────────────────────────
   async function handleExportPDF() {
@@ -250,8 +276,26 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           )}
         </div>
 
+        {/* ── Resultado de fotogrametría ───────────────────────────────── */}
+        {isPhotogrammetry && (
+          <div className="scan-photogram-card glass">
+            <div className="scan-photogram-icon">📷</div>
+            <div className="scan-photogram-info">
+              <div className="scan-photogram-title">Modelo 3D fotogramétrico</div>
+              <div className="scan-photogram-sub">{photoCount} fotos procesadas · USDZ con texturas reales</div>
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }}
+              onClick={handleSharePhotogrammetry}>
+              🥽 Abrir recorrido AR
+            </button>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center', lineHeight: 1.5 }}>
+              Se abre en AR Quick Look · Puedes caminar por el modelo en realidad aumentada
+            </p>
+          </div>
+        )}
+
         {/* Aviso si todo es cero */}
-        {floorArea === 0 && walls.length === 0 && (
+        {!isPhotogrammetry && floorArea === 0 && walls.length === 0 && (
           <div className="scan-export-warning">
             <span style={{ fontSize: 16 }}>⚠️</span>
             <span>Escaneo incompleto — pulsa <strong>Re-escanear</strong> y mueve el iPhone lentamente por toda la estancia.</span>

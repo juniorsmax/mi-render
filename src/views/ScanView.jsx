@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useCamera } from '../hooks/useCamera'
 import { shoelace } from '../lib/shoelace'
 import { sanitizeNumber, sanitizeName } from '../lib/security'
-import { getScanMode, SCAN_MODE_LABELS, startLiDARScan, startObjectScan } from '../lib/lidar'
+import { getScanMode, SCAN_MODE_LABELS, startLiDARScan, startObjectScan, startPhotogrammetry } from '../lib/lidar'
 import { Icon } from '../components/Icon.jsx'
 import { ScanExport } from '../components/ScanExport.jsx'
 import './ScanView.css'
@@ -64,8 +64,26 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
     }
   }
 
+  // ── Fotogrametría on-device (iOS 17+) ─────────────────────────────────────
+  async function handleStartPhotogrammetry() {
+    setLidarError(null)
+    setStep('scanning')
+    try {
+      const result = await startPhotogrammetry()
+      setScanResult(result)
+      setStep('result')
+    } catch (err) {
+      setLidarError(err.message ?? 'Error en la fotogrametría')
+      setStep('permission')
+    }
+  }
+
   // ── Iniciar escaneo según modo y tab ──────────────────────────────────────
   async function handleStartScan() {
+    if (activeTab === 'fotograma') {
+      await handleStartPhotogrammetry()
+      return
+    }
     if (scanMode === 'lidar-native') {
       if (activeTab === 'objeto') {
         await handleStartObjectScan()
@@ -187,11 +205,11 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
 
           {/* Tabs modo */}
           <div className="scan-mode-tabs" style={{ padding: '4px 0' }}>
-            {['espacio', 'objeto', 'manual'].map((tab) => (
+            {['espacio', 'objeto', 'fotograma', 'manual'].map((tab) => (
               <div key={tab}
                 className={`scan-mode-tab ${activeTab === tab ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab)}>
-                {tab === 'espacio' ? 'ESPACIO' : tab === 'objeto' ? 'OBJETO' : 'MANUAL'}
+                {tab === 'espacio' ? 'ESPACIO' : tab === 'objeto' ? 'OBJETO' : tab === 'fotograma' ? 'FOTO 3D' : 'MANUAL'}
               </div>
             ))}
           </div>
@@ -219,6 +237,14 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
               <ScanStep n={1} text="Coloca el objeto en el centro de la habitación con espacio a su alrededor" />
               <ScanStep n={2} text="Mueve el iPhone lentamente alrededor del objeto a 50–80 cm de distancia" />
               <ScanStep n={3} text="Pulsa Capturar cuando hayas cubierto todos los ángulos" />
+            </div>
+          )}
+
+          {activeTab === 'fotograma' && (
+            <div className="scan-steps glass">
+              <ScanStep n={1} text="Abre la cámara y fotografía cada pared, techo y suelo desde varios ángulos" />
+              <ScanStep n={2} text="Necesitas al menos 20 fotos — cuantas más, mejor calidad" />
+              <ScanStep n={3} text="Pulsa Procesar para generar el modelo 3D texturizado (iOS 17+)" />
             </div>
           )}
 
@@ -251,9 +277,11 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
                 disabled={cameraState === 'requesting'}>
                 {cameraState === 'requesting'
                   ? <><span className="spinner" style={{width:16,height:16}} /> Abriendo…</>
-                  : isLiDAR
-                    ? <><Icon name="lidar" size={18} /> {activeTab === 'objeto' ? 'Escanear objeto' : 'Escanear habitación'}</>
-                    : <><Icon name="camera" size={18} /> Iniciar escaneo</>}
+                  : activeTab === 'fotograma'
+                    ? <>📷 Capturar foto 3D</>
+                    : isLiDAR
+                      ? <><Icon name="lidar" size={18} /> {activeTab === 'objeto' ? 'Escanear objeto' : 'Escanear habitación'}</>
+                      : <><Icon name="camera" size={18} /> Iniciar escaneo</>}
               </button>
             ) : (
               <button className="btn btn-primary btn-lg" onClick={() => setStep('manual')}>

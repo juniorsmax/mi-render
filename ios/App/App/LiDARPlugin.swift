@@ -116,6 +116,40 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
     }
 
+    // ── startPhotogrammetry (Object Capture API, iOS 17+) ───────────────────
+    @objc func startPhotogrammetry(_ call: CAPPluginCall) {
+        guard #available(iOS 17.0, *) else {
+            call.reject("La fotogrametría on-device requiere iOS 17 o superior")
+            return
+        }
+        guard AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) != nil else {
+            call.reject("No se encontró cámara trasera")
+            return
+        }
+
+        pendingCall = call
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if #available(iOS 17.0, *) {
+                let vc = PhotogrammetryViewController()
+                vc.onResult = { [weak self] result in
+                    guard let self = self else { return }
+                    if let result = result, result["error"] == nil {
+                        self.pendingCall?.resolve(result)
+                    } else if let err = result?["error"] as? String {
+                        self.pendingCall?.reject(err)
+                    } else {
+                        self.pendingCall?.reject("Fotogrametría cancelada")
+                    }
+                    self.pendingCall = nil
+                }
+                vc.modalPresentationStyle = .fullScreen
+                self.bridge?.viewController?.present(vc, animated: true)
+            }
+        }
+    }
+
     // ── stopScan ─────────────────────────────────────────────────────────────
     @objc func stopScan(_ call: CAPPluginCall) {
         ScanManager.shared.stopScan()
