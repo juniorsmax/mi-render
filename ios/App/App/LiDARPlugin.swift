@@ -471,6 +471,13 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             return
         }
 
+        // Capturar mesh anchors ARKit para exportación OBJ/PLY/STL posterior
+        let arAnchors = captureSession.arSession.currentFrame?.anchors
+            .compactMap { $0 as? ARMeshAnchor } ?? []
+        if !arAnchors.isEmpty {
+            MeshManager.shared.setMeshAnchors(arAnchors)
+        }
+
         Task {
             do {
                 let room = try await RoomBuilder(options: []).capturedRoom(from: data)
@@ -486,7 +493,12 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
                     .appendingPathComponent("mi-render-scan.usdz")
                 try? room.export(to: tmpUrl, exportOptions: .parametric)
 
-                let result = self.buildResult(from: room)
+                var result = self.buildResult(from: room)
+                // Añadir ruta USDZ al resultado para guardar con el proyecto
+                if let usdzUrl = ExportManager.shared.lastUsdzUrl {
+                    result["usdzPath"] = usdzUrl.path
+                }
+                result["meshAnchorsCount"] = arAnchors.count
                 await MainActor.run {
                     self.dismiss(animated: true) { [weak self] in
                         self?.onResult?(result)

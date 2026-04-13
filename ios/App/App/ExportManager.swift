@@ -12,6 +12,9 @@ class ExportManager {
 
     static let shared = ExportManager()
 
+    // Última URL USDZ exportada (para pasarla al resultado del escaneo)
+    var lastUsdzUrl: URL?
+
     private let exportDirectory: URL = {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Exports", isDirectory: true)
@@ -87,6 +90,7 @@ class ExportManager {
         let url = exportDirectory.appendingPathComponent("\(name).usdz")
         do {
             try room.export(to: url)
+            lastUsdzUrl = url
             return url
         } catch {
             print("Export USDZ error: \(error)")
