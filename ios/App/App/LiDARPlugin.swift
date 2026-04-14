@@ -3,6 +3,7 @@ import Capacitor
 import ARKit
 import RoomPlan
 import CoreLocation
+import AVFoundation
 
 /**
  * LiDARPlugin — RoomPlan + ARKit para mi-render
@@ -514,71 +515,224 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     }
 }
 
-// ── RoomPlan ViewController (iOS 16+) ────────────────────────────────────────
+// ── RoomPlan ViewController — Polycam-style (iOS 16+) ────────────────────────
 @available(iOS 16.0, *)
-class RoomPlanViewController: UIViewController {
+class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
 
     var onResult: (([String: Any]?) -> Void)?
 
-    private var captureView:    RoomCaptureView!
+    private var arView:         ARSCNView!
     private var captureSession: RoomCaptureSession!
+    private var meshNodes:      [UUID: SCNNode] = [:]
+    private var isPaused        = false
+    private var torchOn         = false
+    private var uiReady         = false
+
+    // UI refs (need to update at runtime)
+    private weak var areaLabel: UILabel?
+    private weak var pauseBtn:  UIButton?
+    private weak var torchBtn:  UIButton?
+
+    // MARK: – Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        setupAR()
+    }
 
-        captureView = RoomCaptureView(frame: view.bounds)
-        captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(captureView)
-
-        captureSession = captureView.captureSession
-        captureSession.delegate = self
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard !uiReady else { return }
+        uiReady = true
+        setupUI()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         UIApplication.shared.isIdleTimerDisabled = true
-        let config = RoomCaptureSession.Configuration()
-        captureSession.run(configuration: config)
+        captureSession.run(configuration: RoomCaptureSession.Configuration())
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
+        setTorch(false)
         captureSession.stop()
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        if view.viewWithTag(101) != nil { return }
+    // MARK: – AR Setup
 
-        let topInset = view.safeAreaInsets.top + 12
-        let w = view.bounds.width
+    private func setupAR() {
+        captureSession = RoomCaptureSession()
+        captureSession.delegate = self
 
-        let closeBtn = UIButton(type: .system)
-        closeBtn.tag = 101
-        closeBtn.setTitle("✕", for: .normal)
-        closeBtn.tintColor = .white
-        closeBtn.titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
-        closeBtn.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        closeBtn.layer.cornerRadius = 22
-        closeBtn.frame = CGRect(x: 16, y: topInset, width: 44, height: 44)
+        arView = ARSCNView(frame: view.bounds)
+        arView.autoresizingMask   = [.flexibleWidth, .flexibleHeight]
+        arView.delegate           = self
+        arView.automaticallyUpdatesLighting = false
+        arView.session            = captureSession.arSession   // share session
+        view.addSubview(arView)
+    }
+
+    // MARK: – UI Setup (Polycam style)
+
+    private func setupUI() {
+        let w        = view.bounds.width
+        let h        = view.bounds.height
+        let topInset = max(view.safeAreaInsets.top, 50)
+        let botInset = max(view.safeAreaInsets.bottom, 20)
+
+        // ── Area badge (top left) ─────────────────────────────────────────────
+        let badge = UIView()
+        badge.backgroundColor    = UIColor.black.withAlphaComponent(0.65)
+        badge.layer.cornerRadius = 18
+        badge.clipsToBounds      = true
+        badge.frame = CGRect(x: 16, y: topInset + 6, width: 130, height: 36)
+        view.addSubview(badge)
+
+        let symCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        let iconIV = UIImageView(image: UIImage(systemName: "square.dashed", withConfiguration: symCfg))
+        iconIV.tintColor = .white
+        iconIV.frame = CGRect(x: 10, y: 8, width: 20, height: 20)
+        badge.addSubview(iconIV)
+
+        let lbl = UILabel()
+        lbl.text      = "est 0 m²"
+        lbl.textColor = .white
+        lbl.font      = .systemFont(ofSize: 13, weight: .semibold)
+        lbl.frame     = CGRect(x: 36, y: 8, width: 88, height: 20)
+        badge.addSubview(lbl)
+        areaLabel = lbl
+
+        // ── Close button (top right) ──────────────────────────────────────────
+        let closeBtn = circleButton(symbol: "xmark", size: 44, x: w - 60, y: topInset + 6)
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
+        // ── Torch button (right center) ───────────────────────────────────────
+        let tBtn = circleButton(symbol: "flashlight.off.fill", size: 44, x: w - 60, y: h / 2 - 22)
+        tBtn.addTarget(self, action: #selector(torchTapped), for: .touchUpInside)
+        view.addSubview(tBtn)
+        torchBtn = tBtn
+
+        // ── Bottom bar ────────────────────────────────────────────────────────
+        let barH: CGFloat = 96 + botInset
+        let bar = UIView()
+        bar.backgroundColor = UIColor.black.withAlphaComponent(0.85)
+        bar.frame = CGRect(x: 0, y: h - barH, width: w, height: barH)
+        view.addSubview(bar)
+
+        // Pause button (centered)
+        let pBtn = UIButton(type: .system)
+        let pCfg = UIImage.SymbolConfiguration(pointSize: 30, weight: .thin)
+        pBtn.setImage(UIImage(systemName: "pause.circle", withConfiguration: pCfg), for: .normal)
+        pBtn.tintColor = .white
+        pBtn.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+        pBtn.layer.cornerRadius = 30
+        pBtn.layer.borderWidth  = 1.5
+        pBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.45).cgColor
+        pBtn.frame = CGRect(x: (w - 60) / 2, y: 16, width: 60, height: 60)
+        pBtn.addTarget(self, action: #selector(pauseTapped), for: .touchUpInside)
+        bar.addSubview(pBtn)
+        pauseBtn = pBtn
+
+        // Done button (right side)
         let doneBtn = UIButton(type: .system)
-        doneBtn.tag = 102
-        doneBtn.setTitle("✓  Listo", for: .normal)
-        doneBtn.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
-        doneBtn.setTitleColor(UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1), for: .normal)
-        doneBtn.backgroundColor = UIColor.black.withAlphaComponent(0.65)
-        doneBtn.layer.cornerRadius = 22
-        doneBtn.layer.borderWidth  = 1.5
-        doneBtn.layer.borderColor  = UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 0.6).cgColor
-        doneBtn.frame = CGRect(x: w - 110, y: topInset, width: 94, height: 44)
+        let dCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        doneBtn.setImage(UIImage(systemName: "checkmark", withConfiguration: dCfg), for: .normal)
+        doneBtn.setTitle("  Hecho", for: .normal)
+        doneBtn.tintColor = .white
+        doneBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+        doneBtn.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+        doneBtn.layer.cornerRadius = 20
+        doneBtn.layer.borderWidth  = 1
+        doneBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.35).cgColor
+        doneBtn.frame = CGRect(x: w - 124, y: 26, width: 108, height: 40)
         doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
-        view.addSubview(doneBtn)
+        bar.addSubview(doneBtn)
     }
+
+    // Crea un botón redondo con SF Symbol
+    private func circleButton(symbol: String, size: CGFloat, x: CGFloat, y: CGFloat) -> UIButton {
+        let btn = UIButton(type: .system)
+        let cfg = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        btn.setImage(UIImage(systemName: symbol, withConfiguration: cfg), for: .normal)
+        btn.tintColor = .white
+        btn.backgroundColor = UIColor.black.withAlphaComponent(0.65)
+        btn.layer.cornerRadius = size / 2
+        btn.frame = CGRect(x: x, y: y, width: size, height: size)
+        return btn
+    }
+
+    // MARK: – ARSCNViewDelegate (mesh rendering)
+
+    func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
+        guard let mesh = anchor as? ARMeshAnchor else { return }
+        let child = buildMeshNode(for: mesh)
+        node.addChildNode(child)
+        meshNodes[anchor.identifier] = child
+    }
+
+    func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
+        guard let mesh = anchor as? ARMeshAnchor else { return }
+        meshNodes[anchor.identifier]?.removeFromParentNode()
+        let child = buildMeshNode(for: mesh)
+        node.addChildNode(child)
+        meshNodes[anchor.identifier] = child
+    }
+
+    func renderer(_ renderer: SCNSceneRenderer, didRemove node: SCNNode, for anchor: ARAnchor) {
+        meshNodes.removeValue(forKey: anchor.identifier)
+    }
+
+    private func buildMeshNode(for anchor: ARMeshAnchor) -> SCNNode {
+        let geo = anchor.geometry
+
+        let vSrc = SCNGeometrySource(
+            buffer: geo.vertices.buffer,
+            vertexFormat: .float3,
+            semantic: .vertex,
+            vertexCount: geo.vertices.count,
+            dataOffset: geo.vertices.offset,
+            dataStride: geo.vertices.stride
+        )
+        let fData = Data(bytes: geo.faces.buffer.contents(), count: geo.faces.buffer.length)
+        let elem  = SCNGeometryElement(
+            data: fData,
+            primitiveType: .triangles,
+            primitiveCount: geo.faces.count,
+            bytesPerIndex: geo.faces.bytesPerIndex
+        )
+
+        let scnGeo            = SCNGeometry(sources: [vSrc], elements: [elem])
+        let mat               = SCNMaterial()
+        mat.diffuse.contents  = meshColor(for: anchor)
+        mat.isDoubleSided     = true
+        mat.blendMode         = .alpha
+        mat.writesToDepthBuffer = false
+        scnGeo.materials      = [mat]
+
+        return SCNNode(geometry: scnGeo)
+    }
+
+    // Colorea por clasificación dominante (azul=paredes, naranja=suelo, gris=resto)
+    private func meshColor(for anchor: ARMeshAnchor) -> UIColor {
+        var walls = 0, floors = 0
+        let total = min(anchor.geometry.faces.count, 150)  // muestra parcial por rendimiento
+        for i in 0..<total {
+            switch anchor.geometry.faceClassification(at: i) {
+            case .wall:  walls  += 1
+            case .floor: floors += 1
+            default: break
+            }
+        }
+        if walls  > floors && walls  > 0 { return UIColor(red: 0.18, green: 0.44, blue: 0.95, alpha: 0.40) }
+        if floors > walls  && floors > 0 { return UIColor(red: 0.72, green: 0.43, blue: 0.12, alpha: 0.45) }
+        return UIColor(white: 0.92, alpha: 0.14)
+    }
+
+    // MARK: – Button actions
 
     @objc private func closeTapped() {
         captureSession.stop()
@@ -586,13 +740,57 @@ class RoomPlanViewController: UIViewController {
     }
 
     @objc private func doneTapped() {
-        captureSession.stop()
+        captureSession.stop()   // dispara captureSession(_:didEndWith:error:)
+    }
+
+    @objc private func pauseTapped() {
+        isPaused.toggle()
+        let symName = isPaused ? "play.circle" : "pause.circle"
+        let cfg = UIImage.SymbolConfiguration(pointSize: 30, weight: .thin)
+        pauseBtn?.setImage(UIImage(systemName: symName, withConfiguration: cfg), for: .normal)
+        if isPaused {
+            captureSession.arSession.pause()
+        } else if let config = captureSession.arSession.configuration {
+            captureSession.arSession.run(config)
+        }
+    }
+
+    @objc private func torchTapped() {
+        torchOn.toggle()
+        setTorch(torchOn)
+        let symName = torchOn ? "flashlight.on.fill" : "flashlight.off.fill"
+        let cfg = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        torchBtn?.setImage(UIImage(systemName: symName, withConfiguration: cfg), for: .normal)
+        torchBtn?.tintColor = torchOn ? UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1) : .white
+    }
+
+    private func setTorch(_ on: Bool) {
+        guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
+        try? device.lockForConfiguration()
+        device.torchMode = on ? .on : .off
+        device.unlockForConfiguration()
     }
 }
 
 // ── RoomCaptureSessionDelegate ────────────────────────────────────────────────
 @available(iOS 16.0, *)
 extension RoomPlanViewController: RoomCaptureSessionDelegate {
+
+    // m² en tiempo real durante el escaneo
+    func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
+        var area: Float = 0
+        if #available(iOS 17.0, *) {
+            area = room.floors.reduce(0) { $0 + $1.dimensions.x * $1.dimensions.z }
+        }
+        if area < 0.5, !room.walls.isEmpty {
+            let ws = room.walls.map { $0.dimensions.x }.sorted(by: >)
+            area   = ws.count >= 2 ? ws[0] * ws[1] : ws[0] * ws[0]
+        }
+        let rounded = max(Int(area.rounded()), 1)
+        DispatchQueue.main.async { [weak self] in
+            self?.areaLabel?.text = "est \(rounded) m²"
+        }
+    }
 
     func captureSession(_ session: RoomCaptureSession,
                         didEndWith data: CapturedRoomData,
@@ -604,7 +802,7 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             return
         }
 
-        // Capturar mesh anchors ARKit para exportación OBJ/PLY/STL posterior
+        // Guardar mesh anchors ARKit para exportación posterior
         let arAnchors = captureSession.arSession.currentFrame?.anchors
             .compactMap { $0 as? ARMeshAnchor } ?? []
         if !arAnchors.isEmpty {
@@ -614,20 +812,15 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         Task {
             do {
                 let room = try await RoomBuilder(options: []).capturedRoom(from: data)
-
-                // Guardar en RoomPlanManager para acceso posterior (exportUSDZ, etc.)
                 RoomPlanManager.shared.lastCapturedRoom = room
 
-                // Exportar USDZ al directorio de exportaciones
                 let _ = ExportManager.shared.exportUSDZ(room: room, named: "mi-render-scan")
 
-                // También en tmp para compatibilidad con flujo anterior
                 let tmpUrl = FileManager.default.temporaryDirectory
                     .appendingPathComponent("mi-render-scan.usdz")
                 try? room.export(to: tmpUrl, exportOptions: .parametric)
 
                 var result = self.buildResult(from: room)
-                // Añadir ruta USDZ al resultado para guardar con el proyecto
                 if let usdzUrl = ExportManager.shared.lastUsdzUrl {
                     result["usdzPath"] = usdzUrl.path
                 }
@@ -649,17 +842,15 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
 
     private func buildResult(from room: CapturedRoom) -> [String: Any] {
 
-        var floorArea  = Float(0)
-        var wallArea   = Float(0)
+        var floorArea   = Float(0)
+        var wallArea    = Float(0)
         var totalVolume = Float(0)
-        var perimeter  = Float(0)
+        var perimeter   = Float(0)
 
         if #available(iOS 17.0, *) {
-            floorArea = room.floors.reduce(Float(0)) { acc, f in
-                acc + f.dimensions.x * f.dimensions.z
-            }
+            floorArea = room.floors.reduce(Float(0)) { $0 + $1.dimensions.x * $1.dimensions.z }
         }
-        if floorArea == 0 && !room.walls.isEmpty {
+        if floorArea == 0, !room.walls.isEmpty {
             let widths = room.walls.map { $0.dimensions.x }
             let maxW   = widths.max() ?? 0
             let maxL   = widths.sorted().dropLast().last ?? maxW
@@ -668,7 +859,7 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
 
         let walls: [[String: Any]] = room.walls.map { wall in
             let t = wall.transform
-            wallArea += wall.dimensions.x * wall.dimensions.y
+            wallArea  += wall.dimensions.x * wall.dimensions.y
             perimeter += wall.dimensions.x
             return [
                 "width":      Double(wall.dimensions.x),
@@ -724,19 +915,19 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
 
         return [
-            "floorArea":   Double(floorArea),
-            "wallArea":    Double(wallArea),
-            "windowArea":  Double(windowArea),
-            "totalVolume": Double(totalVolume),
-            "perimeter":   Double(perimeter),
-            "avgHeight":   Double(avgHeight),
-            "walls":       walls,
-            "wallCount":   room.walls.count,
-            "doors":       doors,
-            "windows":     windows,
-            "openings":    openings,
-            "scanMode":    "roomplan",
-            "confidence":  "high",
+            "floorArea":    Double(floorArea),
+            "wallArea":     Double(wallArea),
+            "windowArea":   Double(windowArea),
+            "totalVolume":  Double(totalVolume),
+            "perimeter":    Double(perimeter),
+            "avgHeight":    Double(avgHeight),
+            "walls":        walls,
+            "wallCount":    room.walls.count,
+            "doors":        doors,
+            "windows":      windows,
+            "openings":     openings,
+            "scanMode":     "roomplan",
+            "confidence":   "high",
             "usdzExported": true,
         ]
     }
