@@ -515,20 +515,23 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     }
 }
 
-// ── RoomPlan ViewController — Polycam-style (iOS 16+) ────────────────────────
+// ── RoomPlan ViewController — Polycam-style overlay (iOS 16+) ────────────────
+//
+// Usa RoomCaptureView (fiable, sin conflictos de sesión) como capa de cámara
+// y renderizado de malla. Añade un overlay transparente con la UI al estilo
+// Polycam: barras negras, badge m², pausa, linterna, Hecho.
+//
 @available(iOS 16.0, *)
-class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
+class RoomPlanViewController: UIViewController {
 
     var onResult: (([String: Any]?) -> Void)?
 
-    private var arView:         ARSCNView!
+    private var captureView:    RoomCaptureView!
     private var captureSession: RoomCaptureSession!
-    private var meshNodes:      [UUID: SCNNode] = [:]
     private var isPaused        = false
     private var torchOn         = false
     private var uiReady         = false
 
-    // UI refs (need to update at runtime)
     private weak var areaLabel: UILabel?
     private weak var pauseBtn:  UIButton?
     private weak var torchBtn:  UIButton?
@@ -538,14 +541,21 @@ class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        setupAR()
+
+        // RoomCaptureView: cámara + malla ARKit en tiempo real
+        captureView = RoomCaptureView(frame: view.bounds)
+        captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(captureView)
+
+        captureSession          = captureView.captureSession
+        captureSession.delegate = self
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard !uiReady else { return }
         uiReady = true
-        setupUI()
+        buildOverlayUI()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -561,39 +571,33 @@ class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
         captureSession.stop()
     }
 
-    // MARK: – AR Setup
+    // MARK: – Overlay UI (Polycam style)
 
-    private func setupAR() {
-        captureSession = RoomCaptureSession()
-        captureSession.delegate = self
-
-        arView = ARSCNView(frame: view.bounds)
-        arView.autoresizingMask   = [.flexibleWidth, .flexibleHeight]
-        arView.delegate           = self
-        arView.automaticallyUpdatesLighting = false
-        arView.session            = captureSession.arSession   // share session
-        view.addSubview(arView)
-    }
-
-    // MARK: – UI Setup (Polycam style)
-
-    private func setupUI() {
+    private func buildOverlayUI() {
         let w        = view.bounds.width
         let h        = view.bounds.height
         let topInset = max(view.safeAreaInsets.top, 50)
         let botInset = max(view.safeAreaInsets.bottom, 20)
 
-        // ── Area badge (top left) ─────────────────────────────────────────────
+        // Barra negra superior (cubre status bar + área de badges)
+        let topBar = UIView()
+        topBar.backgroundColor = UIColor.black.withAlphaComponent(0.78)
+        topBar.frame = CGRect(x: 0, y: 0, width: w, height: topInset + 58)
+        view.addSubview(topBar)
+
+        // Badge "est X m²" (izquierda, dentro de la barra superior)
         let badge = UIView()
-        badge.backgroundColor    = UIColor.black.withAlphaComponent(0.65)
+        badge.backgroundColor    = UIColor.white.withAlphaComponent(0.14)
         badge.layer.cornerRadius = 18
-        badge.clipsToBounds      = true
-        badge.frame = CGRect(x: 16, y: topInset + 6, width: 130, height: 36)
+        badge.layer.borderWidth  = 1
+        badge.layer.borderColor  = UIColor.white.withAlphaComponent(0.28).cgColor
+        badge.frame = CGRect(x: 16, y: topInset + 10, width: 132, height: 36)
         view.addSubview(badge)
 
         let symCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         let iconIV = UIImageView(image: UIImage(systemName: "square.dashed", withConfiguration: symCfg))
         iconIV.tintColor = .white
+        iconIV.contentMode = .scaleAspectFit
         iconIV.frame = CGRect(x: 10, y: 8, width: 20, height: 20)
         badge.addSubview(iconIV)
 
@@ -601,29 +605,31 @@ class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
         lbl.text      = "est 0 m²"
         lbl.textColor = .white
         lbl.font      = .systemFont(ofSize: 13, weight: .semibold)
-        lbl.frame     = CGRect(x: 36, y: 8, width: 88, height: 20)
+        lbl.frame     = CGRect(x: 36, y: 9, width: 90, height: 18)
         badge.addSubview(lbl)
         areaLabel = lbl
 
-        // ── Close button (top right) ──────────────────────────────────────────
-        let closeBtn = circleButton(symbol: "xmark", size: 44, x: w - 60, y: topInset + 6)
+        // Botón cerrar ✕ (derecha, dentro de la barra superior)
+        let closeBtn = makeCircleBtn(symbol: "xmark", sz: 44)
+        closeBtn.frame.origin = CGPoint(x: w - 58, y: topInset + 7)
         closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         view.addSubview(closeBtn)
 
-        // ── Torch button (right center) ───────────────────────────────────────
-        let tBtn = circleButton(symbol: "flashlight.off.fill", size: 44, x: w - 60, y: h / 2 - 22)
+        // Botón linterna (derecha central, flotante sobre la cámara)
+        let tBtn = makeCircleBtn(symbol: "flashlight.off.fill", sz: 44)
+        tBtn.frame.origin = CGPoint(x: w - 58, y: h / 2 - 22)
         tBtn.addTarget(self, action: #selector(torchTapped), for: .touchUpInside)
         view.addSubview(tBtn)
         torchBtn = tBtn
 
-        // ── Bottom bar ────────────────────────────────────────────────────────
+        // Barra negra inferior
         let barH: CGFloat = 96 + botInset
-        let bar = UIView()
-        bar.backgroundColor = UIColor.black.withAlphaComponent(0.85)
-        bar.frame = CGRect(x: 0, y: h - barH, width: w, height: barH)
-        view.addSubview(bar)
+        let botBar = UIView()
+        botBar.backgroundColor = UIColor.black.withAlphaComponent(0.85)
+        botBar.frame = CGRect(x: 0, y: h - barH, width: w, height: barH)
+        view.addSubview(botBar)
 
-        // Pause button (centered)
+        // Botón pausa (centro de la barra inferior)
         let pBtn = UIButton(type: .system)
         let pCfg = UIImage.SymbolConfiguration(pointSize: 30, weight: .thin)
         pBtn.setImage(UIImage(systemName: "pause.circle", withConfiguration: pCfg), for: .normal)
@@ -631,13 +637,13 @@ class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
         pBtn.backgroundColor = UIColor.white.withAlphaComponent(0.12)
         pBtn.layer.cornerRadius = 30
         pBtn.layer.borderWidth  = 1.5
-        pBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.45).cgColor
-        pBtn.frame = CGRect(x: (w - 60) / 2, y: 16, width: 60, height: 60)
+        pBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.4).cgColor
+        pBtn.frame = CGRect(x: (w - 60) / 2, y: 17, width: 60, height: 60)
         pBtn.addTarget(self, action: #selector(pauseTapped), for: .touchUpInside)
-        bar.addSubview(pBtn)
+        botBar.addSubview(pBtn)
         pauseBtn = pBtn
 
-        // Done button (right side)
+        // Botón ✓ Hecho (derecha de la barra inferior)
         let doneBtn = UIButton(type: .system)
         let dCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
         doneBtn.setImage(UIImage(systemName: "checkmark", withConfiguration: dCfg), for: .normal)
@@ -647,92 +653,24 @@ class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
         doneBtn.backgroundColor = UIColor.white.withAlphaComponent(0.12)
         doneBtn.layer.cornerRadius = 20
         doneBtn.layer.borderWidth  = 1
-        doneBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.35).cgColor
-        doneBtn.frame = CGRect(x: w - 124, y: 26, width: 108, height: 40)
+        doneBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.32).cgColor
+        doneBtn.frame = CGRect(x: w - 122, y: 27, width: 106, height: 40)
         doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
-        bar.addSubview(doneBtn)
+        botBar.addSubview(doneBtn)
     }
 
-    // Crea un botón redondo con SF Symbol
-    private func circleButton(symbol: String, size: CGFloat, x: CGFloat, y: CGFloat) -> UIButton {
+    private func makeCircleBtn(symbol: String, sz: CGFloat) -> UIButton {
         let btn = UIButton(type: .system)
         let cfg = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
         btn.setImage(UIImage(systemName: symbol, withConfiguration: cfg), for: .normal)
-        btn.tintColor = .white
-        btn.backgroundColor = UIColor.black.withAlphaComponent(0.65)
-        btn.layer.cornerRadius = size / 2
-        btn.frame = CGRect(x: x, y: y, width: size, height: size)
+        btn.tintColor       = .white
+        btn.backgroundColor = UIColor.black.withAlphaComponent(0.62)
+        btn.layer.cornerRadius = sz / 2
+        btn.bounds.size     = CGSize(width: sz, height: sz)
         return btn
     }
 
-    // MARK: – ARSCNViewDelegate (mesh rendering)
-
-    func renderer(_ renderer: SCNSceneRenderer, didAdd node: SCNNode, for anchor: ARAnchor) {
-        guard let mesh = anchor as? ARMeshAnchor else { return }
-        let child = buildMeshNode(for: mesh)
-        node.addChildNode(child)
-        meshNodes[anchor.identifier] = child
-    }
-
-    func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
-        guard let mesh = anchor as? ARMeshAnchor else { return }
-        meshNodes[anchor.identifier]?.removeFromParentNode()
-        let child = buildMeshNode(for: mesh)
-        node.addChildNode(child)
-        meshNodes[anchor.identifier] = child
-    }
-
-    func renderer(_ renderer: SCNSceneRenderer, didRemove node: SCNNode, for anchor: ARAnchor) {
-        meshNodes.removeValue(forKey: anchor.identifier)
-    }
-
-    private func buildMeshNode(for anchor: ARMeshAnchor) -> SCNNode {
-        let geo = anchor.geometry
-
-        let vSrc = SCNGeometrySource(
-            buffer: geo.vertices.buffer,
-            vertexFormat: .float3,
-            semantic: .vertex,
-            vertexCount: geo.vertices.count,
-            dataOffset: geo.vertices.offset,
-            dataStride: geo.vertices.stride
-        )
-        let fData = Data(bytes: geo.faces.buffer.contents(), count: geo.faces.buffer.length)
-        let elem  = SCNGeometryElement(
-            data: fData,
-            primitiveType: .triangles,
-            primitiveCount: geo.faces.count,
-            bytesPerIndex: geo.faces.bytesPerIndex
-        )
-
-        let scnGeo            = SCNGeometry(sources: [vSrc], elements: [elem])
-        let mat               = SCNMaterial()
-        mat.diffuse.contents  = meshColor(for: anchor)
-        mat.isDoubleSided     = true
-        mat.blendMode         = .alpha
-        mat.writesToDepthBuffer = false
-        scnGeo.materials      = [mat]
-
-        return SCNNode(geometry: scnGeo)
-    }
-
-    // Colorea por clasificación dominante (azul=paredes, naranja=suelo, gris=resto)
-    private func meshColor(for anchor: ARMeshAnchor) -> UIColor {
-        var walls = 0, floors = 0
-        let total = min(anchor.geometry.faces.count, 150)  // muestra parcial por rendimiento
-        for i in 0..<total {
-            switch anchor.geometry.faceClassification(at: i) {
-            case .wall:  walls  += 1
-            case .floor: floors += 1
-            default: break
-            }
-        }
-        if walls  > floors && walls  > 0 { return UIColor(red: 0.18, green: 0.44, blue: 0.95, alpha: 0.40) }
-        if floors > walls  && floors > 0 { return UIColor(red: 0.72, green: 0.43, blue: 0.12, alpha: 0.45) }
-        return UIColor(white: 0.92, alpha: 0.14)
-    }
-
-    // MARK: – Button actions
+    // MARK: – Acciones
 
     @objc private func closeTapped() {
         captureSession.stop()
@@ -740,32 +678,35 @@ class RoomPlanViewController: UIViewController, ARSCNViewDelegate {
     }
 
     @objc private func doneTapped() {
-        captureSession.stop()   // dispara captureSession(_:didEndWith:error:)
+        captureSession.stop()   // → captureSession(_:didEndWith:error:)
     }
 
     @objc private func pauseTapped() {
         isPaused.toggle()
-        let symName = isPaused ? "play.circle" : "pause.circle"
+        let sym = isPaused ? "play.circle" : "pause.circle"
         let cfg = UIImage.SymbolConfiguration(pointSize: 30, weight: .thin)
-        pauseBtn?.setImage(UIImage(systemName: symName, withConfiguration: cfg), for: .normal)
+        pauseBtn?.setImage(UIImage(systemName: sym, withConfiguration: cfg), for: .normal)
         if isPaused {
             captureSession.arSession.pause()
-        } else if let config = captureSession.arSession.configuration {
-            captureSession.arSession.run(config)
+        } else if let existingCfg = captureSession.arSession.configuration {
+            captureSession.arSession.run(existingCfg)
         }
     }
 
     @objc private func torchTapped() {
         torchOn.toggle()
         setTorch(torchOn)
-        let symName = torchOn ? "flashlight.on.fill" : "flashlight.off.fill"
+        let sym = torchOn ? "flashlight.on.fill" : "flashlight.off.fill"
         let cfg = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        torchBtn?.setImage(UIImage(systemName: symName, withConfiguration: cfg), for: .normal)
-        torchBtn?.tintColor = torchOn ? UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1) : .white
+        torchBtn?.setImage(UIImage(systemName: sym, withConfiguration: cfg), for: .normal)
+        torchBtn?.tintColor = torchOn
+            ? UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1)
+            : .white
     }
 
     private func setTorch(_ on: Bool) {
-        guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
+        guard let device = AVCaptureDevice.default(for: .video),
+              device.hasTorch else { return }
         try? device.lockForConfiguration()
         device.torchMode = on ? .on : .off
         device.unlockForConfiguration()
