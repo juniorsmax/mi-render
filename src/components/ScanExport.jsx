@@ -470,7 +470,11 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
 
         {/* Acciones principales */}
         <div className="scan-export-main-actions">
-          <button className="btn btn-primary btn-lg" onClick={onAccept}>
+          <button className="btn btn-primary btn-lg" onClick={() => {
+            const canvas = reportRef.current?.querySelector('canvas')
+            const thumbnail = canvas ? canvas.toDataURL('image/png', 0.6) : null
+            onAccept(thumbnail)
+          }}>
             <Icon name="check" size={18} /> Usar para presupuesto
           </button>
           <button className="btn btn-ghost" onClick={onRescan}>

@@ -79,6 +79,7 @@ export default function App() {
       areaSqM: budgetData?.areaSqM ?? room?.floorArea ?? room?.areaSqM ?? base.areaSqM ?? 0,
       total: budgetData?.total ?? base.total ?? 0,
       date: budgetData?.date || new Date().toLocaleDateString('es-ES'),
+      thumbnail: room?.thumbnail || base.thumbnail || null,
       room: room || base.room,
       budgetData,
     }

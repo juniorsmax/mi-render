@@ -337,7 +337,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   if (step === 'result' && scanResult) {
     return <ScanExport
       result={scanResult}
-      onAccept={() => onComplete(scanResult)}
+      onAccept={(thumbnail) => onComplete({ ...scanResult, thumbnail })}
       onRescan={() => { setScanResult(null); setStep('permission') }}
     />
   }
