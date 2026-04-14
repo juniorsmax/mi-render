@@ -190,9 +190,7 @@ class WalkthroughViewController: UIViewController {
                 mat.diffuse.wrapT      = .repeat
             }
 
-            // LOD: simplificar nodos lejanos automáticamente
-            let lod = SCNLevelOfDetail(geometry: geo, screenSpaceRadius: 5)
-            node.levelsOfDetail = [lod]
+            // LOD: reducir geometría en nodos lejanos via flattening posterior
         }
 
         // Flatten geometrías estáticas (mejora render)
@@ -362,17 +360,17 @@ class WalkthroughViewController: UIViewController {
 
         let cx = (w - pad * 2) / 2
         // ▲ adelante
-        addMoveBtn("▲", frame: CGRect(x: cx - 30, y: 8,  w: 60, h: 38), tag: 1, parent: ctrlBg.contentView)
+        addMoveBtn("▲", frame: CGRect(x: cx - 30, y: 8,  width: 60, height: 38), tag: 1, parent: ctrlBg.contentView)
         // ▼ atrás
-        addMoveBtn("▼", frame: CGRect(x: cx - 30, y: 50, w: 60, h: 38), tag: -1, parent: ctrlBg.contentView)
+        addMoveBtn("▼", frame: CGRect(x: cx - 30, y: 50, width: 60, height: 38), tag: -1, parent: ctrlBg.contentView)
         // ◀ girar izq
-        addMoveBtn("◀", frame: CGRect(x: cx - 108, y: 28, w: 52, h: 40), tag: 10, parent: ctrlBg.contentView)
+        addMoveBtn("◀", frame: CGRect(x: cx - 108, y: 28, width: 52, height: 40), tag: 10, parent: ctrlBg.contentView)
         // ▶ girar der
-        addMoveBtn("▶", frame: CGRect(x: cx + 56,  y: 28, w: 52, h: 40), tag: 11, parent: ctrlBg.contentView)
+        addMoveBtn("▶", frame: CGRect(x: cx + 56,  y: 28, width: 52, height: 40), tag: 11, parent: ctrlBg.contentView)
         // ↑ subir
-        addMoveBtn("↑", frame: CGRect(x: 8,        y: 8,  w: 44, h: 38), tag: 20, parent: ctrlBg.contentView)
+        addMoveBtn("↑", frame: CGRect(x: 8,        y: 8,  width: 44, height: 38), tag: 20, parent: ctrlBg.contentView)
         // ↓ bajar
-        addMoveBtn("↓", frame: CGRect(x: 8,        y: 50, w: 44, h: 38), tag: 21, parent: ctrlBg.contentView)
+        addMoveBtn("↓", frame: CGRect(x: 8,        y: 50, width: 44, height: 38), tag: 21, parent: ctrlBg.contentView)
 
         // Hint tap-to-teleport
         let hint = UILabel(frame: CGRect(x: 0, y: panelY - 22, width: w, height: 18))

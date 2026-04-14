@@ -248,7 +248,7 @@ class PhotogrammetryViewController: UIViewController {
 
             let session = try PhotogrammetrySession(input: imageDir, configuration: config)
             try session.process(requests: [
-                .modelFile(url: outputURL, detail: .medium)
+                .modelFile(url: outputURL, detail: .reduced)
             ])
 
             for try await output in session.outputs {
@@ -281,7 +281,7 @@ class PhotogrammetryViewController: UIViewController {
                         self.statusLabel.text = "Procesando modelo 3D… \(pct)%"
                     }
 
-                case .requestError(_, error: let e):
+                case .requestError(_, let e):
                     await MainActor.run {
                         self.statusLabel.text = "Error: \(e.localizedDescription)"
                     }
