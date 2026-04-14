@@ -100,19 +100,23 @@ export async function startLiDARScan() {
 function parseLiDARResult(raw) {
   if (!raw) return null
   return {
-    floorArea:   raw.areaSqM      ?? raw.floorArea   ?? 0,
-    wallArea:    raw.wallArea      ?? 0,
-    windowArea:  raw.windowArea    ?? 0,
-    totalVolume: raw.volume        ?? raw.totalVolume ?? 0,
-    perimeter:   raw.perimeterM    ?? raw.perimeter   ?? 0,
-    avgHeight:   raw.avgHeight     ?? 2.5,
-    walls:       raw.walls         ?? [],
-    doors:       raw.doors         ?? [],
-    windows:     raw.windows       ?? [],
-    openings:    raw.openings      ?? [],
-    wallCount:   raw.wallCount     ?? raw.walls?.length ?? 0,
-    confidence:  raw.confidence    ?? 'high',
-    scanMode:    'lidar-native',
+    floorArea:    raw.areaSqM      ?? raw.floorArea   ?? 0,
+    wallArea:     raw.wallArea      ?? 0,
+    windowArea:   raw.windowArea    ?? 0,
+    totalVolume:  raw.volume        ?? raw.totalVolume ?? 0,
+    perimeter:    raw.perimeterM    ?? raw.perimeter   ?? 0,
+    avgHeight:    raw.avgHeight     ?? 2.5,
+    walls:        raw.walls         ?? [],
+    doors:        raw.doors         ?? [],
+    windows:      raw.windows       ?? [],
+    openings:     raw.openings      ?? [],
+    wallCount:    raw.wallCount     ?? raw.walls?.length ?? 0,
+    confidence:   raw.confidence    ?? 'high',
+    scanMode:     'lidar-native',
+    // Ruta USDZ exportado por el nativo — imprescindible para walkthrough y AR QuickLook
+    usdzPath:     raw.usdzPath      ?? null,
+    usdzExported: !!(raw.usdzPath   || raw.usdzExported),
+    meshAnchorsCount: raw.meshAnchorsCount ?? 0,
   }
 }
 

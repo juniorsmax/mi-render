@@ -81,6 +81,7 @@ export default function App() {
       total: budgetData?.total ?? base.total ?? 0,
       date: budgetData?.date || new Date().toLocaleDateString('es-ES'),
       thumbnail: room?.thumbnail || base.thumbnail || null,
+      usdzPath: room?.usdzPath || base.usdzPath || null,   // ruta al modelo 3D USDZ
       room: room || base.room,
       budgetData,
     }

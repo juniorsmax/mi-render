@@ -276,18 +276,24 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           )}
         </div>
 
-        {/* ── Resultado de fotogrametría ───────────────────────────────── */}
-        {isPhotogrammetry && (
+        {/* ── Modelo 3D — LiDAR o fotogrametría ───────────────────────── */}
+        {usdzPath && (
           <div className="scan-photogram-card glass">
-            <div className="scan-photogram-icon">📷</div>
+            <div className="scan-photogram-icon">{isPhotogrammetry ? '📷' : '🏠'}</div>
             <div className="scan-photogram-info">
-              <div className="scan-photogram-title">Modelo 3D fotogramétrico</div>
-              <div className="scan-photogram-sub">{photoCount} fotos procesadas · USDZ con texturas reales</div>
+              <div className="scan-photogram-title">
+                {isPhotogrammetry ? 'Modelo 3D fotogramétrico' : 'Modelo 3D de la habitación'}
+              </div>
+              <div className="scan-photogram-sub">
+                {isPhotogrammetry
+                  ? `${photoCount} fotos procesadas · USDZ con texturas reales`
+                  : 'Escaneado con LiDAR · formato USDZ'}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 12 }}>
               <button className="btn btn-primary" style={{ flex: 1 }}
-                onClick={() => usdzPath && startWalkthrough(usdzPath)}>
-                🚶 Recorrido interior
+                onClick={() => startWalkthrough(usdzPath)}>
+                🚶 Recorrido 3D
               </button>
               <button className="btn btn-ghost" style={{ flex: 1 }}
                 onClick={handleSharePhotogrammetry}>
@@ -295,7 +301,7 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
               </button>
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, textAlign: 'center', lineHeight: 1.5 }}>
-              Recorrido interior · Desliza para mirar · Botones para moverte
+              Recorrido interior · Desliza para mirar · Toca para moverte
             </p>
           </div>
         )}
@@ -374,7 +380,7 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
             sub="Plano + métricas para imprimir"
             onClick={handleExportPDF}
           />
-          {usdzExported && (
+          {(usdzExported || usdzPath) && (
             <ExportBtn
               iconText="3D"
               label="Modelo USDZ"
