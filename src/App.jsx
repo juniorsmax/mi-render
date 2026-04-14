@@ -6,6 +6,7 @@ import { HomeView }     from './views/HomeView.jsx'
 import { ProjectsView } from './views/ProjectsView.jsx'
 import { ExploreView }  from './views/ExploreView.jsx'
 import { ProfileView }  from './views/ProfileView.jsx'
+import { TeamView }     from './views/TeamView.jsx'
 import { ScanView }     from './views/ScanView.jsx'
 import { BudgetView }   from './views/BudgetView.jsx'
 
@@ -120,7 +121,7 @@ export default function App() {
         : tab === 'projects' && <ProjectsView projects={projects} onOpen={handleOpenProject} />
       }
       {tab === 'explore'  && <ExploreView />}
-      {tab === 'team'     && <TeamPlaceholder />}
+      {tab === 'team'     && <TeamView />}
       {tab === 'profile'  && <ProfileView />}
 
       {/* Bottom navigation */}
@@ -141,14 +142,3 @@ export default function App() {
   )
 }
 
-function TeamPlaceholder() {
-  return (
-    <div className="page">
-      <div className="page-header"><h1>Equipo</h1></div>
-      <div className="page-content" style={{ alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-        <span style={{ fontSize: '3rem', opacity: 0.3 }}>👥</span>
-        <p className="muted">Próximamente</p>
-      </div>
-    </div>
-  )
-}
