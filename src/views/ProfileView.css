@@ -33,3 +33,52 @@
 .profile-version {
   text-align: center; font-size: 12px; padding: 8px 0 4px;
 }
+
+.profile-avatar-lg {
+  width: 68px; height: 68px; font-size: 24px;
+}
+
+/* ── Sheets ──────────────────────────────────────────────────────────────── */
+.profile-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: flex-end;
+}
+.profile-sheet {
+  width: 100%; background: var(--surface);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: 12px 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
+  max-height: 88vh; overflow-y: auto;
+}
+.profile-sheet-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.profile-sheet-header h3 { font: 700 18px var(--font); color: var(--text-strong); }
+
+.profile-form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+
+.profile-sheet-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+
+/* ── Facturación ─────────────────────────────────────────────────────────── */
+.billing-plan-card {
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px;
+}
+.billing-plan-free  { border: 1px solid rgba(240,165,0,0.3); }
+.billing-plan-pro   { border: 1px solid rgba(167,139,250,0.3); }
+
+.billing-plan-badge {
+  font: 600 11px var(--font); color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;
+}
+.billing-plan-badge-pro { color: #a78bfa; }
+.billing-plan-name  { font: 800 22px var(--font); color: var(--text-strong); }
+.billing-plan-price { font: 600 14px var(--font); color: var(--text-muted); margin: 2px 0 12px; }
+
+.billing-plan-features {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.billing-plan-features li { font-size: 13px; color: var(--text); }
