@@ -6,6 +6,8 @@ CAP_PLUGIN(LiDARPlugin, "LiDARPlugin",
     CAP_PLUGIN_METHOD(isAvailable, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(startScan, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(startObjectScan, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(startPhotogrammetry, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(startWalkthrough, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(stopScan, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(exportUSDZ, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(saveWorldMap, CAPPluginReturnPromise);

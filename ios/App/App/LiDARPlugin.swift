@@ -267,10 +267,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
 
         let asset = MeshManager.shared.combinedMesh()
-        if let url = ExportManager.shared.exportAsset(asset, format: .obj, named: name) {
-            call.resolve(["path": url.path, "format": "obj"])
-        } else {
-            call.reject("Error exportando OBJ")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportAsset(asset, format: .obj, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "obj"])
+            } else {
+                call.reject("Error exportando OBJ")
+            }
         }
     }
 
@@ -285,10 +292,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
 
         let asset = MeshManager.shared.combinedMesh()
-        if let url = ExportManager.shared.exportAsset(asset, format: .ply, named: name) {
-            call.resolve(["path": url.path, "format": "ply"])
-        } else {
-            call.reject("Error exportando PLY")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportAsset(asset, format: .ply, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "ply"])
+            } else {
+                call.reject("Error exportando PLY")
+            }
         }
     }
 
@@ -303,10 +317,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
 
         let asset = MeshManager.shared.combinedMesh()
-        if let url = ExportManager.shared.exportAsset(asset, format: .stl, named: name) {
-            call.resolve(["path": url.path, "format": "stl"])
-        } else {
-            call.reject("Error exportando STL")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportAsset(asset, format: .stl, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "stl"])
+            } else {
+                call.reject("Error exportando STL")
+            }
         }
     }
 
@@ -321,10 +342,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
 
         let asset = MeshManager.shared.combinedMesh()
-        if let url = ExportManager.shared.exportDAE(asset: asset, named: name) {
-            call.resolve(["path": url.path, "format": "dae"])
-        } else {
-            call.reject("Error exportando DAE")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportDAE(asset: asset, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "dae"])
+            } else {
+                call.reject("Error exportando DAE")
+            }
         }
     }
 
@@ -338,10 +366,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
             return
         }
 
-        if let url = ExportManager.shared.exportSVG(from: room.walls, named: name) {
-            call.resolve(["path": url.path, "format": "svg"])
-        } else {
-            call.reject("Error exportando SVG")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportSVG(from: room.walls, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "svg"])
+            } else {
+                call.reject("Error exportando SVG")
+            }
         }
     }
 
@@ -355,10 +390,41 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
             return
         }
 
-        if let url = ExportManager.shared.exportPDF(from: room.walls, named: name) {
-            call.resolve(["path": url.path, "format": "pdf"])
-        } else {
-            call.reject("Error exportando PDF")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportPDF(from: room.walls, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "pdf"])
+            } else {
+                call.reject("Error exportando PDF")
+            }
+        }
+    }
+
+    // ── exportDXF ────────────────────────────────────────────────────────────
+    @available(iOS 16.0, *)
+    @objc func exportDXF(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-plan"
+
+        guard let room = RoomPlanManager.shared.lastCapturedRoom else {
+            call.reject("No hay escaneo de habitación disponible para DXF")
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.generateDXF(from: room.walls, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "dxf"])
+            } else {
+                call.reject("Error exportando DXF")
+            }
         }
     }
 
@@ -373,10 +439,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
 
         let asset = MeshManager.shared.combinedMesh()
-        if let url = ExportManager.shared.exportGLTF(asset: asset, named: name) {
-            call.resolve(["path": url.path, "format": "gltf"])
-        } else {
-            call.reject("Error exportando GLTF")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportGLTF(asset: asset, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "gltf"])
+            } else {
+                call.reject("Error exportando GLTF")
+            }
         }
     }
 
@@ -391,10 +464,17 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
 
         let asset = MeshManager.shared.combinedMesh()
-        if let url = ExportManager.shared.exportGLB(asset: asset, named: name) {
-            call.resolve(["path": url.path, "format": "glb"])
-        } else {
-            call.reject("Error exportando GLB")
+        DispatchQueue.main.async {
+            guard let vc = self.bridge?.viewController else {
+                call.reject("No se encontró viewController")
+                return
+            }
+            if let url = ExportManager.shared.exportGLB(asset: asset, named: name) {
+                ExportManager.shared.shareFile(at: url, from: vc)
+                call.resolve(["path": url.path, "format": "glb"])
+            } else {
+                call.reject("Error exportando GLB")
+            }
         }
     }
 
