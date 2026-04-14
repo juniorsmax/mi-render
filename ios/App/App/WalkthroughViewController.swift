@@ -412,9 +412,9 @@ class WalkthroughViewController: UIViewController {
         return btn
     }
 
-    private func addMoveBtn(_ t: String, frame f: (x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat), tag: Int, parent: UIView) {
+    private func addMoveBtn(_ t: String, frame f: CGRect, tag: Int, parent: UIView) {
         let btn = UIButton(type: .system)
-        btn.frame = CGRect(x: f.x, y: f.y, width: f.w, height: f.h)
+        btn.frame = f
         btn.setTitle(t, for: .normal)
         btn.setTitleColor(UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 0.9), for: .normal)
         btn.titleLabel?.font = .systemFont(ofSize: 20, weight: .bold)
