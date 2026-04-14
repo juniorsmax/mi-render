@@ -43,3 +43,26 @@
 .project-card-body { flex: 1; min-width: 0; }
 .project-card-name { font: 600 15px var(--font); color: var(--text-strong); }
 .project-card-meta { font-size: 12px; margin-top: 2px; }
+
+/* ── Búsqueda ─────────────────────────────────────────────────────────────── */
+.projects-search-wrap {
+  position: relative;
+  margin: 10px 16px 4px;
+}
+.projects-search-input {
+  width: 100%; box-sizing: border-box;
+  padding: 10px 36px 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text); font: 14px var(--font);
+  outline: none;
+  transition: border-color var(--ease);
+}
+.projects-search-input:focus { border-color: rgba(240,165,0,0.5); }
+.projects-search-clear {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-muted);
+  font-size: 14px; cursor: pointer; padding: 4px;
+}
+.btn-icon-active { color: var(--accent) !important; }

@@ -6,31 +6,68 @@ const RECENT_COUNT = 5
 
 export function ProjectsView({ projects, onOpen }) {
   const { t } = useLang()
-  const [filter, setFilter] = useState('recent')
+  const [filter, setFilter]   = useState('recent')
+  const [search, setSearch]   = useState('')
+  const [showSearch, setShowSearch] = useState(false)
 
-  // Ordenar por id desc (más reciente primero) y aplicar filtro
   const sorted = [...projects].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
-  const visible = filter === 'recent' ? sorted.slice(0, RECENT_COUNT) : sorted
+
+  const filtered = search.trim()
+    ? sorted.filter(p =>
+        (p.name       || '').toLowerCase().includes(search.toLowerCase()) ||
+        (p.clientName || '').toLowerCase().includes(search.toLowerCase()) ||
+        (p.date       || '').toLowerCase().includes(search.toLowerCase())
+      )
+    : filter === 'recent' ? sorted.slice(0, RECENT_COUNT) : sorted
+
+  function toggleSearch() {
+    setShowSearch(v => !v)
+    setSearch('')
+  }
 
   return (
     <div className="page">
       <div className="page-header">
         <h1>{t.home.title}</h1>
-        <button className="btn btn-icon" title="Buscar">🔍</button>
+        <button
+          className={`btn btn-icon ${showSearch ? 'btn-icon-active' : ''}`}
+          title="Buscar"
+          onClick={toggleSearch}
+        >🔍</button>
       </div>
 
-      {/* Filter pills */}
-      <div className="projects-filters">
-        {['recent', 'all'].map((f) => (
-          <button
-            key={f}
-            className={`pill ${filter === f ? 'pill-active' : ''}`}
-            onClick={() => setFilter(f)}
-          >
-            {f === 'recent' ? `${t.home.recent} (${Math.min(projects.length, RECENT_COUNT)})` : `${t.home.all} (${projects.length})`}
-          </button>
-        ))}
-      </div>
+      {showSearch && (
+        <div className="projects-search-wrap">
+          <input
+            className="projects-search-input"
+            type="text"
+            placeholder="Buscar por nombre, cliente o fecha…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            autoFocus
+          />
+          {search && (
+            <button className="projects-search-clear" onClick={() => setSearch('')}>✕</button>
+          )}
+        </div>
+      )}
+
+      {/* Filter pills — se ocultan durante búsqueda activa */}
+      {!search && (
+        <div className="projects-filters">
+          {['recent', 'all'].map((f) => (
+            <button
+              key={f}
+              className={`pill ${filter === f ? 'pill-active' : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f === 'recent'
+                ? `${t.home.recent} (${Math.min(projects.length, RECENT_COUNT)})`
+                : `${t.home.all} (${projects.length})`}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="page-content">
         {projects.length === 0 ? (
@@ -39,8 +76,14 @@ export function ProjectsView({ projects, onOpen }) {
             <p className="projects-empty-title">{t.home.empty}</p>
             <p className="muted" style={{ fontSize: 13 }}>{t.home.emptyHint}</p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="projects-empty">
+            <div className="projects-empty-icon" style={{ fontSize: '2rem' }}>🔍</div>
+            <p className="projects-empty-title">Sin resultados</p>
+            <p className="muted" style={{ fontSize: 13 }}>Prueba con otro nombre o fecha</p>
+          </div>
         ) : (
-          visible.map((p) => (
+          filtered.map((p) => (
             <ProjectCard key={p.id} project={p} onClick={() => onOpen(p)} />
           ))
         )}
