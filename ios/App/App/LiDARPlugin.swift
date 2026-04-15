@@ -743,6 +743,11 @@ class RoomPlanViewController: UIViewController {
     private var liveDoors   = 0
     private var liveWindows = 0
 
+    // Métricas en tiempo real — actualizadas en el timer
+    private var liveVolume:    Float = 0
+    private var liveHeight:    Float = 0
+    private var livePerimeter: Float = 0
+
     // MARK: – Lifecycle
 
     override func viewDidLoad() {
@@ -759,6 +764,12 @@ class RoomPlanViewController: UIViewController {
         MeshManager.shared.onSurfacesUpdated = { [weak self] surfaces in
             guard let self = self else { return }
             self.overlay?.updateSurfaces(surfaces, doors: self.liveDoors, windows: self.liveWindows)
+            // Propagar volumen estimado (altura puede no estar calculada aún → usar liveHeight o fallback)
+            let vol = surfaces.floor * max(self.liveHeight > 0.1 ? self.liveHeight : 2.4, 0.5)
+            self.liveVolume = vol
+            self.overlay?.updateLiveMetrics(volume: vol,
+                                            height: self.liveHeight,
+                                            perimeter: self.livePerimeter)
         }
 
         MeasurementManager.shared.onWallsCalculated = { [weak self] _ in
@@ -980,7 +991,23 @@ class RoomPlanViewController: UIViewController {
 
             self.meshTickCount += 1
 
-            // Paredes + progreso cada 3 ticks
+            // ── Volumen + altura cada 2 ticks (~3 s) — Gap 3 ─────────────────
+            if self.meshTickCount % 2 == 0 {
+                DispatchQueue.global(qos: .background).async { [weak self] in
+                    guard let self = self else { return }
+                    let h   = VolumeCalculator.shared.estimateHeight()
+                    let vol = MeshManager.shared.surfaces.floor * max(h, 0.5)
+                    DispatchQueue.main.async {
+                        self.liveHeight = h
+                        self.liveVolume = vol
+                        self.overlay?.updateLiveMetrics(volume: vol,
+                                                        height: h,
+                                                        perimeter: self.livePerimeter)
+                    }
+                }
+            }
+
+            // ── Paredes + progreso cada 3 ticks (~4.5 s) — Gap 6 ─────────────
             if self.meshTickCount % 3 == 0 {
                 MeasurementManager.shared.calculateWallAreas()
                 self.refreshProgress()
@@ -989,9 +1016,20 @@ class RoomPlanViewController: UIViewController {
                 )
             }
 
-            // Miniatura plano planta cada 4 ticks
-            if self.meshTickCount % 4 == 0 {
-                self.refreshPlanPreview()
+            // ── Reconstruir footprint + calcular perímetro cada 5 ticks (~7.5 s) — Gaps 1 & 5
+            if self.meshTickCount % 5 == 0 {
+                self.refreshPlanPreview()   // ya construye footprint
+                DispatchQueue.global(qos: .background).async { [weak self] in
+                    guard let self = self else { return }
+                    if let fp = FloorFootprintBuilder.build(simplifyEpsilon: 0.08) {
+                        DispatchQueue.main.async {
+                            self.livePerimeter = fp.perimeter
+                            self.overlay?.updateLiveMetrics(volume: self.liveVolume,
+                                                            height: self.liveHeight,
+                                                            perimeter: fp.perimeter)
+                        }
+                    }
+                }
             }
         }
     }

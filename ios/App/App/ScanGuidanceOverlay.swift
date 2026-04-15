@@ -37,6 +37,11 @@ final class ScanGuidanceOverlay: UIView {
     private var doorBadge:  BadgeView?
     private var winBadge:   BadgeView?
 
+    // Métricas en tiempo real (segunda fila)
+    private weak var volLabel:    UILabel?
+    private weak var heightLabel: UILabel?
+    private weak var perimLabel:  UILabel?
+
     private var isTorchOn: Bool = false
 
     // MARK: Init
@@ -171,6 +176,44 @@ final class ScanGuidanceOverlay: UIView {
         doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
         botBar.addSubview(doneBtn)
 
+        // ── Barra de métricas en tiempo real (volumen · altura · perímetro) ─────
+        //    Posición: 76 pt por encima del bottom bar → espacio para dos strips
+
+        let metricsBarH: CGFloat = 32
+        let metricsBarY = botBarY - 76
+        let metricsBar = UIView(frame: CGRect(x: 0, y: metricsBarY,
+                                              width: w, height: metricsBarH))
+        metricsBar.backgroundColor = UIColor.black.withAlphaComponent(0.60)
+        addSubview(metricsBar)
+
+        let metricDefs: [(String, String)] = [
+            ("cube.fill",    "Vol."),
+            ("ruler",        "Alt."),
+            ("arrow.triangle.turn.up.right.diamond", "Per."),
+        ]
+        var metricLabels: [UILabel] = []
+        var totalMetricW: CGFloat = 0
+        var metricViews: [(UIView, UILabel)] = []
+
+        for (icon, text) in metricDefs {
+            let (container, valueLabel) = makeMetricBadge(icon: icon, labelText: text)
+            totalMetricW += container.frame.width
+            metricViews.append((container, valueLabel))
+            metricLabels.append(valueLabel)
+        }
+        let mSpacing: CGFloat = 10
+        totalMetricW += mSpacing * CGFloat(metricDefs.count - 1)
+        var mX = (w - totalMetricW) / 2
+        for (view, _) in metricViews {
+            view.frame.origin.x = mX
+            view.frame.origin.y = (metricsBarH - view.frame.height) / 2
+            metricsBar.addSubview(view)
+            mX += view.frame.width + mSpacing
+        }
+        volLabel    = metricLabels[0]
+        heightLabel = metricLabels[1]
+        perimLabel  = metricLabels[2]
+
         // ── Surface badges strip ───────────────────────────────────────────────
 
         let stripH: CGFloat = 32
@@ -270,6 +313,51 @@ final class ScanGuidanceOverlay: UIView {
         return BadgeView(container: container, label: valueLabel)
     }
 
+    // MARK: Metric badge factory (icon + texto fijo + valor dinámico)
+
+    private func makeMetricBadge(icon: String, labelText: String) -> (UIView, UILabel) {
+        let container = UIView()
+        container.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        container.layer.cornerRadius = 10
+        container.clipsToBounds = true
+
+        let iconCfg  = UIImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+        let iconView = UIImageView(image: UIImage(systemName: icon, withConfiguration: iconCfg))
+        iconView.tintColor = UIColor(red: 0.18, green: 0.83, blue: 0.75, alpha: 1) // teal
+        iconView.contentMode = .scaleAspectFit
+
+        let titleLabel = UILabel()
+        titleLabel.font      = .systemFont(ofSize: 9, weight: .medium)
+        titleLabel.textColor = UIColor.white.withAlphaComponent(0.55)
+        titleLabel.text      = labelText
+
+        let valueLabel = UILabel()
+        valueLabel.font      = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        valueLabel.textColor = .white
+        valueLabel.text      = "—"
+
+        iconView.sizeToFit(); titleLabel.sizeToFit(); valueLabel.sizeToFit()
+
+        let iconSz: CGFloat = 12
+        let pad: CGFloat = 7
+        let gap: CGFloat = 3
+        let totalW = pad + iconSz + gap + titleLabel.frame.width + gap + valueLabel.frame.width + pad
+        let h: CGFloat = 22
+        container.frame = CGRect(x: 0, y: 0, width: totalW, height: h)
+
+        var cx: CGFloat = pad
+        iconView.frame = CGRect(x: cx, y: (h - iconSz) / 2, width: iconSz, height: iconSz)
+        container.addSubview(iconView); cx += iconSz + gap
+        titleLabel.frame = CGRect(x: cx, y: (h - titleLabel.frame.height) / 2,
+                                   width: titleLabel.frame.width, height: titleLabel.frame.height)
+        container.addSubview(titleLabel); cx += titleLabel.frame.width + gap
+        valueLabel.frame = CGRect(x: cx, y: (h - valueLabel.frame.height) / 2,
+                                   width: valueLabel.frame.width, height: valueLabel.frame.height)
+        container.addSubview(valueLabel)
+
+        return (container, valueLabel)
+    }
+
     // MARK: Circle button factory
 
     private func makeCircleBtn(systemName: String) -> UIButton {
@@ -313,6 +401,19 @@ final class ScanGuidanceOverlay: UIView {
         progressRingLayer?.strokeColor = color.cgColor
 
         guidanceLabel?.text = guidance
+    }
+
+    // Actualiza la barra de métricas en tiempo real (volumen · altura · perímetro)
+    func updateLiveMetrics(volume: Float, height: Float, perimeter: Float) {
+        if volume > 0.01 {
+            volLabel?.text = String(format: "%.1fm³", volume)
+        }
+        if height > 0.1 {
+            heightLabel?.text = String(format: "%.2fm", height)
+        }
+        if perimeter > 0.1 {
+            perimLabel?.text = String(format: "%.1fm", perimeter)
+        }
     }
 
     func updateSurfaces(_ s: MeshSurfaces, doors: Int, windows: Int) {

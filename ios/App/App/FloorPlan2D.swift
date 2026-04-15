@@ -14,12 +14,14 @@ import CoreGraphics
 
 struct FloorFootprint {
     /// Polígono convex hull en metros, plano XZ (x → X, y → Z)
-    let polygon: [SIMD2<Float>]
+    let polygon:  [SIMD2<Float>]
     /// Bounding box en metros
     let minPoint: SIMD2<Float>
     let maxPoint: SIMD2<Float>
     /// Área del polígono en m² — fórmula del calzador
-    let area: Float
+    let area:     Float
+    /// Perímetro del polígono en metros (suma de aristas consecutivas)
+    let perimeter: Float
 
     var pointCount: Int    { polygon.count }
     var width: Float       { maxPoint.x - minPoint.x }   // metros
@@ -29,14 +31,15 @@ struct FloorFootprint {
     func toDictionary() -> [String: Any] {
         let pts = polygon.map { ["x": Double($0.x), "z": Double($0.y)] }
         return [
-            "polygon":   pts,
-            "area":      Double(area),
-            "width":     Double(width),
-            "depth":     Double(depth),
-            "minX":      Double(minPoint.x),
-            "minZ":      Double(minPoint.y),
-            "maxX":      Double(maxPoint.x),
-            "maxZ":      Double(maxPoint.y),
+            "polygon":    pts,
+            "area":       Double(area),
+            "perimeter":  Double(perimeter),
+            "width":      Double(width),
+            "depth":      Double(depth),
+            "minX":       Double(minPoint.x),
+            "minZ":       Double(minPoint.y),
+            "maxX":       Double(maxPoint.x),
+            "maxZ":       Double(maxPoint.y),
             "pointCount": pointCount,
         ]
     }
@@ -189,13 +192,15 @@ enum FloorFootprintBuilder {
         var minPt = hull[0], maxPt = hull[0]
         for p in hull { minPt = simd_min(minPt, p); maxPt = simd_max(maxPt, p) }
 
-        // Área con fórmula del calzador (Gauss)
-        let area = shoelaceArea(hull)
+        // Área y perímetro del polígono
+        let area      = shoelaceArea(hull)
+        let perimeter = polygonPerimeter(hull)
 
-        return FloorFootprint(polygon: hull,
-                              minPoint: minPt,
-                              maxPoint: maxPt,
-                              area: area)
+        return FloorFootprint(polygon:   hull,
+                              minPoint:  minPt,
+                              maxPoint:  maxPt,
+                              area:      area,
+                              perimeter: perimeter)
     }
 
     // Muestrea puntos equidistantes para reducir tamaño del array
@@ -204,6 +209,16 @@ enum FloorFootprintBuilder {
         guard pts.count > maxPoints else { return pts }
         let step = pts.count / maxPoints
         return (0..<maxPoints).map { pts[$0 * step] }
+    }
+
+    // Perímetro del polígono — suma de distancias entre vértices consecutivos
+    private static func polygonPerimeter(_ pts: [SIMD2<Float>]) -> Float {
+        guard pts.count >= 2 else { return 0 }
+        var total: Float = 0
+        for i in 0..<pts.count {
+            total += simd_distance(pts[i], pts[(i + 1) % pts.count])
+        }
+        return total
     }
 
     // Área del polígono — fórmula del calzador

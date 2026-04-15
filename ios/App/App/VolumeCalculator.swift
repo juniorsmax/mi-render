@@ -77,6 +77,16 @@ class VolumeCalculator {
         }
     }
 
+    /// Altura media en tiempo real: avgCeilingY − avgFloorY del mesh actual.
+    /// Rápido — sampleamos máximo 300 vértices de cada tipo.
+    /// Fallback: 2.4 m si no hay suficiente techo escaneado.
+    func estimateHeight() -> Float {
+        let floor   = estimateFloorY()
+        let ceiling = estimateCeilingY()
+        let h = ceiling - floor
+        return h > 0.3 && h < 6.0 ? h : 2.4   // rango razonable para interior
+    }
+
     /// Volumen total del espacio (suma de habitaciones o estimación directa).
     func totalVolume() -> Float {
         let segs = RoomSegmentationManager.shared.segments
