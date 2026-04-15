@@ -35,6 +35,11 @@
 		CC00000F000000000000001B /* ThermalBatteryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000F000000000000001A /* ThermalBatteryManager.swift */; };
 		CC000010000000000000001B /* PhotogrammetryViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000010000000000000001A /* PhotogrammetryViewController.swift */; };
 		CC000011000000000000001B /* WalkthroughViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000011000000000000001A /* WalkthroughViewController.swift */; };
+		CC000012000000000000001B /* FloorPlan2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000012000000000000001A /* FloorPlan2D.swift */; };
+		CC000013000000000000001B /* RoomSegmentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000013000000000000001A /* RoomSegmentation.swift */; };
+		CC000014000000000000001B /* VolumeCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000014000000000000001A /* VolumeCalculator.swift */; };
+		CC000015000000000000001B /* IFCExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000015000000000000001A /* IFCExporter.swift */; };
+		CC000016000000000000001B /* ScanGuidanceOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000016000000000000001A /* ScanGuidanceOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -65,6 +70,11 @@
 		CC00000F000000000000001A /* ThermalBatteryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalBatteryManager.swift; sourceTree = "<group>"; };
 		CC000010000000000000001A /* PhotogrammetryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotogrammetryViewController.swift; sourceTree = "<group>"; };
 		CC000011000000000000001A /* WalkthroughViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkthroughViewController.swift; sourceTree = "<group>"; };
+		CC000012000000000000001A /* FloorPlan2D.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloorPlan2D.swift; sourceTree = "<group>"; };
+		CC000013000000000000001A /* RoomSegmentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomSegmentation.swift; sourceTree = "<group>"; };
+		CC000014000000000000001A /* VolumeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeCalculator.swift; sourceTree = "<group>"; };
+		CC000015000000000000001A /* IFCExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IFCExporter.swift; sourceTree = "<group>"; };
+		CC000016000000000000001A /* ScanGuidanceOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanGuidanceOverlay.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -125,6 +135,11 @@
 				CC00000F000000000000001A /* ThermalBatteryManager.swift */,
 				CC000010000000000000001A /* PhotogrammetryViewController.swift */,
 				CC000011000000000000001A /* WalkthroughViewController.swift */,
+				CC000012000000000000001A /* FloorPlan2D.swift */,
+				CC000013000000000000001A /* RoomSegmentation.swift */,
+				CC000014000000000000001A /* VolumeCalculator.swift */,
+				CC000015000000000000001A /* IFCExporter.swift */,
+				CC000016000000000000001A /* ScanGuidanceOverlay.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -236,6 +251,11 @@
 				CC00000F000000000000001B /* ThermalBatteryManager.swift in Sources */,
 				CC000010000000000000001B /* PhotogrammetryViewController.swift in Sources */,
 				CC000011000000000000001B /* WalkthroughViewController.swift in Sources */,
+				CC000012000000000000001B /* FloorPlan2D.swift in Sources */,
+				CC000013000000000000001B /* RoomSegmentation.swift in Sources */,
+				CC000014000000000000001B /* VolumeCalculator.swift in Sources */,
+				CC000015000000000000001B /* IFCExporter.swift in Sources */,
+				CC000016000000000000001B /* ScanGuidanceOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
