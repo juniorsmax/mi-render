@@ -150,7 +150,6 @@ class MeshManager {
         let faceCount = fBuf.count
 
         let iPtr = fBuf.buffer.contents()
-            .advanced(by: fBuf.offset)
             .assumingMemoryBound(to: UInt32.self)
 
         // Recopila índices de caras que coinciden con la clasificación
@@ -262,7 +261,6 @@ class MeshManager {
                 .advanced(by: vBuf.offset)
                 .assumingMemoryBound(to: Float.self)
             let iPtr = fBuf.buffer.contents()
-                .advanced(by: fBuf.offset)
                 .assumingMemoryBound(to: UInt32.self)
 
             let vStride = vBuf.stride / MemoryLayout<Float>.stride
@@ -350,7 +348,6 @@ class MeshManager {
 
         // Puntero al buffer de índices (UInt32)
         let iPtr = fBuf.buffer.contents()
-            .advanced(by: fBuf.offset)
             .assumingMemoryBound(to: UInt32.self)
 
         let vStride = vBuf.stride / MemoryLayout<Float>.stride   // pasos en floats

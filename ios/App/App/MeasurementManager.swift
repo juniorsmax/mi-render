@@ -232,7 +232,6 @@ class MeasurementManager {
                 .advanced(by: vBuf.offset)
                 .assumingMemoryBound(to: Float.self)
             let iPtr = fBuf.buffer.contents()
-                .advanced(by: fBuf.offset)
                 .assumingMemoryBound(to: UInt32.self)
 
             let vStride = vBuf.stride / MemoryLayout<Float>.stride

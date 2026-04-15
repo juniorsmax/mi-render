@@ -10,15 +10,10 @@ on:
         default: 'Release'
         type: choice
         options: [Release, Debug]
-      xcode_version:
-        description: 'Xcode version'
-        default: '15'
-        type: choice
-        options: ['15', '16']
 
 jobs:
   build-ios:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
@@ -36,11 +31,6 @@ jobs:
 
       - name: Build web
         run: npm run build
-
-      - name: Setup Xcode ${{ inputs.xcode_version || '15' }}
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: ${{ inputs.xcode_version || '15' }}
 
       - name: Show environment
         run: |
@@ -99,5 +89,4 @@ jobs:
           echo "- **Rama:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Config:** ${{ inputs.configuration || 'Release' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Xcode:** ${{ inputs.xcode_version || '15' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Artefacto:** mi-render-ios-build-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
