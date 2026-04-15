@@ -102,7 +102,12 @@ function parseLiDARResult(raw) {
   return {
     floorArea:    raw.areaSqM      ?? raw.floorArea   ?? 0,
     wallArea:     raw.wallArea      ?? 0,
+    ceilingArea:  raw.ceilingArea   ?? 0,
     windowArea:   raw.windowArea    ?? 0,
+    doorArea:     raw.doorArea      ?? 0,
+    tableArea:    raw.tableArea     ?? 0,
+    seatArea:     raw.seatArea      ?? 0,
+    otherArea:    raw.otherArea     ?? 0,
     totalVolume:  raw.volume        ?? raw.totalVolume ?? 0,
     perimeter:    raw.perimeterM    ?? raw.perimeter   ?? 0,
     avgHeight:    raw.avgHeight     ?? 2.5,
@@ -113,7 +118,6 @@ function parseLiDARResult(raw) {
     wallCount:    raw.wallCount     ?? raw.walls?.length ?? 0,
     confidence:   raw.confidence    ?? 'high',
     scanMode:     'lidar-native',
-    // Ruta USDZ exportado por el nativo — imprescindible para walkthrough y AR QuickLook
     usdzPath:     raw.usdzPath      ?? null,
     usdzExported: !!(raw.usdzPath   || raw.usdzExported),
     meshAnchorsCount: raw.meshAnchorsCount ?? 0,
@@ -307,10 +311,87 @@ export async function exportAllFormats(name = 'mi-render-export') {
 
 /**
  * Devuelve las superficies calculadas de la última malla ARKit capturada.
- * @returns {{ floorArea, wallArea, ceilingArea, otherArea, totalArea }} en m²
+ * Clasifica por ARMeshClassification: floor, wall, ceiling, table, seat, window, door, other
+ * @returns {{ floorArea, wallArea, ceilingArea, tableArea, seatArea, windowArea, doorArea, otherArea, totalArea }} en m²
  */
 export async function getSurfaceAreas() {
   return callNative('getSurfaceAreas', {})
+}
+
+/**
+ * Calcula el área de cada pared detectada vía ARMeshClassification.wall.
+ * Agrupa faces por plano (normal similar + distancia), calcula área y dimensiones.
+ * @returns {{ walls: [{id,label,area,width,height,faceCount,normalX,normalZ,...}], wallCount, totalWallArea }}
+ */
+export async function getWallMetrics() {
+  return callNative('getWallMetrics', {})
+}
+
+/**
+ * Proyecta los vértices .floor del mesh ARKit al plano XZ,
+ * calcula el convex hull y simplifica con Douglas-Peucker.
+ * @param {{ simplifyEpsilon?: number }} opts — tolerancia D-P en metros (default 0.05)
+ * @returns {{ polygon: [{x,z}], area, width, depth, minX, minZ, maxX, maxZ, pointCount }}
+ */
+export async function getFloorFootprint(opts = {}) {
+  return callNative('getFloorFootprint', { simplifyEpsilon: opts.simplifyEpsilon ?? 0.05 })
+}
+
+/**
+ * Genera una imagen PNG (base64) del plano planta combinando
+ * footprint ARKit + paredes RoomPlan. Requiere iOS 16+.
+ * @param {{ width?: number, height?: number }} opts — dimensiones en puntos (default 800x800)
+ * @returns {{ image: string }} — data URI "data:image/png;base64,..."
+ */
+export async function renderFloorPlan(opts = {}) {
+  return callNative('renderFloorPlan', {
+    width:  opts.width  ?? 800,
+    height: opts.height ?? 800,
+  })
+}
+
+// ── Detección de habitaciones múltiples ──────────────────────────────────────
+
+/**
+ * Segmenta el mesh del suelo en habitaciones individuales usando flood-fill.
+ * Enriquece cada segmento con altura y volumen calculados desde el techo.
+ * @param {{ cellSize?: number, minAreaM2?: number }} opts
+ * @returns {{ rooms: Array, roomCount: number, totalArea: number, totalVolume: number }}
+ */
+export async function getRoomSegmentation(opts = {}) {
+  return callNative('getRoomSegmentation', {
+    cellSize:  opts.cellSize  ?? 0.20,
+    minAreaM2: opts.minAreaM2 ?? 0.8,
+  })
+}
+
+/**
+ * Calcula el volumen automático de cada habitación (m³).
+ * Usa altura del techo medida por LiDAR, no un valor fijo.
+ * @returns {{ volumes: Array<{roomId,label,floorArea,avgHeight,volume}>, totalVolume: number, roomCount: number }}
+ */
+export async function getAutoVolume() {
+  return callNative('getAutoVolume', {})
+}
+
+/**
+ * Exporta el escaneo como archivo IFC 2x3 (BIM profesional).
+ * Compatible con ArchiCAD, Revit, FreeCAD, BIMvision, Solibri.
+ * Incluye: proyecto → sitio → edificio → planta → habitaciones + paredes + puertas + ventanas.
+ * @param {string} name — nombre del archivo (sin extensión)
+ * @param {{ projectName?: string }} opts
+ */
+export async function exportIFC(name = 'mi-render-bim', opts = {}) {
+  return callNative('exportIFC', { name, projectName: opts.projectName ?? 'mi-render' })
+}
+
+/**
+ * Exporta USDZ optimizado con materiales PBR por clasificación de superficie.
+ * Suelo=marrón, paredes=gris, techo=blanco, muebles=tonos cálidos.
+ * @param {string} name — nombre del archivo (sin extensión)
+ */
+export async function exportOptimizedUSDZ(name = 'mi-render-mesh') {
+  return callNative('exportOptimizedUSDZ', { name })
 }
 
 // ── Etiquetas para UI ─────────────────────────────────────────────────────────

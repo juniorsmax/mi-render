@@ -263,6 +263,183 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         call.resolve(s.toDictionary())
     }
 
+    // ── getWallMetrics — áreas de pared por plano ────────────────────────────
+    @objc func getWallMetrics(_ call: CAPPluginCall) {
+        MeasurementManager.shared.calculateWallAreas()
+        MeasurementManager.shared.onWallsCalculated = { walls in
+            let dicts = walls.map { $0.toDictionary() }
+            let total = walls.reduce(0.0) { $0 + $1.area }
+            call.resolve([
+                "walls":      dicts,
+                "wallCount":  walls.count,
+                "totalWallArea": Double((total * 100).rounded() / 100),
+            ])
+            // limpiar callback para no acumular retención
+            MeasurementManager.shared.onWallsCalculated = nil
+        }
+    }
+
+    // ── getFloorFootprint — proyección 2D del suelo → convex hull ────────────
+    @objc func getFloorFootprint(_ call: CAPPluginCall) {
+        let epsilon = call.getFloat("simplifyEpsilon") ?? 0.05
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let footprint = FloorFootprintBuilder.build(simplifyEpsilon: epsilon) {
+                call.resolve(footprint.toDictionary())
+            } else {
+                // Si todavía no hay mesh de suelo, devolvemos vacío sin rechazar
+                call.resolve([
+                    "polygon":    [[String: Any]](),
+                    "area":       0.0,
+                    "width":      0.0,
+                    "depth":      0.0,
+                    "minX":       0.0, "minZ": 0.0,
+                    "maxX":       0.0, "maxZ": 0.0,
+                    "pointCount": 0,
+                ])
+            }
+        }
+    }
+
+    // ── renderFloorPlan — genera UIImage del plano y devuelve base64 ─────────
+    @available(iOS 16.0, *)
+    @objc func renderFloorPlan(_ call: CAPPluginCall) {
+        let width  = CGFloat(call.getFloat("width")  ?? 800)
+        let height = CGFloat(call.getFloat("height") ?? 800)
+
+        DispatchQueue.main.async {
+            if #available(iOS 16.0, *) {
+                let image = RoomPlanManager.shared.renderFloorPlan(
+                    size: CGSize(width: width, height: height)
+                )
+                guard let data = image.pngData() else {
+                    call.reject("No se pudo generar la imagen del plano")
+                    return
+                }
+                let base64 = data.base64EncodedString()
+                call.resolve(["image": "data:image/png;base64,\(base64)"])
+            } else {
+                call.reject("iOS 16+ requerido para renderFloorPlan")
+            }
+        }
+    }
+
+    // ── getRoomSegmentation — detecta habitaciones múltiples ─────────────────
+    @objc func getRoomSegmentation(_ call: CAPPluginCall) {
+        let cellSize   = call.getFloat("cellSize")   ?? 0.20
+        let minAreaM2  = call.getFloat("minAreaM2")  ?? 0.8
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 1. Segmentar
+            var segs = RoomSegmentationManager.shared.segmentRooms(
+                cellSize: cellSize, minAreaM2: minAreaM2
+            )
+            // 2. Enriquecer con altura/volumen
+            segs = VolumeCalculator.shared.enrichAll(segs)
+
+            let dicts    = segs.map { $0.toDictionary() }
+            let total    = segs.reduce(Float(0)) { $0 + $1.volume }
+            let totalArea = segs.reduce(Float(0)) { $0 + $1.area }
+
+            call.resolve([
+                "rooms":         dicts,
+                "roomCount":     segs.count,
+                "totalArea":     Double(totalArea),
+                "totalVolume":   Double(total),
+            ])
+        }
+    }
+
+    // ── getAutoVolume — volumen automático desde mesh + footprint ─────────────
+    @objc func getAutoVolume(_ call: CAPPluginCall) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Reutiliza segmentos si ya existen, si no los calcula
+            var segs = RoomSegmentationManager.shared.segments
+            if segs.isEmpty {
+                segs = RoomSegmentationManager.shared.segmentRooms()
+            }
+            segs = VolumeCalculator.shared.enrichAll(segs)
+            let totalVol = VolumeCalculator.shared.totalVolume()
+
+            let volumes = segs.map { s in
+                [
+                    "roomId":    s.id,
+                    "label":     s.label,
+                    "floorArea": Double(s.area),
+                    "avgHeight": Double(s.avgHeight),
+                    "volume":    Double(s.volume),
+                ] as [String: Any]
+            }
+
+            call.resolve([
+                "volumes":      volumes,
+                "totalVolume":  Double(totalVol),
+                "roomCount":    segs.count,
+            ])
+        }
+    }
+
+    // ── exportIFC — exportación BIM IFC 2x3 ──────────────────────────────────
+    @objc func exportIFC(_ call: CAPPluginCall) {
+        guard #available(iOS 16.0, *) else {
+            call.reject("IFC export requiere iOS 16+")
+            return
+        }
+        guard let room = RoomPlanManager.shared.lastCapturedRoom else {
+            call.reject("No hay habitación escaneada para exportar como IFC")
+            return
+        }
+
+        let name    = call.getString("name")        ?? "mi-render-bim"
+        let project = call.getString("projectName") ?? "mi-render"
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var segs = RoomSegmentationManager.shared.segments
+            if segs.isEmpty {
+                segs = RoomSegmentationManager.shared.segmentRooms()
+            }
+            segs = VolumeCalculator.shared.enrichAll(segs)
+
+            if let url = IFCExporter.shared.exportIFC(
+                from: room,
+                segments: segs,
+                projectName: project,
+                named: name
+            ) {
+                DispatchQueue.main.async {
+                    guard let vc = self.bridge?.viewController else {
+                        call.resolve(["path": url.path])
+                        return
+                    }
+                    ExportManager.shared.shareFile(at: url, from: vc)
+                    call.resolve(["path": url.path, "format": "ifc"])
+                }
+            } else {
+                call.reject("Error generando archivo IFC")
+            }
+        }
+    }
+
+    // ── exportOptimizedUSDZ — USDZ con materiales PBR por clasificación ───────
+    @objc func exportOptimizedUSDZ(_ call: CAPPluginCall) {
+        let name = call.getString("name") ?? "mi-render-mesh"
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let url = ExportManager.shared.exportOptimizedUSDZ(named: name) {
+                DispatchQueue.main.async {
+                    guard let vc = self.bridge?.viewController else {
+                        call.resolve(["path": url.path])
+                        return
+                    }
+                    ExportManager.shared.shareFile(at: url, from: vc)
+                    call.resolve(["path": url.path, "format": "usdz"])
+                }
+            } else {
+                call.reject("No hay malla capturada para exportar USDZ optimizado")
+            }
+        }
+    }
+
     // ── exportOBJ ────────────────────────────────────────────────────────────
     @objc func exportOBJ(_ call: CAPPluginCall) {
         let name = call.getString("name") ?? "mi-render-mesh"
@@ -421,16 +598,31 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
             return
         }
 
-        DispatchQueue.main.async {
-            guard let vc = self.bridge?.viewController else {
-                call.reject("No se encontró viewController")
-                return
-            }
-            if let url = ExportManager.shared.generateDXF(from: room.walls, named: name) {
-                ExportManager.shared.shareFile(at: url, from: vc)
-                call.resolve(["path": url.path, "format": "dxf"])
-            } else {
-                call.reject("Error exportando DXF")
+        // Obtener footprint en background (puede tardar si aún no se calculó)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let footprint = RoomPlanManager.shared.floorFootprint
+                ?? FloorFootprintBuilder.build(simplifyEpsilon: 0.05)
+
+            DispatchQueue.main.async {
+                guard let vc = self.bridge?.viewController else {
+                    call.reject("No se encontró viewController")
+                    return
+                }
+                if let url = ExportManager.shared.generateDXF(from: room,
+                                                               footprint: footprint,
+                                                               named: name) {
+                    ExportManager.shared.shareFile(at: url, from: vc)
+                    call.resolve([
+                        "path":    url.path,
+                        "format":  "dxf",
+                        "walls":   room.walls.count,
+                        "doors":   room.doors.count,
+                        "windows": room.windows.count,
+                        "hasFootprint": footprint != nil,
+                    ])
+                } else {
+                    call.reject("Error exportando DXF")
+                }
             }
         }
     }
@@ -521,31 +713,35 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     }
 }
 
-// ── RoomPlan ViewController — Polycam-style overlay (iOS 16+) ────────────────
+// ── RoomPlan ViewController — Guided scanning UI (iOS 16+) ───────────────────
 //
-// Usa RoomCaptureView (fiable, sin conflictos de sesión) como capa de cámara
-// y renderizado de malla. Añade un overlay transparente con la UI al estilo
-// Polycam: barras negras, badge m², pausa, linterna, Hecho.
+// Usa RoomCaptureView como capa de cámara + malla de Apple.
+// ScanGuidanceOverlay cubre toda la pantalla con la UI de guía:
+//   - Anillo de progreso animado (NavigationManager.calculateScanProgress)
+//   - Mensaje de guía contextual (zonas faltantes, dirección a mover)
+//   - Badges de superficies detectadas en tiempo real
+//   - Miniatura del plano planta actualizada cada ~4.5 s
 //
 @available(iOS 16.0, *)
 class RoomPlanViewController: UIViewController {
 
     var onResult: (([String: Any]?) -> Void)?
 
-    private var captureView:     RoomCaptureView!
-    private var captureSession:  RoomCaptureSession!
-    private var isPaused         = false
-    private var torchOn          = false
-    private var uiReady          = false
-    private var meshTimer:       Timer?        // muestrea ARKit anchors cada 1.5 s
+    private var captureView:    RoomCaptureView!
+    private var captureSession: RoomCaptureSession!
+    private var overlay:        ScanGuidanceOverlay!
+    private var isPaused        = false
+    private var torchOn         = false
+    private var uiReady         = false
+    private var meshTimer:      Timer?
+    private var meshTickCount   = 0
+    private var meshTimerInterval: TimeInterval = 1.5   // se reduce en thermal serious
+    private var lastProgress:   Float = 0               // para no regresionar
+    private var pausedBySystem  = false                 // distinción entre pausa manual y sistema
 
-    private weak var areaLabel:  UILabel?
-    private weak var pauseBtn:   UIButton?
-    private weak var torchBtn:   UIButton?
-    // Panel de desglose de superficies (suelo / paredes / techo)
-    private weak var floorLbl:   UILabel?
-    private weak var wallLbl:    UILabel?
-    private weak var ceilLbl:    UILabel?
+    // Conteo en vivo de RoomPlan
+    private var liveDoors   = 0
+    private var liveWindows = 0
 
     // MARK: – Lifecycle
 
@@ -560,17 +756,25 @@ class RoomPlanViewController: UIViewController {
         captureSession          = captureView.captureSession
         captureSession.delegate = self
 
-        // Conectar callback de MeshManager → actualiza UI en tiempo real
         MeshManager.shared.onSurfacesUpdated = { [weak self] surfaces in
-            self?.updateSurfaceUI(surfaces)
+            guard let self = self else { return }
+            self.overlay?.updateSurfaces(surfaces, doors: self.liveDoors, windows: self.liveWindows)
         }
+
+        MeasurementManager.shared.onWallsCalculated = { [weak self] _ in
+            self?.refreshProgress()
+        }
+
+        UIStateManager.shared.switchMode(.scanning)
+        startStabilityMonitoring()
+        registerLifecycleNotifications()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard !uiReady else { return }
         uiReady = true
-        buildOverlayUI()
+        buildGuidanceOverlay()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -584,196 +788,266 @@ class RoomPlanViewController: UIViewController {
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         setTorch(false)
-        meshTimer?.invalidate()
-        meshTimer = nil
+        stopMeshTimer()
         captureSession.stop()
+        ThermalBatteryManager.shared.stopMonitoring()
+        ScanQualityManager.shared.reset()
+        removeLifecycleNotifications()
+        UIStateManager.shared.reset()
     }
 
-    // ── Timer: muestrea ARMeshAnchors del ARSession cada 1.5 s ───────────────
-    //
-    // RoomCaptureSession gestiona su propio ARSession internamente y no expone
-    // delegate callbacks de anclas. Lo solucionamos muestreando currentFrame.
-    private func startMeshTimer() {
-        meshTimer?.invalidate()
-        meshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        // Reducir anchors para liberar memoria — mantiene los 30 más recientes
+        MeshManager.shared.removeOldAnchors(session: captureSession.arSession, keepLast: 30)
+        showGuidanceWarning("Memoria alta — reduciendo detalle del mesh")
+    }
+
+    // MARK: – Estabilidad: monitoreo térmico, batería y calidad ARKit
+
+    private func startStabilityMonitoring() {
+        ThermalBatteryManager.shared.startMonitoring()
+
+        // Temperatura seria → duplicar intervalo del timer (menos carga CPU/GPU)
+        ThermalBatteryManager.shared.onShouldReduceScan = { [weak self] in
+            guard let self = self else { return }
+            self.meshTimerInterval = 3.0
+            self.stopMeshTimer()
+            self.startMeshTimer()
+            self.showGuidanceWarning(
+                ThermalBatteryManager.shared.thermalWarningMessage()
+                ?? "Temperatura alta — calidad reducida"
+            )
+        }
+
+        // Temperatura crítica → pausar escaneo automáticamente
+        ThermalBatteryManager.shared.onShouldStopScan = { [weak self] in
             guard let self = self, !self.isPaused else { return }
-            let arAnchors = self.captureSession.arSession.currentFrame?.anchors
-                .compactMap { $0 as? ARMeshAnchor } ?? []
-            guard !arAnchors.isEmpty else { return }
-            MeshManager.shared.setMeshAnchors(arAnchors)
+            self.pauseBySystem(reason: "Temperatura crítica — escaneo pausado para proteger el dispositivo")
+        }
+
+        // Batería baja → aviso
+        ThermalBatteryManager.shared.onBatteryWarning = { [weak self] level in
+            let msg = "Batería \(Int(level * 100))% — conecta el cargador"
+            self?.showGuidanceWarning(msg)
+        }
+
+        // Calidad ARKit cambia → actualizar guidance label
+        ScanQualityManager.shared.onQualityChanged = { [weak self] quality in
+            guard let self = self else { return }
+            switch quality {
+            case .lost:
+                self.showGuidanceWarning("Tracking perdido — apunta a una superficie plana")
+            case .poor:
+                self.showGuidanceWarning("Mueve el dispositivo más despacio")
+            case .good, .excellent:
+                self.refreshProgress()   // restaurar mensaje normal
+            }
+        }
+
+        ScanQualityManager.shared.onSuggestRescan = { [weak self] msg in
+            self?.showGuidanceWarning(msg)
         }
     }
 
-    // ── Actualiza los labels de superficie en el overlay ─────────────────────
-    private func updateSurfaceUI(_ s: MeshSurfaces) {
-        // Badge principal: usa suelo si existe, sino total
-        let mainArea = s.floor > 0.1 ? s.floor : s.total
-        areaLabel?.text = String(format: "%.1f m²", mainArea)
+    // MARK: – Ciclo de vida de la aplicación
 
-        // Desglose
-        floorLbl?.text = String(format: "Suelo %.1f m²",  s.floor)
-        wallLbl?.text  = String(format: "Paredes %.1f m²", s.wall)
-        ceilLbl?.text  = String(format: "Techo %.1f m²",  s.ceiling)
+    private func registerLifecycleNotifications() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
 
-    // MARK: – Overlay UI (Polycam style)
+    private func removeLifecycleNotifications() {
+        NotificationCenter.default.removeObserver(
+            self, name: UIApplication.willResignActiveNotification, object: nil
+        )
+        NotificationCenter.default.removeObserver(
+            self, name: UIApplication.didBecomeActiveNotification, object: nil
+        )
+    }
 
-    private func buildOverlayUI() {
-        let w        = view.bounds.width
-        let h        = view.bounds.height
+    // App pierde foco (llamada, notificación, home): pausa automática
+    @objc private func appWillResignActive() {
+        guard !isPaused else { return }
+        pauseBySystem(reason: "Escaneo pausado — vuelve para continuar")
+    }
+
+    // App recupera foco: reanuda si fue el sistema quien pausó
+    @objc private func appDidBecomeActive() {
+        guard pausedBySystem else { return }
+        pausedBySystem = false
+        isPaused = false
+        overlay?.setPauseState(false)
+        // Reiniciar tracking conservando anchors existentes
+        if let cfg = captureSession.arSession.configuration {
+            captureSession.arSession.run(cfg, options: [.resetTracking])
+        }
+        refreshProgress()
+    }
+
+    // Pausa iniciada por el sistema (no por el usuario)
+    private func pauseBySystem(reason: String) {
+        isPaused = true
+        pausedBySystem = true
+        captureSession.arSession.pause()
+        overlay?.setPauseState(true)
+        showGuidanceWarning(reason)
+        UIStateManager.shared.switchMode(.processing)
+    }
+
+    // MARK: – Construcción del overlay
+
+    private func buildGuidanceOverlay() {
         let topInset = max(view.safeAreaInsets.top, 50)
         let botInset = max(view.safeAreaInsets.bottom, 20)
 
-        // Barra negra superior (cubre status bar + área de badges)
-        let topBar = UIView()
-        topBar.backgroundColor = UIColor.black.withAlphaComponent(0.78)
-        topBar.frame = CGRect(x: 0, y: 0, width: w, height: topInset + 58)
-        view.addSubview(topBar)
+        overlay = ScanGuidanceOverlay(frame: view.bounds,
+                                      topInset: topInset,
+                                      botInset: botInset)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(overlay)
 
-        // Badge "est X m²" (izquierda, dentro de la barra superior)
-        let badge = UIView()
-        badge.backgroundColor    = UIColor.white.withAlphaComponent(0.14)
-        badge.layer.cornerRadius = 18
-        badge.layer.borderWidth  = 1
-        badge.layer.borderColor  = UIColor.white.withAlphaComponent(0.28).cgColor
-        badge.frame = CGRect(x: 16, y: topInset + 10, width: 132, height: 36)
-        view.addSubview(badge)
-
-        let symCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        let iconIV = UIImageView(image: UIImage(systemName: "square.dashed", withConfiguration: symCfg))
-        iconIV.tintColor = .white
-        iconIV.contentMode = .scaleAspectFit
-        iconIV.frame = CGRect(x: 10, y: 8, width: 20, height: 20)
-        badge.addSubview(iconIV)
-
-        let lbl = UILabel()
-        lbl.text      = "est 0 m²"
-        lbl.textColor = .white
-        lbl.font      = .systemFont(ofSize: 13, weight: .semibold)
-        lbl.frame     = CGRect(x: 36, y: 9, width: 90, height: 18)
-        badge.addSubview(lbl)
-        areaLabel = lbl
-
-        // Botón cerrar ✕ (derecha, dentro de la barra superior)
-        let closeBtn = makeCircleBtn(symbol: "xmark", sz: 44)
-        closeBtn.frame.origin = CGPoint(x: w - 58, y: topInset + 7)
-        closeBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        view.addSubview(closeBtn)
-
-        // Botón linterna (derecha central, flotante sobre la cámara)
-        let tBtn = makeCircleBtn(symbol: "flashlight.off.fill", sz: 44)
-        tBtn.frame.origin = CGPoint(x: w - 58, y: h / 2 - 22)
-        tBtn.addTarget(self, action: #selector(torchTapped), for: .touchUpInside)
-        view.addSubview(tBtn)
-        torchBtn = tBtn
-
-        // ── Panel desglose superficies (izquierda central) ───────────────────
-        let panelW: CGFloat = 142
-        let panelH: CGFloat = 72
-        let panel = UIView()
-        panel.backgroundColor    = UIColor.black.withAlphaComponent(0.62)
-        panel.layer.cornerRadius = 14
-        panel.layer.borderWidth  = 1
-        panel.layer.borderColor  = UIColor.white.withAlphaComponent(0.18).cgColor
-        panel.frame = CGRect(x: 12, y: h / 2 - panelH / 2, width: panelW, height: panelH)
-        view.addSubview(panel)
-
-        let fLbl = makeSurfaceLbl("Suelo  — m²",  y: 8)
-        let wLbl = makeSurfaceLbl("Paredes — m²", y: 28)
-        let cLbl = makeSurfaceLbl("Techo  — m²",  y: 48)
-        panel.addSubview(fLbl); panel.addSubview(wLbl); panel.addSubview(cLbl)
-        floorLbl = fLbl; wallLbl = wLbl; ceilLbl = cLbl
-
-        // Barra negra inferior
-        let barH: CGFloat = 96 + botInset
-        let botBar = UIView()
-        botBar.backgroundColor = UIColor.black.withAlphaComponent(0.85)
-        botBar.frame = CGRect(x: 0, y: h - barH, width: w, height: barH)
-        view.addSubview(botBar)
-
-        // Botón pausa (centro de la barra inferior)
-        let pBtn = UIButton(type: .system)
-        let pCfg = UIImage.SymbolConfiguration(pointSize: 30, weight: .thin)
-        pBtn.setImage(UIImage(systemName: "pause.circle", withConfiguration: pCfg), for: .normal)
-        pBtn.tintColor = .white
-        pBtn.backgroundColor = UIColor.white.withAlphaComponent(0.12)
-        pBtn.layer.cornerRadius = 30
-        pBtn.layer.borderWidth  = 1.5
-        pBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.4).cgColor
-        pBtn.frame = CGRect(x: (w - 60) / 2, y: 17, width: 60, height: 60)
-        pBtn.addTarget(self, action: #selector(pauseTapped), for: .touchUpInside)
-        botBar.addSubview(pBtn)
-        pauseBtn = pBtn
-
-        // Botón ✓ Hecho (derecha de la barra inferior)
-        let doneBtn = UIButton(type: .system)
-        let dCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
-        doneBtn.setImage(UIImage(systemName: "checkmark", withConfiguration: dCfg), for: .normal)
-        doneBtn.setTitle("  Hecho", for: .normal)
-        doneBtn.tintColor = .white
-        doneBtn.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
-        doneBtn.backgroundColor = UIColor.white.withAlphaComponent(0.12)
-        doneBtn.layer.cornerRadius = 20
-        doneBtn.layer.borderWidth  = 1
-        doneBtn.layer.borderColor  = UIColor.white.withAlphaComponent(0.32).cgColor
-        doneBtn.frame = CGRect(x: w - 122, y: 27, width: 106, height: 40)
-        doneBtn.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
-        botBar.addSubview(doneBtn)
-    }
-
-    private func makeCircleBtn(symbol: String, sz: CGFloat) -> UIButton {
-        let btn = UIButton(type: .system)
-        let cfg = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        btn.setImage(UIImage(systemName: symbol, withConfiguration: cfg), for: .normal)
-        btn.tintColor       = .white
-        btn.backgroundColor = UIColor.black.withAlphaComponent(0.62)
-        btn.layer.cornerRadius = sz / 2
-        btn.bounds.size     = CGSize(width: sz, height: sz)
-        return btn
-    }
-
-    private func makeSurfaceLbl(_ text: String, y: CGFloat) -> UILabel {
-        let lbl = UILabel()
-        lbl.text      = text
-        lbl.textColor = UIColor.white.withAlphaComponent(0.80)
-        lbl.font      = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        lbl.frame     = CGRect(x: 10, y: y, width: 124, height: 18)
-        return lbl
-    }
-
-    // MARK: – Acciones
-
-    @objc private func closeTapped() {
-        captureSession.stop()
-        dismiss(animated: true) { [weak self] in self?.onResult?(nil) }
-    }
-
-    @objc private func doneTapped() {
-        captureSession.stop()   // → captureSession(_:didEndWith:error:)
-    }
-
-    @objc private func pauseTapped() {
-        isPaused.toggle()
-        let sym = isPaused ? "play.circle" : "pause.circle"
-        let cfg = UIImage.SymbolConfiguration(pointSize: 30, weight: .thin)
-        pauseBtn?.setImage(UIImage(systemName: sym, withConfiguration: cfg), for: .normal)
-        if isPaused {
-            captureSession.arSession.pause()
-        } else if let existingCfg = captureSession.arSession.configuration {
-            captureSession.arSession.run(existingCfg)
+        overlay.onClose = { [weak self] in
+            self?.captureSession.stop()
+            self?.dismiss(animated: true) { self?.onResult?(nil) }
+        }
+        overlay.onPause = { [weak self] in
+            guard let self = self else { return }
+            self.isPaused.toggle()
+            self.pausedBySystem = false          // pausa manual
+            self.overlay.setPauseState(self.isPaused)
+            if self.isPaused {
+                self.captureSession.arSession.pause()
+                UIStateManager.shared.switchMode(.processing)
+            } else {
+                if let cfg = self.captureSession.arSession.configuration {
+                    self.captureSession.arSession.run(cfg, options: [.resetTracking])
+                }
+                UIStateManager.shared.switchMode(.scanning)
+                self.refreshProgress()
+            }
+        }
+        overlay.onDone = { [weak self] in
+            UIStateManager.shared.switchMode(.processing)
+            self?.captureSession.stop()
+        }
+        overlay.onTorch = { [weak self] in
+            guard let self = self else { return }
+            self.torchOn.toggle()
+            self.setTorch(self.torchOn)
+            self.overlay.setTorchState(self.torchOn)
         }
     }
 
-    @objc private func torchTapped() {
-        torchOn.toggle()
-        setTorch(torchOn)
-        let sym = torchOn ? "flashlight.on.fill" : "flashlight.off.fill"
-        let cfg = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        torchBtn?.setImage(UIImage(systemName: sym, withConfiguration: cfg), for: .normal)
-        torchBtn?.tintColor = torchOn
-            ? UIColor(red: 0.94, green: 0.65, blue: 0, alpha: 1)
-            : .white
+    // MARK: – Timer de mesh
+
+    private func startMeshTimer() {
+        meshTimer?.invalidate()
+        meshTimer = Timer.scheduledTimer(withTimeInterval: meshTimerInterval,
+                                         repeats: true) { [weak self] _ in
+            guard let self = self, !self.isPaused else { return }
+
+            let arAnchors = self.captureSession.arSession.currentFrame?.anchors
+                .compactMap { $0 as? ARMeshAnchor } ?? []
+            guard !arAnchors.isEmpty else { return }
+
+            // Evaluar calidad de frame (tracking + iluminación + profundidad)
+            if let frame = self.captureSession.arSession.currentFrame {
+                ScanQualityManager.shared.evaluate(frame: frame)
+            }
+
+            // Verificar presupuesto de memoria antes de acumular
+            let totalVerts = arAnchors.reduce(0) { $0 + $1.geometry.vertices.count }
+            if MeshOptimizationManager.shared.isWithinMemoryBudget(vertexCount: totalVerts,
+                                                                    limit: 500_000) {
+                MeshManager.shared.setMeshAnchors(arAnchors)
+            } else {
+                // Demasiados vértices: quitar los más antiguos antes de añadir
+                MeshManager.shared.removeOldAnchors(session: self.captureSession.arSession,
+                                                    keepLast: 40)
+                MeshManager.shared.setMeshAnchors(arAnchors)
+            }
+
+            self.meshTickCount += 1
+
+            // Paredes + progreso cada 3 ticks
+            if self.meshTickCount % 3 == 0 {
+                MeasurementManager.shared.calculateWallAreas()
+                self.refreshProgress()
+                UIStateManager.shared.updateProgress(
+                    NavigationManager.shared.calculateScanProgress().percentage
+                )
+            }
+
+            // Miniatura plano planta cada 4 ticks
+            if self.meshTickCount % 4 == 0 {
+                self.refreshPlanPreview()
+            }
+        }
     }
+
+    private func stopMeshTimer() {
+        meshTimer?.invalidate()
+        meshTimer = nil
+    }
+
+    // MARK: – Progreso y plano
+
+    private func refreshProgress() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let sp = NavigationManager.shared.calculateScanProgress()
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                // El progreso nunca retrocede (evita saltos al recalcular)
+                let p = max(self.lastProgress, sp.percentage)
+                self.lastProgress = p
+                self.overlay?.updateProgress(p, guidance: sp.guidanceMessage)
+            }
+        }
+    }
+
+    private func refreshPlanPreview() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            if let room = RoomPlanManager.shared.lastCapturedRoom,
+               let fp   = RoomPlanManager.shared.floorFootprint {
+                let img = PlanRenderer.shared.renderCombined(
+                    room: room, footprint: fp,
+                    size: CGSize(width: 160, height: 160)
+                )
+                DispatchQueue.main.async { self.overlay?.updatePlanPreview(img) }
+            } else if let fp = FloorFootprintBuilder.build(simplifyEpsilon: 0.08) {
+                let img = PlanRenderer.shared.renderFloorFootprint(
+                    fp, size: CGSize(width: 160, height: 160)
+                )
+                DispatchQueue.main.async { self.overlay?.updatePlanPreview(img) }
+            }
+        }
+    }
+
+    // MARK: – Aviso temporal en guidance label (3 s, luego restaura progreso)
+
+    private func showGuidanceWarning(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.overlay?.updateProgress(self.lastProgress, guidance: message)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+                self?.refreshProgress()
+            }
+        }
+    }
+
+    // MARK: – Linterna
 
     private func setTorch(_ on: Bool) {
         guard let device = AVCaptureDevice.default(for: .video),
@@ -788,8 +1062,13 @@ class RoomPlanViewController: UIViewController {
 @available(iOS 16.0, *)
 extension RoomPlanViewController: RoomCaptureSessionDelegate {
 
-    // m² en tiempo real durante el escaneo
+    // Actualización en tiempo real durante el escaneo
     func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
+        // Guardar conteo de puertas/ventanas para los badges
+        liveDoors   = room.doors.count
+        liveWindows = room.windows.count
+
+        // Superficie del suelo (iOS 17+) o estimación desde paredes
         var area: Float = 0
         if #available(iOS 17.0, *) {
             area = room.floors.reduce(0) { $0 + $1.dimensions.x * $1.dimensions.z }
@@ -798,9 +1077,23 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             let ws = room.walls.map { $0.dimensions.x }.sorted(by: >)
             area   = ws.count >= 2 ? ws[0] * ws[1] : ws[0] * ws[0]
         }
-        let rounded = max(Int(area.rounded()), 1)
+
+        let surfaces = MeshManager.shared.surfaces
         DispatchQueue.main.async { [weak self] in
-            self?.areaLabel?.text = "est \(rounded) m²"
+            guard let self = self else { return }
+            // Actualizar badges con datos frescos de RoomPlan
+            self.overlay?.updateSurfaces(surfaces,
+                                         doors: room.doors.count,
+                                         windows: room.windows.count)
+            // Actualizar guía con nueva info de paredes detectadas
+            let wallArea = room.walls.reduce(Float(0)) { $0 + $1.dimensions.x * $1.dimensions.y }
+            let wallMsg  = room.walls.count > 0
+                ? "Paredes: \(room.walls.count) · \(String(format:"%.1f",wallArea)) m²"
+                : nil
+            if let msg = wallMsg {
+                let pct = min(Float(room.walls.count) / 4.0, 0.5)
+                self.overlay?.updateProgress(pct, guidance: msg)
+            }
         }
     }
 

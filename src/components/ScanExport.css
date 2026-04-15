@@ -297,6 +297,37 @@
   margin: 2px 0;
 }
 
+.stat-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.stat-section-header svg { opacity: 0.6; }
+
+.wall-row .stat-label { display: flex; align-items: center; gap: 6px; }
+
+.wall-label-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  background: rgba(240, 165, 0, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(240, 165, 0, 0.25);
+  min-width: 28px;
+  text-align: center;
+}
+
 /* ── Badge de modo de escaneo ─────────────────────────── */
 .scan-mode-section {
   margin: 0 14px;
@@ -450,6 +481,83 @@
 .export-3d-btn.loading {
   border-color: rgba(45,212,191,0.3);
   background: rgba(45,212,191,0.07);
+}
+
+/* ── Habitaciones detectadas ──────────────────────────── */
+.rooms-section {
+  margin: 0 14px 4px;
+  animation: metric-enter 350ms ease 250ms both;
+}
+.rooms-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+.rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+.room-card {
+  border-radius: var(--r-md);
+  padding: 10px 12px 8px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: metric-enter 300ms ease both;
+}
+.room-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.room-card-area {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  line-height: 1.1;
+}
+.room-card-area span {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.65;
+  margin-left: 2px;
+}
+.room-card-vol {
+  font-size: 11px;
+  color: var(--teal);
+  font-family: var(--font-mono);
+}
+.room-card-h {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.rooms-total {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+}
+.rooms-total strong { color: var(--text-strong); }
+
+/* ── Exportación avanzada ─────────────────────────────── */
+.export-advanced-group {
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* ── Guardar WorldMap ─────────────────────────────────── */

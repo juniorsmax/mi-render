@@ -23,4 +23,11 @@ CAP_PLUGIN(LiDARPlugin, "LiDARPlugin",
     CAP_PLUGIN_METHOD(exportGLB, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(exportAllFormats, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(getSurfaceAreas, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getWallMetrics, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getFloorFootprint, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(renderFloorPlan, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getRoomSegmentation, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getAutoVolume, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(exportIFC, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(exportOptimizedUSDZ, CAPPluginReturnPromise);
 )

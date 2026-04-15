@@ -1,7 +1,8 @@
 // MeshManager.swift
 // Extrae, gestiona y mide la geometría 3D capturada por LiDAR.
 // Convierte ARMeshAnchor → MDLMesh para exportación.
-// Calcula superficies (suelo, paredes, techo) iterando triángulos.
+// Calcula superficies por clasificación ARMeshClassification.
+// Genera proyección 2D de suelo para floorplan automático.
 
 import ARKit
 import ModelIO
@@ -14,9 +15,13 @@ struct MeshSurfaces {
     var floor:   Float = 0   // m²
     var wall:    Float = 0   // m²
     var ceiling: Float = 0   // m²
-    var other:   Float = 0   // m²
+    var table:   Float = 0   // m²
+    var seat:    Float = 0   // m²
+    var window:  Float = 0   // m²
+    var door:    Float = 0   // m²
+    var other:   Float = 0   // m² — .none + sin clasificar
 
-    var total: Float { floor + wall + ceiling + other }
+    var total: Float { floor + wall + ceiling + table + seat + window + door + other }
 
     /// Devuelve un diccionario listo para resolver en un CAPPluginCall
     func toDictionary() -> [String: Any] {
@@ -24,6 +29,10 @@ struct MeshSurfaces {
             "floorArea":    Double(floor),
             "wallArea":     Double(wall),
             "ceilingArea":  Double(ceiling),
+            "tableArea":    Double(table),
+            "seatArea":     Double(seat),
+            "windowArea":   Double(window),
+            "doorArea":     Double(door),
             "otherArea":    Double(other),
             "totalArea":    Double(total),
         ]
@@ -36,10 +45,14 @@ class MeshManager {
 
     static let shared = MeshManager()
 
-    private var meshAnchors: [ARMeshAnchor] = []
+    // internal para que MeasurementManager pueda leer el snapshot
+    var meshAnchors: [ARMeshAnchor] = []
 
     // Cache de superficies recalculada cada vez que cambian los anchors
     private(set) var surfaces = MeshSurfaces()
+
+    // Vértices del suelo proyectados al plano XZ — para floorplan 2D
+    private(set) var floorVertices2D: [SIMD2<Float>] = []
 
     // Callback invocado en el hilo principal cuando las superficies cambian
     var onSurfacesUpdated: ((MeshSurfaces) -> Void)?
@@ -116,6 +129,74 @@ class MeshManager {
         return meshAnchors.map { extractMesh(from: $0) }
     }
 
+    // MARK: - Obtener mesh filtrado por clasificación (para exportación selectiva)
+
+    func getMeshAsset(for classification: ARMeshClassification) -> MDLAsset {
+        let asset = MDLAsset()
+        for anchor in meshAnchors {
+            if let mesh = extractMesh(from: anchor, filterBy: classification) {
+                asset.add(mesh)
+            }
+        }
+        return asset
+    }
+
+    // Extrae solo los triángulos de un anchor que coincidan con una clasificación
+    private func extractMesh(from anchor: ARMeshAnchor,
+                             filterBy cls: ARMeshClassification) -> MDLMesh? {
+        let geometry = anchor.geometry
+        let fBuf = geometry.faces
+        let vBuf = geometry.vertices
+        let faceCount = fBuf.count
+
+        let iPtr = fBuf.buffer.contents()
+            .advanced(by: fBuf.offset)
+            .assumingMemoryBound(to: UInt32.self)
+
+        // Recopila índices de caras que coinciden con la clasificación
+        var matchingFaces: [UInt32] = []
+        for f in 0..<faceCount {
+            if geometry.faceClassification(at: f) == cls {
+                let base = f * 3
+                matchingFaces.append(contentsOf: [iPtr[base], iPtr[base+1], iPtr[base+2]])
+            }
+        }
+        guard !matchingFaces.isEmpty else { return nil }
+
+        let allocator = MTKMeshBufferAllocator(device: MTLCreateSystemDefaultDevice()!)
+
+        let vertexBuffer = allocator.newBuffer(
+            with: Data(bytes: vBuf.buffer.contents(), count: vBuf.buffer.length),
+            type: .vertex
+        )
+        let indexData = matchingFaces.withUnsafeBytes { Data($0) }
+        let indexBuffer = allocator.newBuffer(with: indexData, type: .index)
+
+        let vertexDescriptor = MDLVertexDescriptor()
+        vertexDescriptor.attributes[0] = MDLVertexAttribute(
+            name: MDLVertexAttributePosition,
+            format: .float3,
+            offset: 0,
+            bufferIndex: 0
+        )
+        vertexDescriptor.layouts[0] = MDLVertexBufferLayout(stride: vBuf.stride)
+
+        let submesh = MDLSubmesh(
+            indexBuffer: indexBuffer,
+            indexCount: matchingFaces.count,
+            indexType: .uInt32,
+            geometryType: .triangles,
+            material: nil
+        )
+
+        return MDLMesh(
+            vertexBuffer: vertexBuffer,
+            vertexCount: vBuf.count,
+            descriptor: vertexDescriptor,
+            submeshes: [submesh]
+        )
+    }
+
     // MARK: - Limpiar anchors antiguos
 
     func removeOldAnchors(session: ARSession, keepLast count: Int = 50) {
@@ -132,6 +213,7 @@ class MeshManager {
         meshAnchors.forEach { session.remove(anchor: $0) }
         meshAnchors.removeAll()
         surfaces = MeshSurfaces()
+        floorVertices2D = []
         DispatchQueue.main.async { self.onSurfacesUpdated?(self.surfaces) }
     }
 
@@ -162,15 +244,64 @@ class MeshManager {
         }
     }
 
+    // MARK: - Vértices del suelo proyectados al plano XZ para floorplan 2D
+    //
+    // Retorna todos los vértices de caras clasificadas como .floor
+    // proyectados al plano XZ (Y=0). Útil para calcular contorno/outline
+    // del suelo y generar un plano 2D automático.
+
+    func getFloorVertices2D() -> [SIMD2<Float>] {
+        var points: [SIMD2<Float>] = []
+        for anchor in meshAnchors {
+            let geometry  = anchor.geometry
+            let transform = anchor.transform
+            let vBuf      = geometry.vertices
+            let fBuf      = geometry.faces
+
+            let vPtr = vBuf.buffer.contents()
+                .advanced(by: vBuf.offset)
+                .assumingMemoryBound(to: Float.self)
+            let iPtr = fBuf.buffer.contents()
+                .advanced(by: fBuf.offset)
+                .assumingMemoryBound(to: UInt32.self)
+
+            let vStride = vBuf.stride / MemoryLayout<Float>.stride
+
+            for f in 0..<fBuf.count {
+                guard geometry.faceClassification(at: f) == .floor else { continue }
+                let base = f * 3
+                for k in 0..<3 {
+                    let idx = Int(iPtr[base + k])
+                    let lp = SIMD3<Float>(vPtr[idx*vStride],
+                                         vPtr[idx*vStride + 1],
+                                         vPtr[idx*vStride + 2])
+                    let wp = (transform * SIMD4<Float>(lp, 1)).xyz
+                    points.append(SIMD2<Float>(wp.x, wp.z))
+                }
+            }
+        }
+        return points
+    }
+
+    // MARK: - Bounding box del suelo (para escala del floorplan)
+
+    func floorBoundingBox() -> (min: SIMD2<Float>, max: SIMD2<Float>)? {
+        let pts = getFloorVertices2D()
+        guard !pts.isEmpty else { return nil }
+        var minPt = pts[0]
+        var maxPt = pts[0]
+        for p in pts {
+            minPt = simd_min(minPt, p)
+            maxPt = simd_max(maxPt, p)
+        }
+        return (minPt, maxPt)
+    }
+
     // MARK: - ── Cálculo de superficies ──────────────────────────────────────
     //
     // Itera cada triángulo de cada ARMeshAnchor, extrae los tres vértices
-    // en coordenadas mundo (multiplicando por el transform del anchor),
-    // calcula el área con la fórmula de producto vectorial y acumula
-    // por clasificación ARMeshClassification.
-    //
-    // Complejidad: O(total_faces). En un escaneo típico de habitación
-    // hay entre 5 000 y 50 000 caras — ejecutar en background es seguro.
+    // en coordenadas mundo, calcula el área con producto vectorial y acumula
+    // por clasificación ARMeshClassification (todos los 7 tipos explícitos).
 
     func recalculateSurfaces() {
         let anchorsSnapshot = meshAnchors   // copia local, hilo-segura para lectura
@@ -187,6 +318,10 @@ class MeshManager {
             result.floor   = (result.floor   * 10000).rounded() / 10000
             result.wall    = (result.wall    * 10000).rounded() / 10000
             result.ceiling = (result.ceiling * 10000).rounded() / 10000
+            result.table   = (result.table   * 10000).rounded() / 10000
+            result.seat    = (result.seat    * 10000).rounded() / 10000
+            result.window  = (result.window  * 10000).rounded() / 10000
+            result.door    = (result.door    * 10000).rounded() / 10000
             result.other   = (result.other   * 10000).rounded() / 10000
 
             DispatchQueue.main.async {
@@ -250,14 +385,18 @@ class MeshManager {
             let ac   = wp2 - wp0
             let area = 0.5 * simd_length(simd_cross(ab, ac))   // m²
 
-            // Clasificación de la cara
+            // Clasificación completa de la cara
             let cls = geometry.faceClassification(at: f)
 
             switch cls {
             case .floor:   result.floor   += area
             case .wall:    result.wall    += area
             case .ceiling: result.ceiling += area
-            default:       result.other   += area
+            case .table:   result.table   += area
+            case .seat:    result.seat    += area
+            case .window:  result.window  += area
+            case .door:    result.door    += area
+            default:       result.other   += area   // .none y futuros casos
             }
         }
     }

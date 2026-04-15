@@ -107,3 +107,108 @@ class NavigationManager {
         floorPoints.removeAll()
     }
 }
+
+// MARK: - Cálculo de progreso de escaneo guiado ───────────────────────────────
+
+extension NavigationManager {
+
+    struct ScanProgress {
+        var percentage:      Float        // 0.0 – 1.0
+        var guidanceMessage: String
+        var missingDirections: [String]   // p.ej. ["Norte", "Este"]
+        var wallsCovered:    Int
+        var totalFaces:      Int
+    }
+
+    /// Calcula progreso combinando cobertura de mesh, paredes y footprint.
+    /// Hilo-seguro — puede llamarse desde background.
+    func calculateScanProgress() -> ScanProgress {
+        let anchors   = MeshManager.shared.meshAnchors
+        let surfaces  = MeshManager.shared.surfaces
+        let walls     = MeasurementManager.shared.wallPlanes
+        let floorPts  = MeshManager.shared.getFloorVertices2D()
+
+        // Componente 1: densidad de faces (ref: 20 000 faces = habitación completa)
+        let totalFaces    = anchors.reduce(0) { $0 + $1.geometry.faces.count }
+        let faceProgress  = min(1.0, Float(totalFaces) / 20_000.0)
+
+        // Componente 2: paredes detectadas (ref: 4 paredes para habitación cuadrada)
+        let wallProgress  = min(1.0, Float(walls.count) / 4.0)
+
+        // Componente 3: área del footprint (ref: 12 m² típico)
+        let footprintArea = min(1.0, surfaces.floor / 12.0)
+
+        // Ponderado: faces 40%, paredes 30%, suelo 30%
+        let combined = faceProgress * 0.4 + wallProgress * 0.3 + footprintArea * 0.3
+
+        // Zonas faltantes
+        let missing = detectMissingZones(from: floorPts)
+
+        // Mensaje de guía
+        let message = guidanceMessage(progress: combined,
+                                      missingZones: missing,
+                                      walls: walls,
+                                      totalFaces: totalFaces)
+
+        return ScanProgress(
+            percentage:       combined,
+            guidanceMessage:  message,
+            missingDirections: missing,
+            wallsCovered:     walls.count,
+            totalFaces:       totalFaces
+        )
+    }
+
+    // ── Detección de zonas no cubiertas ──────────────────────────────────────
+    //
+    // Divide el espacio XZ en 8 sectores (45° cada uno) alrededor del centroide.
+    // Sectores con menos del 6% de los puntos totales se marcan como faltantes.
+
+    private func detectMissingZones(from pts: [SIMD2<Float>]) -> [String] {
+        guard pts.count > 30 else {
+            return pts.isEmpty ? ["Mueve la cámara por la habitación"] : []
+        }
+
+        let cx = pts.reduce(0) { $0 + $1.x } / Float(pts.count)
+        let cy = pts.reduce(0) { $0 + $1.y } / Float(pts.count)
+
+        var sectors = [Int](repeating: 0, count: 8)
+        for pt in pts {
+            let angle  = atan2(pt.y - cy, pt.x - cx)                // -π … π
+            let sector = Int((angle + .pi) / (.pi / 4)) % 8
+            sectors[sector] += 1
+        }
+
+        let threshold = pts.count / 16   // mínimo ~6% por sector
+        // Nombres en orden: sector 0 = aprox. Este, girando antihorario
+        let names = ["Este", "NorEste", "Norte", "NorOeste",
+                     "Oeste", "SurOeste", "Sur", "SurEste"]
+
+        return sectors.enumerated()
+            .filter { $0.element < threshold }
+            .map    { "Mueve hacia el \(names[$0.offset])" }
+    }
+
+    // ── Mensaje de guía según estado del escaneo ─────────────────────────────
+
+    private func guidanceMessage(progress: Float,
+                                  missingZones: [String],
+                                  walls: [WallPlane],
+                                  totalFaces: Int) -> String {
+        switch progress {
+        case 0..<0.10:
+            return "Apunta al suelo y muévete lentamente"
+        case 0.10..<0.30:
+            return "Continúa escaneando. Cubre suelo y paredes"
+        case 0.30..<0.60:
+            if let first = missingZones.first { return first }
+            if walls.count < 3 { return "Enfoca las paredes para detectarlas" }
+            return "Escanea los rincones de la habitación"
+        case 0.60..<0.85:
+            if let first = missingZones.first { return first }
+            return "Casi listo. Revisa zonas que falten"
+        default:
+            return "Cobertura completa — pulsa Hecho cuando estés listo"
+        }
+    }
+}

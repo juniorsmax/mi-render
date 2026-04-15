@@ -14,6 +14,12 @@ class RoomPlanManager: NSObject {
     var captureSession = RoomCaptureSession()
     var lastCapturedRoom: CapturedRoom?
 
+    /// Footprint 2D calculado desde ARKit mesh (disponible tras buildFloorFootprint())
+    private(set) var floorFootprint: FloorFootprint?
+
+    /// Callback cuando el footprint cambia (p.ej. durante el escaneo)
+    var onFootprintUpdated: ((FloorFootprint) -> Void)?
+
     var onRoomUpdated: ((CapturedRoom) -> Void)?
     var onScanComplete: ((CapturedRoom) -> Void)?
 
@@ -25,6 +31,7 @@ class RoomPlanManager: NSObject {
     // MARK: - Iniciar escaneo
 
     func startScanning() {
+        floorFootprint = nil
         let configuration = RoomCaptureSession.Configuration()
         captureSession.run(configuration: configuration)
     }
@@ -46,6 +53,38 @@ class RoomPlanManager: NSObject {
 
     func roomData() -> CapturedRoom? {
         return lastCapturedRoom
+    }
+
+    // MARK: - Generar footprint 2D desde mesh ARKit
+
+    /// Ejecuta el pipeline completo: vértices .floor → ConvexHull → Douglas-Peucker → FloorFootprint
+    /// Se llama automáticamente al finalizar el escaneo.
+    /// También puede llamarse manualmente para actualizar durante el escaneo.
+    func buildFloorFootprint(simplifyEpsilon: Float = 0.05) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            guard let footprint = FloorFootprintBuilder.build(simplifyEpsilon: simplifyEpsilon) else {
+                return
+            }
+            DispatchQueue.main.async {
+                self.floorFootprint = footprint
+                self.onFootprintUpdated?(footprint)
+            }
+        }
+    }
+
+    // MARK: - Renderizar imagen del plano planta
+
+    /// Genera UIImage del plano combinando footprint + paredes RoomPlan (si disponibles)
+    func renderFloorPlan(size: CGSize = CGSize(width: 800, height: 800)) -> UIImage {
+        if let room = lastCapturedRoom, let fp = floorFootprint {
+            return PlanRenderer.shared.renderCombined(room: room, footprint: fp, size: size)
+        } else if let fp = floorFootprint {
+            return PlanRenderer.shared.renderFloorFootprint(fp, size: size)
+        } else if let room = lastCapturedRoom {
+            return PlanRenderer.shared.renderImage(from: room, size: size)
+        }
+        return UIImage()
     }
 }
 
@@ -72,6 +111,8 @@ extension RoomPlanManager: RoomCaptureSessionDelegate {
         Task {
             if let room = try? await request.capturedRoom(from: data) {
                 self.lastCapturedRoom = room
+                // Generar footprint desde el mesh ARKit capturado durante el escaneo
+                self.buildFloorFootprint()
                 self.onScanComplete?(room)
             }
         }

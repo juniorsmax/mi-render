@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { FloorPlan } from './FloorPlan'
 import { Icon } from './Icon'
 import { Capacitor } from '@capacitor/core'
-import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative, startWalkthrough } from '../lib/lidar'
+import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative, startWalkthrough, getWallMetrics, getSurfaceAreas, getRoomSegmentation, getAutoVolume, exportIFC, exportOptimizedUSDZ } from '../lib/lidar'
 import './ScanExport.css'
 
 async function shareOrSavePDF(blob, filename) {
@@ -32,6 +32,23 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
   const reportRef = useRef(null)
   const [exportingFormat, setExportingFormat] = useState(null)
   const [worldMapSaved, setWorldMapSaved]     = useState(false)
+  const [wallMetrics, setWallMetrics]         = useState(null)
+  const [roomSegments, setRoomSegments]       = useState(null)   // { rooms, totalVolume }
+  const [autoVolume, setAutoVolume]           = useState(null)   // { totalVolume }
+  const [exportingAdvanced, setExportingAdv]  = useState(null)   // 'ifc' | 'usdz-opt'
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    getWallMetrics()
+      .then(data => { if (data?.walls?.length) setWallMetrics(data) })
+      .catch(() => {})
+    getRoomSegmentation()
+      .then(data => { if (data?.roomCount > 0) setRoomSegments(data) })
+      .catch(() => {})
+    getAutoVolume()
+      .then(data => { if (data?.totalVolume > 0) setAutoVolume(data) })
+      .catch(() => {})
+  }, [])
 
   if (!result) return null
 
@@ -306,6 +323,35 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           </div>
         )}
 
+        {/* ── Habitaciones detectadas ──────────────────────────────────────── */}
+        {roomSegments?.rooms?.length > 1 && (
+          <div className="rooms-section">
+            <div className="rooms-title">
+              <Icon name="plan" size={13} />
+              {roomSegments.rooms.length} habitaciones detectadas
+            </div>
+            <div className="rooms-grid">
+              {roomSegments.rooms.map((room, i) => (
+                <div key={room.id ?? i} className="room-card glass">
+                  <div className="room-card-label">{room.label}</div>
+                  <div className="room-card-area">{room.area?.toFixed(1)}<span>m²</span></div>
+                  {room.volume > 0 && (
+                    <div className="room-card-vol">{room.volume?.toFixed(1)} m³</div>
+                  )}
+                  {room.avgHeight > 0 && (
+                    <div className="room-card-h">{room.avgHeight?.toFixed(2)} m alt.</div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {roomSegments.totalVolume > 0 && (
+              <div className="rooms-total">
+                Volumen total: <strong>{roomSegments.totalVolume?.toFixed(1)} m³</strong>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Aviso si todo es cero */}
         {!isPhotogrammetry && floorArea === 0 && walls.length === 0 && (
           <div className="scan-export-warning">
@@ -327,7 +373,7 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           <MetricCard
             icon={<VolumeIcon />}
             iconClass="amber"
-            value={`${totalVolume.toFixed(1)}`}
+            value={(autoVolume?.totalVolume ?? totalVolume).toFixed(1)}
             unit="m³"
             label="Volumen"
           />
@@ -370,6 +416,9 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
           {latitude  != null && <StatRow label="Latitud"  value={`${latitude.toFixed(6)} N`} />}
           {longitude != null && <StatRow label="Longitud" value={`${longitude.toFixed(6)} E`} />}
           {altitude  != null && <StatRow label="Altitud"  value={`${Math.round(altitude)} m`} />}
+          {wallMetrics?.walls?.length > 0 && (
+            <WallMetricsSection walls={wallMetrics.walls} />
+          )}
         </div>
 
         {/* Botones de exportación */}
@@ -429,6 +478,61 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Exportación avanzada — BIM + USDZ optimizado */}
+          {Capacitor.isNativePlatform() && (
+            <div className="export-advanced-group">
+              <div className="export-3d-label">
+                <Icon name="scan" size={11} /> Avanzado
+              </div>
+              <button
+                className={`export-btn ${exportingAdvanced === 'ifc' ? 'loading' : ''}`}
+                disabled={!!exportingAdvanced}
+                onClick={async () => {
+                  setExportingAdv('ifc')
+                  try {
+                    const name = projectName.replace(/\s+/g, '-').toLowerCase()
+                    await exportIFC(name, { projectName })
+                  } catch (err) {
+                    console.error('exportIFC error:', err)
+                  } finally { setExportingAdv(null) }
+                }}
+              >
+                <div className="export-btn-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#818cf8' }}>
+                  {exportingAdvanced === 'ifc'
+                    ? <span className="spinner" style={{ width: 14, height: 14 }} />
+                    : 'IFC'}
+                </div>
+                <div>
+                  <div className="export-btn-label">Exportar IFC (BIM)</div>
+                  <div className="export-btn-sub">ArchiCAD · Revit · FreeCAD · Solibri</div>
+                </div>
+              </button>
+              <button
+                className={`export-btn ${exportingAdvanced === 'usdz-opt' ? 'loading' : ''}`}
+                disabled={!!exportingAdvanced}
+                onClick={async () => {
+                  setExportingAdv('usdz-opt')
+                  try {
+                    const name = projectName.replace(/\s+/g, '-').toLowerCase()
+                    await exportOptimizedUSDZ(name)
+                  } catch (err) {
+                    console.error('exportOptimizedUSDZ error:', err)
+                  } finally { setExportingAdv(null) }
+                }}
+              >
+                <div className="export-btn-icon" style={{ background: 'rgba(45,212,191,0.15)', color: '#2dd4bf' }}>
+                  {exportingAdvanced === 'usdz-opt'
+                    ? <span className="spinner" style={{ width: 14, height: 14 }} />
+                    : 'AR+'}
+                </div>
+                <div>
+                  <div className="export-btn-label">USDZ Optimizado</div>
+                  <div className="export-btn-sub">Materiales PBR · Apple ecosystem ready</div>
+                </div>
+              </button>
             </div>
           )}
 
@@ -518,6 +622,33 @@ function StatRow({ label, value, accent }) {
         {value}
       </span>
     </div>
+  )
+}
+
+/* ── WallMetricsSection ──────────────────────────────────────────────────────── */
+function WallMetricsSection({ walls }) {
+  return (
+    <>
+      <div className="stat-section-header">
+        <WallIcon />
+        Paredes detectadas
+      </div>
+      {walls.map((w, i) => (
+        <div key={w.id ?? i} className="stat-row wall-row">
+          <span className="stat-label">
+            <span className="wall-label-pill">{w.label ?? `P${i + 1}`}</span>
+          </span>
+          <span className="stat-value" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.8em' }}>
+              {w.dimensions?.width != null && w.dimensions?.height != null
+                ? `${w.dimensions.width.toFixed(2)}×${w.dimensions.height.toFixed(2)} m`
+                : ''}
+            </span>
+            <span>{w.area != null ? `${w.area.toFixed(2)} m²` : '—'}</span>
+          </span>
+        </div>
+      ))}
+    </>
   )
 }
 
