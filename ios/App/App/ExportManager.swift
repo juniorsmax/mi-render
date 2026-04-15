@@ -4,6 +4,7 @@
 // No depende de ARKit — recibe datos ya procesados.
 
 import UIKit
+import ARKit
 import ModelIO
 import RoomPlan
 import CoreGraphics

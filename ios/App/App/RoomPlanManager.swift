@@ -3,6 +3,7 @@
 // Genera paredes, puertas, ventanas, aberturas y dimensiones.
 // Requiere iOS 16+ y dispositivo con LiDAR.
 
+import UIKit
 import RoomPlan
 import simd
 
