@@ -116,6 +116,15 @@ class MeshManager {
         recalculateSurfaces()
     }
 
+    /// Alias para ScanManager delegate — upsert de un anchor.
+    func update(anchor: ARMeshAnchor) { addAnchor(anchor) }
+
+    /// Elimina un anchor por identificador.
+    func remove(anchor: ARMeshAnchor) {
+        meshAnchors.removeAll { $0.identifier == anchor.identifier }
+        recalculateSurfaces()
+    }
+
     // MARK: - Reemplazar todos los anchors (para ObjectScanViewController)
 
     func setMeshAnchors(_ anchors: [ARMeshAnchor]) {

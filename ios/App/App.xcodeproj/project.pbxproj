@@ -40,6 +40,10 @@
 		CC000014000000000000001B /* VolumeCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000014000000000000001A /* VolumeCalculator.swift */; };
 		CC000015000000000000001B /* IFCExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000015000000000000001A /* IFCExporter.swift */; };
 		CC000016000000000000001B /* ScanGuidanceOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000016000000000000001A /* ScanGuidanceOverlay.swift */; };
+		CC000017000000000000001B /* MeshPersistenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000017000000000000001A /* MeshPersistenceManager.swift */; };
+		CC000018000000000000001B /* SceneViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000018000000000000001A /* SceneViewer.swift */; };
+		CC000019000000000000001B /* PanoramaCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000019000000000000001A /* PanoramaCaptureManager.swift */; };
+		CC00001A000000000000001B /* MultiRoomMergeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001A000000000000001A /* MultiRoomMergeManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -75,6 +79,10 @@
 		CC000014000000000000001A /* VolumeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeCalculator.swift; sourceTree = "<group>"; };
 		CC000015000000000000001A /* IFCExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IFCExporter.swift; sourceTree = "<group>"; };
 		CC000016000000000000001A /* ScanGuidanceOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanGuidanceOverlay.swift; sourceTree = "<group>"; };
+		CC000017000000000000001A /* MeshPersistenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshPersistenceManager.swift; sourceTree = "<group>"; };
+		CC000018000000000000001A /* SceneViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneViewer.swift; sourceTree = "<group>"; };
+		CC000019000000000000001A /* PanoramaCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanoramaCaptureManager.swift; sourceTree = "<group>"; };
+		CC00001A000000000000001A /* MultiRoomMergeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiRoomMergeManager.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -140,6 +148,10 @@
 				CC000014000000000000001A /* VolumeCalculator.swift */,
 				CC000015000000000000001A /* IFCExporter.swift */,
 				CC000016000000000000001A /* ScanGuidanceOverlay.swift */,
+				CC000017000000000000001A /* MeshPersistenceManager.swift */,
+				CC000018000000000000001A /* SceneViewer.swift */,
+				CC000019000000000000001A /* PanoramaCaptureManager.swift */,
+				CC00001A000000000000001A /* MultiRoomMergeManager.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -256,6 +268,10 @@
 				CC000014000000000000001B /* VolumeCalculator.swift in Sources */,
 				CC000015000000000000001B /* IFCExporter.swift in Sources */,
 				CC000016000000000000001B /* ScanGuidanceOverlay.swift in Sources */,
+				CC000017000000000000001B /* MeshPersistenceManager.swift in Sources */,
+				CC000018000000000000001B /* SceneViewer.swift in Sources */,
+				CC000019000000000000001B /* PanoramaCaptureManager.swift in Sources */,
+				CC00001A000000000000001B /* MultiRoomMergeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
