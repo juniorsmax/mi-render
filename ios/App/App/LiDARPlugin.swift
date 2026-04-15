@@ -257,6 +257,12 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         ])
     }
 
+    // ── getSurfaceAreas — expone cálculo ARKit a JS ──────────────────────────
+    @objc func getSurfaceAreas(_ call: CAPPluginCall) {
+        let s = MeshManager.shared.surfaces
+        call.resolve(s.toDictionary())
+    }
+
     // ── exportOBJ ────────────────────────────────────────────────────────────
     @objc func exportOBJ(_ call: CAPPluginCall) {
         let name = call.getString("name") ?? "mi-render-mesh"
@@ -526,15 +532,20 @@ class RoomPlanViewController: UIViewController {
 
     var onResult: (([String: Any]?) -> Void)?
 
-    private var captureView:    RoomCaptureView!
-    private var captureSession: RoomCaptureSession!
-    private var isPaused        = false
-    private var torchOn         = false
-    private var uiReady         = false
+    private var captureView:     RoomCaptureView!
+    private var captureSession:  RoomCaptureSession!
+    private var isPaused         = false
+    private var torchOn          = false
+    private var uiReady          = false
+    private var meshTimer:       Timer?        // muestrea ARKit anchors cada 1.5 s
 
-    private weak var areaLabel: UILabel?
-    private weak var pauseBtn:  UIButton?
-    private weak var torchBtn:  UIButton?
+    private weak var areaLabel:  UILabel?
+    private weak var pauseBtn:   UIButton?
+    private weak var torchBtn:   UIButton?
+    // Panel de desglose de superficies (suelo / paredes / techo)
+    private weak var floorLbl:   UILabel?
+    private weak var wallLbl:    UILabel?
+    private weak var ceilLbl:    UILabel?
 
     // MARK: – Lifecycle
 
@@ -542,13 +553,17 @@ class RoomPlanViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
 
-        // RoomCaptureView: cámara + malla ARKit en tiempo real
         captureView = RoomCaptureView(frame: view.bounds)
         captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(captureView)
 
         captureSession          = captureView.captureSession
         captureSession.delegate = self
+
+        // Conectar callback de MeshManager → actualiza UI en tiempo real
+        MeshManager.shared.onSurfacesUpdated = { [weak self] surfaces in
+            self?.updateSurfaceUI(surfaces)
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -562,13 +577,43 @@ class RoomPlanViewController: UIViewController {
         super.viewDidAppear(animated)
         UIApplication.shared.isIdleTimerDisabled = true
         captureSession.run(configuration: RoomCaptureSession.Configuration())
+        startMeshTimer()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         setTorch(false)
+        meshTimer?.invalidate()
+        meshTimer = nil
         captureSession.stop()
+    }
+
+    // ── Timer: muestrea ARMeshAnchors del ARSession cada 1.5 s ───────────────
+    //
+    // RoomCaptureSession gestiona su propio ARSession internamente y no expone
+    // delegate callbacks de anclas. Lo solucionamos muestreando currentFrame.
+    private func startMeshTimer() {
+        meshTimer?.invalidate()
+        meshTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            guard let self = self, !self.isPaused else { return }
+            let arAnchors = self.captureSession.arSession.currentFrame?.anchors
+                .compactMap { $0 as? ARMeshAnchor } ?? []
+            guard !arAnchors.isEmpty else { return }
+            MeshManager.shared.setMeshAnchors(arAnchors)
+        }
+    }
+
+    // ── Actualiza los labels de superficie en el overlay ─────────────────────
+    private func updateSurfaceUI(_ s: MeshSurfaces) {
+        // Badge principal: usa suelo si existe, sino total
+        let mainArea = s.floor > 0.1 ? s.floor : s.total
+        areaLabel?.text = String(format: "%.1f m²", mainArea)
+
+        // Desglose
+        floorLbl?.text = String(format: "Suelo %.1f m²",  s.floor)
+        wallLbl?.text  = String(format: "Paredes %.1f m²", s.wall)
+        ceilLbl?.text  = String(format: "Techo %.1f m²",  s.ceiling)
     }
 
     // MARK: – Overlay UI (Polycam style)
@@ -622,6 +667,23 @@ class RoomPlanViewController: UIViewController {
         view.addSubview(tBtn)
         torchBtn = tBtn
 
+        // ── Panel desglose superficies (izquierda central) ───────────────────
+        let panelW: CGFloat = 142
+        let panelH: CGFloat = 72
+        let panel = UIView()
+        panel.backgroundColor    = UIColor.black.withAlphaComponent(0.62)
+        panel.layer.cornerRadius = 14
+        panel.layer.borderWidth  = 1
+        panel.layer.borderColor  = UIColor.white.withAlphaComponent(0.18).cgColor
+        panel.frame = CGRect(x: 12, y: h / 2 - panelH / 2, width: panelW, height: panelH)
+        view.addSubview(panel)
+
+        let fLbl = makeSurfaceLbl("Suelo  — m²",  y: 8)
+        let wLbl = makeSurfaceLbl("Paredes — m²", y: 28)
+        let cLbl = makeSurfaceLbl("Techo  — m²",  y: 48)
+        panel.addSubview(fLbl); panel.addSubview(wLbl); panel.addSubview(cLbl)
+        floorLbl = fLbl; wallLbl = wLbl; ceilLbl = cLbl
+
         // Barra negra inferior
         let barH: CGFloat = 96 + botInset
         let botBar = UIView()
@@ -668,6 +730,15 @@ class RoomPlanViewController: UIViewController {
         btn.layer.cornerRadius = sz / 2
         btn.bounds.size     = CGSize(width: sz, height: sz)
         return btn
+    }
+
+    private func makeSurfaceLbl(_ text: String, y: CGFloat) -> UILabel {
+        let lbl = UILabel()
+        lbl.text      = text
+        lbl.textColor = UIColor.white.withAlphaComponent(0.80)
+        lbl.font      = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        lbl.frame     = CGRect(x: 10, y: y, width: 124, height: 18)
+        return lbl
     }
 
     // MARK: – Acciones

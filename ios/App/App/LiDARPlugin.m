@@ -22,4 +22,5 @@ CAP_PLUGIN(LiDARPlugin, "LiDARPlugin",
     CAP_PLUGIN_METHOD(exportGLTF, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(exportGLB, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(exportAllFormats, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(getSurfaceAreas, CAPPluginReturnPromise);
 )

@@ -305,6 +305,14 @@ export async function exportAllFormats(name = 'mi-render-export') {
   return callNative('exportAllFormats', { name })
 }
 
+/**
+ * Devuelve las superficies calculadas de la última malla ARKit capturada.
+ * @returns {{ floorArea, wallArea, ceilingArea, otherArea, totalArea }} en m²
+ */
+export async function getSurfaceAreas() {
+  return callNative('getSurfaceAreas', {})
+}
+
 // ── Etiquetas para UI ─────────────────────────────────────────────────────────
 
 export const SCAN_MODE_LABELS = {
