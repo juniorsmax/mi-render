@@ -1,68 +1,103 @@
-name: iOS Build (Xcode 16)
+name: iOS Build — mi-render
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration'
+        default: 'Release'
+        type: choice
+        options: [Release, Debug]
+      xcode_version:
+        description: 'Xcode version'
+        default: '15'
+        type: choice
+        options: ['15', '16']
 
 jobs:
   build-ios:
-    name: Build iOS App
-    runs-on: macos-15
+    runs-on: macos-14
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node 20
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build web app
+      - name: Build web
         run: npm run build
 
-      - name: Capacitor sync
+      - name: Setup Xcode ${{ inputs.xcode_version || '15' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ inputs.xcode_version || '15' }}
+
+      - name: Show environment
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Capacitor sync iOS
         run: npx cap sync ios
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
       - name: Resolve Swift packages
+        working-directory: ios/App
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project ios/App/App.xcodeproj \
-            -scheme App
+            -project App.xcodeproj \
+            -scheme App \
+            -clonedSourcePackagesDirPath ./SourcePackages
 
-      - name: Build iOS for device (unsigned)
+      - name: Build iOS app
+        working-directory: ios/App
         run: |
           xcodebuild \
-            -project ios/App/App.xcodeproj \
+            -project App.xcodeproj \
             -scheme App \
-            -configuration Release \
+            -configuration ${{ inputs.configuration || 'Release' }} \
             -destination 'generic/platform=iOS' \
-            -archivePath $RUNNER_TEMP/App.xcarchive \
-            archive \
+            -derivedDataPath ./DerivedData \
+            -clonedSourcePackagesDirPath ./SourcePackages \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            PRODUCT_BUNDLE_IDENTIFIER=com.zerbitecni.mirender \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0
 
-      - name: Create .ipa from archive
+      - name: Create .ipa
+        working-directory: ios/App
         run: |
-          mkdir -p $RUNNER_TEMP/ipa/Payload
-          cp -r "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app" \
-            "$RUNNER_TEMP/ipa/Payload/"
-          cd $RUNNER_TEMP/ipa
-          zip -r $RUNNER_TEMP/mi-render.ipa Payload
-          echo "IPA created: $(du -sh $RUNNER_TEMP/mi-render.ipa)"
+          APP_PATH=$(find DerivedData -name "*.app" -not -path "*/Test*.app" | head -1)
+          echo "Found .app: $APP_PATH"
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r mi-render.ipa Payload/
+          rm -rf Payload
+          ls -lh mi-render.ipa
 
-      - name: Upload .ipa artifact
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mi-render-ios
-          path: ${{ runner.temp }}/mi-render.ipa
-          retention-days: 14
+          name: mi-render-ios-build-${{ github.run_number }}
+          path: ios/App/mi-render.ipa
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          echo "## iOS Build completado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rama:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Config:** ${{ inputs.configuration || 'Release' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Xcode:** ${{ inputs.xcode_version || '15' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artefacto:** mi-render-ios-build-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
