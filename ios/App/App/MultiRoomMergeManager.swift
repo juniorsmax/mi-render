@@ -9,6 +9,7 @@
 
 import ARKit
 import ModelIO
+import MetalKit
 import simd
 
 // MARK: - Datos de una habitación guardada

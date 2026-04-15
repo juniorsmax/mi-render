@@ -155,8 +155,21 @@ class SceneViewerViewController: UIViewController {
         meshEntity?.removeFromParent()
         bboxEntity?.removeFromParent()
 
-        guard asset.count > 0,
-              let meshResource = try? MeshResource.generate(from: asset) else {
+        guard asset.count > 0 else {
+            showEmptyState()
+            return
+        }
+
+        // Combinar todos los MDLMesh del asset en un único MeshResource
+        var meshDescriptors: [MeshDescriptor] = []
+        for i in 0..<asset.count {
+            guard let mdlMesh = asset.object(at: i) as? MDLMesh else { continue }
+            if let descriptor = try? MeshDescriptor(mdlMesh) {
+                meshDescriptors.append(descriptor)
+            }
+        }
+        guard !meshDescriptors.isEmpty,
+              let meshResource = try? MeshResource.generate(from: meshDescriptors) else {
             showEmptyState()
             return
         }
