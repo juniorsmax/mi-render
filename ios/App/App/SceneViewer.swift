@@ -778,4 +778,40 @@ extension SceneViewerViewController {
         floorPlanOverlay?.removeFromParent()
         floorPlanOverlay = nil
     }
+
+    // MARK: - Object Scan Viewer (iOS 17+)
+
+    /// Carga y muestra un modelo USDZ generado por ObjectCaptureManager.
+    func loadObjectScan(from url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+
+        // Eliminar modelo anterior si existe
+        arView?.scene.anchors
+            .filter { $0.name == "objectScanAnchor" }
+            .forEach { $0.removeFromParent() }
+
+        if #available(iOS 15.0, *) {
+            Task {
+                do {
+                    let entity = try await Entity.init(contentsOf: url)
+                    let anchor = AnchorEntity(world: .zero)
+                    anchor.name = "objectScanAnchor"
+                    // Escalar para que quepa cómodamente en la escena (~1m max)
+                    let bounds = entity.visualBounds(relativeTo: nil)
+                    let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
+                    if maxDim > 0 {
+                        let scale = min(1.0, 1.0 / maxDim)
+                        entity.scale = SIMD3<Float>(repeating: scale)
+                    }
+                    entity.position = SIMD3<Float>(0, 0, -0.5)
+                    anchor.addChild(entity)
+                    await MainActor.run {
+                        self.arView?.scene.addAnchor(anchor)
+                    }
+                } catch {
+                    print("[SceneViewer] Error cargando USDZ: \(error)")
+                }
+            }
+        }
+    }
 }

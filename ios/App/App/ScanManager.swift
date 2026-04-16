@@ -14,6 +14,9 @@ class ScanManager: NSObject {
     weak var session: ARSession?
     weak var arView: ARView?
 
+    /// Modo de escaneo activo (habitación LiDAR u objeto fotogrametría).
+    private(set) var currentScanMode: ScanMode = .roomScan
+
     // Callback adicional para que LiDARPlugin reciba los anchors directamente
     var onMeshAnchorsUpdated: (([ARMeshAnchor]) -> Void)?
 
@@ -82,6 +85,25 @@ class ScanManager: NSObject {
 
     func stopScan() {
         session?.pause()
+    }
+
+    // MARK: - Object Capture (iOS 17+)
+
+    /// Inicia captura de objeto en modo fotogrametría.
+    func startObjectCapture() {
+        currentScanMode = .objectScan
+        if #available(iOS 17.0, *) {
+            ObjectCaptureManager.shared.startCapture()
+        }
+    }
+
+    /// Vuelve al modo LiDAR y reanuda sesión ARKit.
+    func switchToRoomScan(arView: ARView) {
+        if #available(iOS 17.0, *) {
+            ObjectCaptureManager.shared.cancelCapture()
+        }
+        currentScanMode = .roomScan
+        startFullScan(arView: arView)
     }
 
     // MARK: - Reiniciar sesión limpiando anchors
