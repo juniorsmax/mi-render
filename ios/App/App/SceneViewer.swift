@@ -128,7 +128,7 @@ class SceneViewerViewController: UIViewController {
                 positions.append(SIMD3<Float>(p.vertices[i], p.vertices[i+1], p.vertices[i+2]))
             }
             var desc = MeshDescriptor(name: p.id)
-            desc.positions  = MeshBuffer(positions)
+            desc.positions  = .init(positions)
             desc.primitives = .triangles(p.faceIndices)
             return desc
         }

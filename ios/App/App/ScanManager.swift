@@ -220,7 +220,7 @@ extension ScanManager {
         guard !positions.isEmpty, !indices.isEmpty else { return nil }
 
         var desc = MeshDescriptor(name: anchor.identifier.uuidString)
-        desc.positions  = MeshBuffer(positions)
+        desc.positions  = .init(positions)
         desc.primitives = .triangles(indices)
         return desc
     }
@@ -261,7 +261,7 @@ extension ScanManager {
         guard !positions.isEmpty, !indices.isEmpty else { return nil }
 
         var descriptor = MeshDescriptor(name: anchor.identifier.uuidString)
-        descriptor.positions = MeshBuffer(positions)
+        descriptor.positions = .init(positions)
         descriptor.primitives = .triangles(indices)
         return try? MeshResource.generate(from: [descriptor])
     }
