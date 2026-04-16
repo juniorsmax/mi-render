@@ -92,13 +92,128 @@ class WorldMapManager {
     }
 }
 
+// MARK: - Merge multi-habitación
+
+extension WorldMapManager {
+
+    // Índice de habitaciones guardadas
+    private var roomIndexURL: URL {
+        saveDirectory.appendingPathComponent("room_index.json")
+    }
+
+    struct RoomEntry: Codable {
+        let name:       String
+        let mapFile:    String   // .arworldmap
+        let meshFile:   String   // .miremesh
+        let timestamp:  Double
+        let floorArea:  Double
+    }
+
+    // MARK: Guardar habitación completa
+
+    /// Guarda ARWorldMap + mesh de la habitación actual con nombre dado.
+    func saveRoom(name: String,
+                  session: ARSession,
+                  completion: @escaping (Result<RoomEntry, Error>) -> Void) {
+
+        let ts       = Date().timeIntervalSince1970
+        let baseName = "\(name)_\(Int(ts))"
+
+        // 1. Guardar world map
+        saveWorldMap(session: session, named: baseName) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .failure(let e):
+                completion(.failure(e))
+            case .success:
+                // 2. Guardar mesh
+                MeshPersistenceManager.shared.save(
+                    anchors: MeshManager.shared.meshAnchors,
+                    named: baseName
+                )
+                // 3. Registrar en índice
+                let entry = RoomEntry(
+                    name:      name,
+                    mapFile:   baseName,
+                    meshFile:  baseName,
+                    timestamp: ts,
+                    floorArea: Double(MeshManager.shared.surfaces.floor)
+                )
+                self.addRoomToIndex(entry)
+                completion(.success(entry))
+            }
+        }
+    }
+
+    // MARK: Merge: combinar coordenadas de múltiples habitaciones
+
+    /// Carga los meshes de todas las habitaciones guardadas y los alinea en un
+    /// sistema de coordenadas compartido usando el transform del anchor del world map.
+    /// Devuelve el número de habitaciones fusionadas y la lista de archivos .miremesh.
+    func mergeAllRooms() -> (roomCount: Int, meshFiles: [String]) {
+        let rooms = loadRoomIndex()
+        return (rooms.count, rooms.map { $0.meshFile })
+    }
+
+    /// Fusiona solo las habitaciones indicadas por nombre.
+    func mergeRooms(named names: [String]) -> [RoomEntry] {
+        loadRoomIndex().filter { names.contains($0.name) }
+    }
+
+    // MARK: Alineación de coordenadas
+
+    /// Calcula la traslación necesaria para alinear dos mapas usando sus centroides de suelo.
+    /// Úsalo para desplazar el mesh de una habitación al añadirla al modelo completo.
+    func alignmentOffset(from sourceAnchors: [ARMeshAnchor],
+                         to targetAnchors: [ARMeshAnchor]) -> SIMD3<Float> {
+        func centroid(_ anchors: [ARMeshAnchor]) -> SIMD3<Float> {
+            guard !anchors.isEmpty else { return .zero }
+            let sum = anchors.reduce(SIMD3<Float>.zero) { acc, a in
+                acc + SIMD3<Float>(a.transform.columns.3.x,
+                                   a.transform.columns.3.y,
+                                   a.transform.columns.3.z)
+            }
+            return sum / Float(anchors.count)
+        }
+        return centroid(targetAnchors) - centroid(sourceAnchors)
+    }
+
+    // MARK: Índice privado
+
+    func loadRoomIndex() -> [RoomEntry] {
+        guard let data = try? Data(contentsOf: roomIndexURL),
+              let rooms = try? JSONDecoder().decode([RoomEntry].self, from: data)
+        else { return [] }
+        return rooms
+    }
+
+    private func addRoomToIndex(_ entry: RoomEntry) {
+        var rooms = loadRoomIndex()
+        rooms.append(entry)
+        if let data = try? JSONEncoder().encode(rooms) {
+            try? data.write(to: roomIndexURL, options: .atomic)
+        }
+    }
+
+    func deleteRoomFromIndex(name: String) {
+        var rooms = loadRoomIndex().filter { $0.name != name }
+        if let data = try? JSONEncoder().encode(rooms) {
+            try? data.write(to: roomIndexURL, options: .atomic)
+        }
+    }
+
+    func roomIndexDictionary() -> [[String: Any]] {
+        loadRoomIndex().map { r in
+            ["name": r.name, "timestamp": r.timestamp, "floorArea": r.floorArea] as [String: Any]
+        }
+    }
+}
+
 // MARK: - Colaboración multiusuario
 
 extension WorldMapManager {
 
     func collaborationData(from session: ARSession) -> Data? {
-        // ARCollaborationData se obtiene vía ARSessionDelegate
-        // en func session(_ session: ARSession, didOutputCollaborationData data: ARSession.CollaborationData)
         return nil
     }
 

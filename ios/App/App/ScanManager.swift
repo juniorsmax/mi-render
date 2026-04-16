@@ -109,21 +109,27 @@ class ScanManager: NSObject {
     }
 }
 
-// MARK: - ARSessionDelegate — propaga ARMeshAnchor a MeshManager
+// MARK: - ARSessionDelegate — propaga ARMeshAnchor + renderiza en ARView
 
 extension ScanManager: ARSessionDelegate {
 
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         guard !meshAnchors.isEmpty else { return }
-        meshAnchors.forEach { MeshManager.shared.update(anchor: $0) }
+        meshAnchors.forEach {
+            MeshManager.shared.update(anchor: $0)
+            renderMesh($0)
+        }
         onMeshAnchorsUpdated?(MeshManager.shared.meshAnchors)
     }
 
     func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         guard !meshAnchors.isEmpty else { return }
-        meshAnchors.forEach { MeshManager.shared.update(anchor: $0) }
+        meshAnchors.forEach {
+            MeshManager.shared.update(anchor: $0)
+            renderMesh($0)
+        }
         onMeshAnchorsUpdated?(MeshManager.shared.meshAnchors)
     }
 
@@ -143,5 +149,82 @@ extension ScanManager: ARSessionDelegate {
 
     func sessionInterruptionEnded(_ session: ARSession) {
         print("[ScanManager] session resumed")
+    }
+}
+
+// MARK: - Renderizado de malla en tiempo real
+
+extension ScanManager {
+
+    /// Construye un ModelEntity desde ARMeshAnchor y lo añade/actualiza en ARView.scene.
+    func renderMesh(_ anchor: ARMeshAnchor) {
+        guard let arView = arView else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let meshResource = Self.buildMeshResource(from: anchor) else { return }
+
+            var material = PhysicallyBasedMaterial()
+            material.baseColor = .init(tint: UIColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.6))
+            material.roughness = .init(floatLiteral: 0.8)
+            material.metallic  = .init(floatLiteral: 0.0)
+
+            let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
+
+            DispatchQueue.main.async {
+                // Buscar AnchorEntity existente para este anchor o crear uno nuevo
+                let anchorId = anchor.identifier.uuidString
+                if let existing = arView.scene.anchors.first(
+                    where: { $0.name == anchorId }) as? AnchorEntity {
+                    existing.children.forEach { $0.removeFromParent() }
+                    existing.addChild(modelEntity)
+                } else {
+                    let anchorEntity = AnchorEntity(anchor: anchor)
+                    anchorEntity.name = anchorId
+                    anchorEntity.addChild(modelEntity)
+                    arView.scene.addAnchor(anchorEntity)
+                }
+            }
+        }
+    }
+
+    /// Construye un MeshResource desde la geometría del ARMeshAnchor.
+    private static func buildMeshResource(from anchor: ARMeshAnchor) -> MeshResource? {
+        let geo = anchor.geometry
+
+        // Vértices
+        let vertexCount = geo.vertices.count
+        var positions = [SIMD3<Float>]()
+        positions.reserveCapacity(vertexCount)
+        let vPtr = geo.vertices.buffer.contents()
+            .advanced(by: geo.vertices.offset)
+            .assumingMemoryBound(to: Float.self)
+        let vStride = geo.vertices.stride / MemoryLayout<Float>.stride
+        for i in 0..<vertexCount {
+            positions.append(SIMD3<Float>(
+                vPtr[i * vStride],
+                vPtr[i * vStride + 1],
+                vPtr[i * vStride + 2]
+            ))
+        }
+
+        // Índices de caras
+        let faceCount = geo.faces.count
+        let iCount    = geo.faces.indexCountPerPrimitive
+        var indices   = [UInt32]()
+        indices.reserveCapacity(faceCount * iCount)
+        let iPtr = geo.faces.buffer.contents()
+            .assumingMemoryBound(to: UInt32.self)
+        for f in 0..<faceCount {
+            for k in 0..<iCount {
+                indices.append(iPtr[f * iCount + k])
+            }
+        }
+
+        guard !positions.isEmpty, !indices.isEmpty else { return nil }
+
+        var descriptor = MeshDescriptor(name: anchor.identifier.uuidString)
+        descriptor.positions = MeshBuffer(positions)
+        descriptor.primitives = .triangles(indices)
+        return try? MeshResource.generate(from: [descriptor])
     }
 }

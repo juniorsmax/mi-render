@@ -105,6 +105,87 @@ class NavigationManager {
     func clearGraph() {
         graph = nil
         floorPoints.removeAll()
+        cameraNodes.removeAll()
+    }
+}
+
+// MARK: - Registro de posiciones de cámara por frame
+
+extension NavigationManager {
+
+    // Nodos registrados durante el escaneo (posición + orientación)
+    struct CameraNode {
+        let index:    Int
+        let position: SIMD3<Float>
+        let forward:  SIMD3<Float>   // dirección -Z del transform
+        let transform: simd_float4x4
+    }
+
+    private static var _cameraNodes: [CameraNode] = []
+    var cameraNodes: [CameraNode] {
+        get { NavigationManager._cameraNodes }
+        set { NavigationManager._cameraNodes = newValue }
+    }
+
+    /// Llama este método en ARSessionDelegate.session(_:didUpdate:frame:).
+    /// Registra la posición solo si la cámara se movió minDistance metros.
+    @discardableResult
+    func registerFrame(_ frame: ARFrame, minDistance: Float = 0.4) -> CameraNode? {
+        let t = frame.camera.transform
+        let pos = SIMD3<Float>(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+
+        // Dirección -Z (hacia donde apunta la cámara)
+        let forward = -SIMD3<Float>(t.columns.2.x, t.columns.2.y, t.columns.2.z)
+
+        // Solo añadir si hay movimiento suficiente
+        if let last = cameraNodes.last {
+            guard simd_distance(pos, last.position) >= minDistance else { return nil }
+        }
+
+        let node = CameraNode(
+            index:     cameraNodes.count,
+            position:  pos,
+            forward:   forward,
+            transform: t
+        )
+        cameraNodes.append(node)
+        return node
+    }
+
+    /// Devuelve la trayectoria como array de posiciones ordenadas.
+    func trajectory() -> [SIMD3<Float>] {
+        cameraNodes.map { $0.position }
+    }
+
+    /// Distancia total recorrida en metros.
+    var trajectoryLength: Float {
+        guard cameraNodes.count > 1 else { return 0 }
+        var total: Float = 0
+        for i in 1..<cameraNodes.count {
+            total += simd_distance(cameraNodes[i].position, cameraNodes[i-1].position)
+        }
+        return total
+    }
+
+    /// Nodo más cercano a una posición dada (para navegación entre nodos).
+    func nearestNode(to position: SIMD3<Float>) -> CameraNode? {
+        cameraNodes.min(by: {
+            simd_distance($0.position, position) < simd_distance($1.position, position)
+        })
+    }
+
+    /// Serialización para Capacitor bridge.
+    func trajectoryDictionary() -> [String: Any] {
+        [
+            "nodeCount":      cameraNodes.count,
+            "totalLength":    Double(trajectoryLength),
+            "nodes": cameraNodes.map { n in
+                ["index": n.index,
+                 "x": Double(n.position.x),
+                 "y": Double(n.position.y),
+                 "z": Double(n.position.z)] as [String: Any]
+            }
+        ]
     }
 }
 

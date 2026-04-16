@@ -160,19 +160,19 @@ class SceneViewerViewController: UIViewController {
             return
         }
 
-        // Combinar todos los MDLMesh del asset en un único MeshResource
-        var meshDescriptors: [MeshDescriptor] = []
+        // Generar MeshResource combinando todos los MDLMesh del asset
+        var parts: [MeshResource] = []
         for i in 0..<asset.count {
-            guard let mdlMesh = asset.object(at: i) as? MDLMesh else { continue }
-            if let descriptor = try? MeshDescriptor(mdlMesh) {
-                meshDescriptors.append(descriptor)
-            }
+            guard let mdlMesh = asset.object(at: i) as? MDLMesh,
+                  let resource = try? MeshResource.generate(from: mdlMesh) else { continue }
+            parts.append(resource)
         }
-        guard !meshDescriptors.isEmpty,
-              let meshResource = try? MeshResource.generate(from: meshDescriptors) else {
+        guard !parts.isEmpty else {
             showEmptyState()
             return
         }
+        // Usar el primero; los demás se añaden como entidades hijas
+        let meshResource = parts[0]
 
         // Material PBR semitransparente
         var material = PhysicallyBasedMaterial()
@@ -181,6 +181,10 @@ class SceneViewerViewController: UIViewController {
         material.metallic  = .init(floatLiteral: 0.1)
 
         let entity = ModelEntity(mesh: meshResource, materials: [material])
+        // Añadir partes extra como entidades hijas con el mismo material
+        for extra in parts.dropFirst() {
+            entity.addChild(ModelEntity(mesh: extra, materials: [material]))
+        }
         anchorEntity.addChild(entity)
         meshEntity = entity
 
