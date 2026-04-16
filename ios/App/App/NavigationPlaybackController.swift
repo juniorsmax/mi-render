@@ -228,13 +228,19 @@ class NavigationPlaybackController {
         let p0 = segment > 0 ? nodes[segment - 1].position : p1 - (p2 - p1)
         let p3 = segment + 2 < nodes.count ? nodes[segment + 2].position : p2 + (p2 - p1)
 
-        let t2 = t * t
-        let t3 = t2 * t
-        let a: SIMD3<Float> = (-p0 + 3*p1 - 3*p2 + p3) * t3
-        let b: SIMD3<Float> = (2*p0 - 5*p1 + 4*p2 - p3) * t2
-        let c: SIMD3<Float> = (-p0 + p2) * t
-        let d: SIMD3<Float> = 2 * p1
-        return 0.5 * (a + b + c + d)
+        let t2: Float = t * t
+        let t3: Float = t2 * t
+
+        // Catmull-Rom: coeficientes explícitos con Float para evitar ambigüedad de tipo
+        let a0: SIMD3<Float> = p3 - p2 * 3.0 + p1 * 3.0 - p0
+        let a1: SIMD3<Float> = p0 * 2.0 - p1 * 5.0 + p2 * 4.0 - p3
+        let a2: SIMD3<Float> = p2 - p0
+        let a3: SIMD3<Float> = p1 * 2.0
+
+        let r0: SIMD3<Float> = a0 * t3
+        let r1: SIMD3<Float> = a1 * t2
+        let r2: SIMD3<Float> = a2 * t
+        return (r0 + r1 + r2 + a3) * 0.5
     }
 
     /// Construye un cuaternión que orienta -Z hacia `forward`.
