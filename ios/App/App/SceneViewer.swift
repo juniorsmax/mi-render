@@ -127,7 +127,8 @@ class SceneViewerViewController: UIViewController {
             for i in stride(from: 0, to: p.vertices.count - 2, by: 3) {
                 positions.append(SIMD3<Float>(p.vertices[i], p.vertices[i+1], p.vertices[i+2]))
             }
-            var desc = MeshDescriptor(name: p.id)
+            var desc = MeshDescriptor()
+            desc.name = p.id
             desc.positions  = .init(positions)
             let uintIndices = p.faceIndices.map { UInt32($0) }
             desc.primitives = .triangles(uintIndices)
@@ -176,7 +177,8 @@ class SceneViewerViewController: UIViewController {
         var minP = SIMD3<Float>(repeating:  Float.greatestFiniteMagnitude)
         var maxP = SIMD3<Float>(repeating: -Float.greatestFiniteMagnitude)
         for d in descriptors {
-            for p in d.positions ?? [] {
+            guard let positions = d.positions else { continue }
+            for p in positions {
                 minP = simd_min(minP, p)
                 maxP = simd_max(maxP, p)
             }

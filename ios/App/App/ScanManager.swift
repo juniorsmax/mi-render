@@ -219,7 +219,8 @@ extension ScanManager {
 
         guard !positions.isEmpty, !indices.isEmpty else { return nil }
 
-        var desc = MeshDescriptor(name: anchor.identifier.uuidString)
+        var desc = MeshDescriptor()
+        desc.name       = anchor.identifier.uuidString
         desc.positions  = .init(positions)
         let uintIndices = indices.map { UInt32($0) }
         desc.primitives = .triangles(uintIndices)
@@ -261,7 +262,8 @@ extension ScanManager {
 
         guard !positions.isEmpty, !indices.isEmpty else { return nil }
 
-        var descriptor = MeshDescriptor(name: anchor.identifier.uuidString)
+        var descriptor = MeshDescriptor()
+        descriptor.name      = anchor.identifier.uuidString
         descriptor.positions = .init(positions)
         let uintIndices = indices.map { UInt32($0) }
         descriptor.primitives = .triangles(uintIndices)
