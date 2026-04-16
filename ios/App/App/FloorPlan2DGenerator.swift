@@ -63,6 +63,9 @@ class FloorPlan2DGenerator {
     }()
     private var savedURL: URL { docsDir.appendingPathComponent("floorplan.json") }
 
+    /// URL pública del archivo floorplan.json en Documents (para SceneProjectManager).
+    var savedFloorplanURL: URL { savedURL }
+
     // MARK: - Generación principal
 
     func generateFloorPlan(from anchors: [ARAnchor]) -> FloorPlan {

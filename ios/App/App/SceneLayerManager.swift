@@ -49,10 +49,19 @@ class SceneLayerManager {
 
     static let shared = SceneLayerManager()
 
-    private static let defaultsKey = "mi_render_scene_layer_mode"
+    private static let defaultsKey        = "mi_render_scene_layer_mode"
+    private static let defaultsKeyProject = "mi_render_current_project_id"
 
     /// Modo activo actualmente. Solo se modifica via switchMode(to:).
     private(set) var currentMode: SceneLayerMode
+
+    /// ID del proyecto cargado actualmente (nil si no hay ninguno activo).
+    private(set) var currentProjectID: UUID? {
+        didSet {
+            let value = currentProjectID?.uuidString
+            UserDefaults.standard.set(value, forKey: Self.defaultsKeyProject)
+        }
+    }
 
     /// Lista de todos los modos disponibles (para construir UI dinámicamente).
     var availableModes: [SceneLayerMode] { SceneLayerMode.allCases }
@@ -60,6 +69,22 @@ class SceneLayerManager {
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
         currentMode = SceneLayerMode(rawValue: saved) ?? .meshRaw
+        if let uuidStr = UserDefaults.standard.string(forKey: Self.defaultsKeyProject) {
+            currentProjectID = UUID(uuidString: uuidStr)
+        }
+        observeProjectLoad()
+    }
+
+    private func observeProjectLoad() {
+        NotificationCenter.default.addObserver(
+            forName: .sceneProjectDidLoad,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            if let project = note.object as? SceneProject {
+                self?.currentProjectID = project.id
+            }
+        }
     }
 
     /// Cambia el modo activo, persiste en UserDefaults y emite notificación.

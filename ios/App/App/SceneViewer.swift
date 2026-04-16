@@ -66,12 +66,18 @@ class SceneViewerViewController: UIViewController {
             self, selector: #selector(onSceneLayerChanged(_:)),
             name: .sceneLayerDidChange, object: nil
         )
+        // Observador de proyecto cargado
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onSceneProjectDidLoad(_:)),
+            name: .sceneProjectDidLoad, object: nil
+        )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        NotificationCenter.default.removeObserver(self, name: .sceneModeDidChange, object: nil)
-        NotificationCenter.default.removeObserver(self, name: .sceneLayerDidChange, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .sceneModeDidChange,       object: nil)
+        NotificationCenter.default.removeObserver(self, name: .sceneLayerDidChange,      object: nil)
+        NotificationCenter.default.removeObserver(self, name: .sceneProjectDidLoad,      object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -469,6 +475,29 @@ extension SceneViewerViewController {
     @objc func onSceneLayerChanged(_ note: Notification) {
         guard let mode = note.object as? SceneLayerMode else { return }
         applySceneLayerMode(mode: mode)
+    }
+
+    // MARK: - Carga de proyecto
+
+    @objc func onSceneProjectDidLoad(_ note: Notification) {
+        guard let project = note.object as? SceneProject else { return }
+        loadProjectFiles(project)
+    }
+
+    /// Carga los archivos de un SceneProject en el visor: malla, capas y cámara.
+    func loadProjectFiles(_ project: SceneProject) {
+        // Recargar malla desde el archivo del proyecto
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let persisted = MeshPersistenceManager.shared.load(from: project.meshFileURL) ?? []
+            let descriptors = Self.buildDescriptors(from: persisted)
+
+            DispatchQueue.main.async {
+                self.displayDescriptors(descriptors, persisted: persisted)
+                // Aplicar el modo de capa guardado
+                self.applySceneLayerMode(mode: SceneLayerManager.shared.currentMode)
+            }
+        }
     }
 
     func applySceneLayerMode(mode: SceneLayerMode) {

@@ -59,6 +59,7 @@
 		CC000027000000000000001B /* ObjectContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000027000000000000001A /* ObjectContextMenu.swift */; };
 		CC000028000000000000001B /* SceneTimelineBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000028000000000000001A /* SceneTimelineBar.swift */; };
 		CC000029000000000000001B /* MaterialLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000029000000000000001A /* MaterialLibraryManager.swift */; };
+		CC00002A000000000000001B /* SceneProjectManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002A000000000000001A /* SceneProjectManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -113,6 +114,7 @@
 		CC000027000000000000001A /* ObjectContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectContextMenu.swift; sourceTree = "<group>"; };
 		CC000028000000000000001A /* SceneTimelineBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneTimelineBar.swift; sourceTree = "<group>"; };
 		CC000029000000000000001A /* MaterialLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLibraryManager.swift; sourceTree = "<group>"; };
+		CC00002A000000000000001A /* SceneProjectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneProjectManager.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -197,6 +199,7 @@
 				CC000027000000000000001A /* ObjectContextMenu.swift */,
 				CC000028000000000000001A /* SceneTimelineBar.swift */,
 				CC000029000000000000001A /* MaterialLibraryManager.swift */,
+				CC00002A000000000000001A /* SceneProjectManager.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -332,6 +335,7 @@
 				CC000027000000000000001B /* ObjectContextMenu.swift in Sources */,
 				CC000028000000000000001B /* SceneTimelineBar.swift in Sources */,
 				CC000029000000000000001B /* MaterialLibraryManager.swift in Sources */,
+				CC00002A000000000000001B /* SceneProjectManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
