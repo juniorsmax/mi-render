@@ -33,8 +33,13 @@ class SceneViewerViewController: UIViewController {
     private var playback: NavigationPlaybackController?
     private var isWalkthroughActive: Bool = false
 
-    // Multi-layer visualization
+    // Multi-layer visualization (SceneLayerManager — panel primario)
+    private var sceneLayerPanel: SceneLayerTogglePanel?
+    private var floorPlan3DEntities: [ModelEntity] = []
+
+    // Legacy layer panel (SceneModeManager — mantenido para compatibilidad)
     private var layerPanel: LayerTogglePanel?
+
     private var cachedDescriptors: [MeshDescriptor] = []
     private var cachedPersistedAnchors: [PersistedMeshAnchor] = []
     private var panoramaNodeEntities: [ModelEntity] = []
@@ -50,16 +55,23 @@ class SceneViewerViewController: UIViewController {
         setupARView()
         setupGestures()
         setupNavigationBar()
-        setupLayerPanel()
+        setupSceneLayerPanel()
+        // Mantener observador legacy para SceneModeManager
         NotificationCenter.default.addObserver(
             self, selector: #selector(onSceneModeChanged(_:)),
             name: .sceneModeDidChange, object: nil
+        )
+        // Observador primario SceneLayerManager
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onSceneLayerChanged(_:)),
+            name: .sceneLayerDidChange, object: nil
         )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         NotificationCenter.default.removeObserver(self, name: .sceneModeDidChange, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .sceneLayerDidChange, object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -123,10 +135,10 @@ class SceneViewerViewController: UIViewController {
         )
     }
 
-    // MARK: - Setup panel de capas
+    // MARK: - Setup panel de capas (SceneLayerManager — primario)
 
-    private func setupLayerPanel() {
-        let panel = LayerTogglePanel()
+    private func setupSceneLayerPanel() {
+        let panel = SceneLayerTogglePanel()
         panel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(panel)
         NSLayoutConstraint.activate([
@@ -135,7 +147,9 @@ class SceneViewerViewController: UIViewController {
             panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             panel.heightAnchor.constraint(equalToConstant: 64),
         ])
-        layerPanel = panel
+        sceneLayerPanel = panel
+        // Restaurar modo guardado al arrancar
+        applySceneLayerMode(mode: SceneLayerManager.shared.currentMode)
     }
 
     // MARK: - Cargar malla
@@ -448,7 +462,75 @@ extension SceneViewerViewController: NavigationPlaybackDelegate {
     }
 }
 
-// MARK: - Scene Mode Handling
+// MARK: - Scene Layer Handling (SceneLayerManager — primario)
+
+extension SceneViewerViewController {
+
+    @objc func onSceneLayerChanged(_ note: Notification) {
+        guard let mode = note.object as? SceneLayerMode else { return }
+        applySceneLayerMode(mode: mode)
+    }
+
+    func applySceneLayerMode(mode: SceneLayerMode) {
+        // Limpiar todo antes de aplicar el nuevo modo
+        if mode != .floorplan2D  { clearFloorPlanOverlay() }
+        if mode != .floorplan3D  { clearFloorPlan3D() }
+        if mode != .meshSemantic { clearSemanticEntities() }
+        if mode != .panoramaNodes { clearPanoramaNodes() }
+
+        switch mode {
+
+        case .meshRaw:
+            if isWalkthroughActive { stopWalkthrough() }
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            setGesturesEnabled(true)
+            updateCameraPosition()
+
+        case .meshSemantic:
+            if isWalkthroughActive { stopWalkthrough() }
+            meshEntity?.isEnabled = false
+            bboxEntity?.isEnabled = false
+            setGesturesEnabled(true)
+            buildSemanticView()
+            updateCameraPosition()
+
+        case .floorplan2D:
+            if isWalkthroughActive { stopWalkthrough() }
+            meshEntity?.isEnabled = false
+            bboxEntity?.isEnabled = false
+            setGesturesEnabled(false)
+            buildFloorPlanOverlay()
+            positionCameraTopDown()
+
+        case .floorplan3D:
+            if isWalkthroughActive { stopWalkthrough() }
+            meshEntity?.isEnabled = false
+            bboxEntity?.isEnabled = false
+            setGesturesEnabled(true)
+            buildFloorPlan3D()
+            updateCameraPosition()
+
+        case .walkthrough:
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            if !isWalkthroughActive { startWalkthrough() }
+
+        case .panoramaNodes:
+            if isWalkthroughActive { stopWalkthrough() }
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            setGesturesEnabled(true)
+            buildPanoramaNodes()
+            updateCameraPosition()
+        }
+    }
+}
+
+// MARK: - Scene Mode Handling (SceneModeManager — legacy)
 
 extension SceneViewerViewController {
 
@@ -778,6 +860,73 @@ extension SceneViewerViewController {
     func clearFloorPlanOverlay() {
         floorPlanOverlay?.removeFromParent()
         floorPlanOverlay = nil
+    }
+
+    // MARK: - Floor Plan 3D (paredes extruidas)
+
+    func buildFloorPlan3D() {
+        clearFloorPlan3D()
+
+        // Obtener plan desde anchors vivos o desde disco
+        let anchors = MeshManager.shared.meshAnchors as [ARAnchor]
+        var plan = FloorPlan2DGenerator.shared.generateFloorPlan(from: anchors)
+        if plan.segments.isEmpty {
+            plan = FloorPlan2DGenerator.shared.loadSaved()
+                ?? FloorPlan(segments: [], minBounds: .zero, maxBounds: .zero)
+        }
+        guard !plan.segments.isEmpty else { return }
+
+        let wallHeight: Float = 2.4
+        let meshOffset = meshEntity?.position ?? .zero
+
+        // Paredes extruidas — una caja por segmento
+        for seg in plan.segments {
+            let len   = max(seg.length, 0.05)
+            let thick = max(seg.thickness * 0.5, 0.12)
+
+            let mesh = MeshResource.generateBox(
+                size: SIMD3<Float>(len, wallHeight, thick)
+            )
+            var mat = PhysicallyBasedMaterial()
+            mat.baseColor = .init(tint: UIColor(white: 0.90, alpha: 1.0))
+            mat.roughness = .init(floatLiteral: 0.65)
+            mat.metallic  = .init(floatLiteral: 0.0)
+
+            let entity = ModelEntity(mesh: mesh, materials: [mat])
+            entity.position = SIMD3<Float>(
+                seg.midpoint.x + meshOffset.x,
+                wallHeight * 0.5,
+                seg.midpoint.y + meshOffset.z
+            )
+            entity.transform.rotation = simd_quatf(angle: seg.angle, axis: [0, 1, 0])
+
+            anchorEntity.addChild(entity)
+            floorPlan3DEntities.append(entity)
+        }
+
+        // Suelo semitransparente (caja muy plana centrada en el perímetro)
+        let ext = plan.maxBounds - plan.minBounds
+        if ext.x > 0.1 && ext.y > 0.1 {
+            let floorMesh = MeshResource.generateBox(
+                size: SIMD3<Float>(ext.x, 0.01, ext.y)
+            )
+            var floorMat = UnlitMaterial()
+            floorMat.color = .init(tint: UIColor(white: 0.25, alpha: 0.45))
+            let floor = ModelEntity(mesh: floorMesh, materials: [floorMat])
+            let c = plan.center
+            floor.position = SIMD3<Float>(
+                c.x + meshOffset.x,
+                0.005,
+                c.y + meshOffset.z
+            )
+            anchorEntity.addChild(floor)
+            floorPlan3DEntities.append(floor)
+        }
+    }
+
+    func clearFloorPlan3D() {
+        floorPlan3DEntities.forEach { $0.removeFromParent() }
+        floorPlan3DEntities.removeAll()
     }
 
     // MARK: - Object Scan Viewer (iOS 17+)
