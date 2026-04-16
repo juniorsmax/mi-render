@@ -1,12 +1,16 @@
 // ObjectCaptureManager.swift
-// Gestor de captura de objetos 3D con ObjectCaptureSession (iOS 17+).
-// Modo alternativo al escaneo LiDAR de habitaciones.
-// Pipeline: multi-ángulo fotos → neural reconstruction → USDZ / OBJ.
+// Gestor de captura de objetos 3D.
+// Captura frames ARKit multi-ángulo y gestiona directorios de escaneo.
+// API: startCapture / stopCapture / exportUSDZ / exportOBJ
+// Para integrar ObjectCaptureSession (iOS 17+ LiDAR) añadir
+// en Xcode con target mínimo iOS 17 y import RealityKit.
 
 import Foundation
-import Combine
+import ARKit
 import RealityKit
 import ModelIO
+import UIKit
+import simd
 
 // MARK: - ScanMode
 
@@ -28,7 +32,6 @@ enum ObjectCaptureState: Equatable {
 
 // MARK: - ObjectCaptureManager
 
-@available(iOS 17.0, *)
 class ObjectCaptureManager: NSObject, ObservableObject {
 
     static let shared = ObjectCaptureManager()
@@ -41,14 +44,16 @@ class ObjectCaptureManager: NSObject, ObservableObject {
 
     // MARK: - Privado
 
-    private var session: ObjectCaptureSession?
-    private var cancellables = Set<AnyCancellable>()
     private var scanDirectory: URL?
     private var imagesDirectory: URL?
+    private var captureActive: Bool = false
+
+    // Poses de cámara guardadas durante la captura
+    private var capturedPoses: [simd_float4x4] = []
 
     // MARK: - Directorios
 
-    private var objectScansRoot: URL {
+    var objectScansRoot: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("ObjectScans", isDirectory: true)
     }
@@ -67,13 +72,9 @@ class ObjectCaptureManager: NSObject, ObservableObject {
 
     // MARK: - Iniciar captura
 
-    /// Crea una nueva sesión ObjectCapture con directorio timestamped.
+    /// Prepara directorio de escaneo y activa el modo objectScan.
+    /// Los frames se añaden vía captureFrame(from:transform:).
     func startCapture() {
-        guard ObjectCaptureSession.isSupported else {
-            captureState = .failed("ObjectCaptureSession no soportado en este dispositivo")
-            return
-        }
-
         let ts = Int(Date().timeIntervalSince1970)
         let scanDir = objectScansRoot.appendingPathComponent("scan_\(ts)", isDirectory: true)
         let imgsDir = scanDir.appendingPathComponent("Images", isDirectory: true)
@@ -86,90 +87,109 @@ class ObjectCaptureManager: NSObject, ObservableObject {
             return
         }
 
-        scanDirectory = scanDir
-        imagesDirectory = imgsDir
-        imageCount = 0
+        scanDirectory    = scanDir
+        imagesDirectory  = imgsDir
+        imageCount       = 0
+        capturedPoses    = []
+        captureActive    = true
+        captureState     = .capturing(imageCount: 0)
+        currentScanMode  = .objectScan
+    }
 
-        let newSession = ObjectCaptureSession()
-        session = newSession
+    // MARK: - Captura de frames ARKit
 
-        // Observar cambios de estado via Combine
-        newSession.$state
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] state in
-                self?.handleSessionState(state)
+    /// Recibe un frame de ARSession (desde LiDARPlugin / ScanManager) y lo guarda como JPEG.
+    /// Llamar en cada frame relevante (p.ej. cada ~10 frames) mientras captureActive.
+    func captureFrame(pixelBuffer: CVPixelBuffer, transform: simd_float4x4) {
+        guard captureActive, let imgsDir = imagesDirectory else { return }
+        let idx = imageCount
+        capturedPoses.append(transform)
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            // Convertir CVPixelBuffer → UIImage → JPEG
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            let context = CIContext()
+            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+            let uiImage = UIImage(cgImage: cgImage)
+            guard let jpegData = uiImage.jpegData(compressionQuality: 0.85) else { return }
+
+            let imgURL = imgsDir.appendingPathComponent(String(format: "frame_%04d.jpg", idx))
+            try? jpegData.write(to: imgURL, options: .atomic)
+
+            DispatchQueue.main.async {
+                self.imageCount += 1
+                self.captureState = .capturing(imageCount: self.imageCount)
             }
-            .store(in: &cancellables)
-
-        newSession.$feedback
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateImageCount()
-            }
-            .store(in: &cancellables)
-
-        var config = ObjectCaptureSession.Configuration()
-        config.checkpointDirectory = scanDir.appendingPathComponent("Checkpoints")
-
-        // Fusión LiDAR si disponible — mejora reconstrucción en iPhone Pro
-        config.isOverCaptureEnabled = true
-
-        newSession.start(imagesDirectory: imgsDir, configuration: config)
-        captureState = .capturing(imageCount: 0)
-        currentScanMode = .objectScan
+        }
     }
 
     // MARK: - Detener captura
 
     func stopCapture() {
-        session?.finish()
+        captureActive = false
+        savePoses()
+        captureState = .processing(progress: 0.0)
+        // La reconstrucción requiere ObjectCaptureSession (iOS 17+).
+        // Si hay un USDZ previo en el directorio, se marca como completado.
+        if let usdz = findUsdzInCurrentScan() {
+            captureState = .completed(usdzURL: usdz)
+        } else {
+            // Sin ObjectCaptureSession no se genera USDZ automáticamente.
+            // El usuario puede importar un USDZ externo con importUSDZ(at:).
+            captureState = .idle
+        }
     }
 
     // MARK: - Cancelar
 
     func cancelCapture() {
-        session?.cancel()
-        cleanupSession()
-        captureState = .idle
+        captureActive = false
+        capturedPoses = []
+        captureState  = .idle
     }
 
-    // MARK: - Procesamiento fotogrametría
+    // MARK: - Importar USDZ externo
 
-    /// Espera estado .completed del session o lanza reconstructionSession.
-    func processPhotogrammetry(completion: @escaping (Result<URL, Error>) -> Void) {
-        guard case .completed(let url) = captureState else {
-            // Si ya hay un USDZ guardado, devolver
-            if case .completed(let url) = captureState {
-                completion(.success(url))
-                return
-            }
-            // Buscar modelo más reciente en disco
-            if let latest = findLatestModel() {
-                completion(.success(latest))
-                return
-            }
-            completion(.failure(OCMError.noSessionActive))
+    /// Asocia un USDZ generado externamente (ej. ObjectCapture en macOS) al escaneo actual.
+    func importUSDZ(at sourceURL: URL) {
+        guard let scanDir = scanDirectory else {
+            captureState = .failed("No hay escaneo activo")
             return
         }
-        completion(.success(url))
+        let dest = scanDir.appendingPathComponent("model.usdz")
+        do {
+            if FileManager.default.fileExists(atPath: dest.path) {
+                try FileManager.default.removeItem(at: dest)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: dest)
+            captureState = .completed(usdzURL: dest)
+        } catch {
+            captureState = .failed(error.localizedDescription)
+        }
     }
 
     // MARK: - Exportar USDZ
 
-    func exportUSDZ(to destinationURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
-        guard case .completed(let sourceURL) = captureState else {
-            if let latest = findLatestModel() {
-                copyFile(from: latest, to: destinationURL, completion: completion)
-            } else {
-                completion(.failure(OCMError.noModelAvailable))
-            }
+    func exportUSDZ(to destinationURL: URL,
+                    completion: @escaping (Result<URL, Error>) -> Void) {
+        let source: URL?
+        if case .completed(let url) = captureState {
+            source = url
+        } else {
+            source = findLatestModel()
+        }
+        guard let src = source else {
+            completion(.failure(OCMError.noModelAvailable))
             return
         }
-        copyFile(from: sourceURL, to: destinationURL, completion: completion)
+        copyFile(from: src, to: destinationURL, completion: completion)
     }
 
-    /// Convierte USDZ → OBJ usando ModelIO.
-    func exportOBJ(from usdzURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    // MARK: - Exportar OBJ via ModelIO
+
+    func exportOBJ(from usdzURL: URL,
+                   completion: @escaping (Result<URL, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let objURL = usdzURL.deletingPathExtension().appendingPathExtension("obj")
             do {
@@ -184,18 +204,15 @@ class ObjectCaptureManager: NSObject, ObservableObject {
 
     // MARK: - Camera poses
 
-    /// Devuelve los archivos de poses de cámara guardados por la sesión.
-    func cameraPoses() -> [URL] {
-        guard let scanDir = scanDirectory else { return [] }
-        let checkpointsDir = scanDir.appendingPathComponent("Checkpoints")
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: checkpointsDir,
-            includingPropertiesForKeys: nil
-        )) ?? []
-        return contents.filter { $0.pathExtension == "json" || $0.lastPathComponent.contains("pose") }
+    /// Devuelve las matrices de transform guardadas durante la captura.
+    func cameraPoses() -> [simd_float4x4] { capturedPoses }
+
+    /// Devuelve el archivo poses.json del directorio de escaneo actual.
+    func cameraPosesURL() -> URL? {
+        scanDirectory?.appendingPathComponent("poses.json")
     }
 
-    // MARK: - Listar escaneos guardados
+    // MARK: - Listar escaneos
 
     func listSavedScans() -> [URL] {
         let contents = (try? FileManager.default.contentsOfDirectory(
@@ -212,103 +229,50 @@ class ObjectCaptureManager: NSObject, ObservableObject {
         try FileManager.default.removeItem(at: url)
     }
 
-    // MARK: - Privado: manejo de estado
+    // MARK: - Privado
 
-    private func handleSessionState(_ state: ObjectCaptureSession.CaptureState) {
-        switch state {
-        case .initializing:
-            break
-
-        case .ready:
-            captureState = .capturing(imageCount: imageCount)
-
-        case .detecting:
-            captureState = .capturing(imageCount: imageCount)
-
-        case .capturing:
-            captureState = .capturing(imageCount: imageCount)
-
-        case .finishing:
-            captureState = .processing(progress: 0.0)
-
-        case .completed:
-            buildModel()
-
-        case .failed(let error):
-            captureState = .failed(error.localizedDescription)
-            cleanupSession()
-
-        @unknown default:
-            break
+    private func savePoses() {
+        guard let scanDir = scanDirectory, !capturedPoses.isEmpty else { return }
+        // Serializar matrices 4x4 como array de [Float] (16 valores cada una)
+        let flat: [[Float]] = capturedPoses.map { m in
+            [m.columns.0.x, m.columns.0.y, m.columns.0.z, m.columns.0.w,
+             m.columns.1.x, m.columns.1.y, m.columns.1.z, m.columns.1.w,
+             m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w,
+             m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w]
+        }
+        if let data = try? JSONEncoder().encode(flat) {
+            let posesURL = scanDir.appendingPathComponent("poses.json")
+            try? data.write(to: posesURL, options: .atomic)
         }
     }
 
-    private func updateImageCount() {
-        guard let imgsDir = imagesDirectory else { return }
-        let count = (try? FileManager.default.contentsOfDirectory(
-            atPath: imgsDir.path
-        ))?.count ?? 0
-        imageCount = count
-        if case .capturing = captureState {
-            captureState = .capturing(imageCount: count)
-        }
-    }
-
-    private func buildModel() {
-        guard let scanDir = scanDirectory,
-              let imgsDir = imagesDirectory else {
-            captureState = .failed("Directorio de escaneo no encontrado")
-            return
-        }
-
-        let outputURL = scanDir.appendingPathComponent("model.usdz")
-
-        // Iniciar PhotogrammetrySession en proceso separado no es posible en iOS.
-        // ObjectCaptureSession genera el modelo tras finish() de forma nativa.
-        // Buscamos el USDZ generado por la sesión.
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            // La sesión ya guardó el modelo en imagesDirectory o scanDir
-            let candidates = [
-                scanDir.appendingPathComponent("model.usdz"),
-                imgsDir.appendingPathComponent("model.usdz"),
-                scanDir.appendingPathComponent("Checkpoints/model.usdz"),
-            ]
-            if let found = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
-                DispatchQueue.main.async {
-                    self?.captureState = .completed(usdzURL: found)
-                }
-            } else {
-                // Buscar cualquier USDZ en el directorio
-                let allFiles = (try? FileManager.default.contentsOfDirectory(
-                    at: scanDir,
-                    includingPropertiesForKeys: nil,
-                    options: .skipsSubdirectoryDescendants
-                )) ?? []
-                if let usdz = allFiles.first(where: { $0.pathExtension == "usdz" }) {
-                    DispatchQueue.main.async {
-                        self?.captureState = .completed(usdzURL: usdz)
-                    }
-                } else {
-                    DispatchQueue.main.async {
-                        self?.captureState = .failed("No se generó modelo USDZ")
-                    }
-                }
-            }
-        }
+    private func findUsdzInCurrentScan() -> URL? {
+        guard let scanDir = scanDirectory else { return nil }
+        return findUsdz(in: scanDir)
     }
 
     private func findLatestModel() -> URL? {
-        let scans = listSavedScans()
-        for scanDir in scans {
-            let candidates = [
-                scanDir.appendingPathComponent("model.usdz"),
-                scanDir.appendingPathComponent("Images/model.usdz"),
-            ]
-            if let found = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
-                return found
-            }
+        for scanDir in listSavedScans() {
+            if let usdz = findUsdz(in: scanDir) { return usdz }
         }
         return nil
+    }
+
+    private func findUsdz(in directory: URL) -> URL? {
+        let candidates = [
+            directory.appendingPathComponent("model.usdz"),
+            directory.appendingPathComponent("Images/model.usdz"),
+        ]
+        if let found = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            return found
+        }
+        // Búsqueda en el directorio raíz
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: .skipsSubdirectoryDescendants
+        )) ?? []
+        return contents.first(where: { $0.pathExtension == "usdz" })
     }
 
     private func copyFile(from source: URL, to destination: URL,
@@ -325,11 +289,6 @@ class ObjectCaptureManager: NSObject, ObservableObject {
             }
         }
     }
-
-    private func cleanupSession() {
-        cancellables.removeAll()
-        session = nil
-    }
 }
 
 // MARK: - Errors
@@ -341,8 +300,8 @@ enum OCMError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noSessionActive:    return "No hay sesión ObjectCapture activa"
-        case .noModelAvailable:   return "No hay modelo 3D disponible"
+        case .noSessionActive:     return "No hay sesión de captura activa"
+        case .noModelAvailable:    return "No hay modelo 3D disponible"
         case .exportFailed(let m): return "Error de exportación: \(m)"
         }
     }

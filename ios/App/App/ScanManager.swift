@@ -99,16 +99,12 @@ class ScanManager: NSObject {
     /// Inicia captura de objeto en modo fotogrametría.
     func startObjectCapture() {
         currentScanMode = .objectScan
-        if #available(iOS 17.0, *) {
-            ObjectCaptureManager.shared.startCapture()
-        }
+        ObjectCaptureManager.shared.startCapture()
     }
 
     /// Vuelve al modo LiDAR y reanuda sesión ARKit.
     func switchToRoomScan(arView: ARView) {
-        if #available(iOS 17.0, *) {
-            ObjectCaptureManager.shared.cancelCapture()
-        }
+        ObjectCaptureManager.shared.cancelCapture()
         currentScanMode = .roomScan
         startFullScan(arView: arView)
     }
