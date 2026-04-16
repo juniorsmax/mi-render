@@ -105,7 +105,7 @@ class FloorPlan2DGenerator {
             .assumingMemoryBound(to: UInt32.self)
 
         // Puntero a clasificaciones (opcional)
-        var clsPtr: UnsafePointer<UInt8>?
+        var clsPtr: UnsafeMutablePointer<UInt8>?
         var clsByteStride = 1
         if let cls = geo.classification {
             clsPtr        = cls.buffer.contents()
@@ -181,10 +181,16 @@ class FloorPlan2DGenerator {
     // MARK: - Extracción ARPlaneAnchor vertical
 
     private func makeSegment(from anchor: ARPlaneAnchor) -> FloorSegment? {
-        let extent = anchor.planeExtent
-        let cx     = anchor.center.x
-        let cz     = anchor.center.z
-        let half   = extent.width * 0.5
+        // planeExtent requiere iOS 16+; usamos extent (deprecado pero disponible iOS 15)
+        let cx   = anchor.center.x
+        let cz   = anchor.center.z
+        let half: Float
+
+        if #available(iOS 16.0, *) {
+            half = anchor.planeExtent.width * 0.5
+        } else {
+            half = anchor.extent.x * 0.5
+        }
 
         let localA = SIMD3<Float>(cx - half, anchor.center.y, cz)
         let localB = SIMD3<Float>(cx + half, anchor.center.y, cz)
