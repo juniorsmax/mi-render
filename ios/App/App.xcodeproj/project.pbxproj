@@ -53,6 +53,11 @@
 		CC000021000000000000001B /* SemanticMeshClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000021000000000000001A /* SemanticMeshClassifier.swift */; };
 		CC000022000000000000001B /* SceneLayerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000022000000000000001A /* SceneLayerManager.swift */; };
 		CC000023000000000000001B /* SceneLayerTogglePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000023000000000000001A /* SceneLayerTogglePanel.swift */; };
+		CC000024000000000000001B /* SpatialCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000024000000000000001A /* SpatialCanvasView.swift */; };
+		CC000025000000000000001B /* RadialModeSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000025000000000000001A /* RadialModeSelector.swift */; };
+		CC000026000000000000001B /* SideInspectorPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000026000000000000001A /* SideInspectorPanel.swift */; };
+		CC000027000000000000001B /* ObjectContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000027000000000000001A /* ObjectContextMenu.swift */; };
+		CC000028000000000000001B /* SceneTimelineBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000028000000000000001A /* SceneTimelineBar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -101,6 +106,11 @@
 		CC000021000000000000001A /* SemanticMeshClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticMeshClassifier.swift; sourceTree = "<group>"; };
 		CC000022000000000000001A /* SceneLayerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneLayerManager.swift; sourceTree = "<group>"; };
 		CC000023000000000000001A /* SceneLayerTogglePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneLayerTogglePanel.swift; sourceTree = "<group>"; };
+		CC000024000000000000001A /* SpatialCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialCanvasView.swift; sourceTree = "<group>"; };
+		CC000025000000000000001A /* RadialModeSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadialModeSelector.swift; sourceTree = "<group>"; };
+		CC000026000000000000001A /* SideInspectorPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideInspectorPanel.swift; sourceTree = "<group>"; };
+		CC000027000000000000001A /* ObjectContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectContextMenu.swift; sourceTree = "<group>"; };
+		CC000028000000000000001A /* SceneTimelineBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneTimelineBar.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -179,6 +189,11 @@
 				CC000021000000000000001A /* SemanticMeshClassifier.swift */,
 				CC000022000000000000001A /* SceneLayerManager.swift */,
 				CC000023000000000000001A /* SceneLayerTogglePanel.swift */,
+				CC000024000000000000001A /* SpatialCanvasView.swift */,
+				CC000025000000000000001A /* RadialModeSelector.swift */,
+				CC000026000000000000001A /* SideInspectorPanel.swift */,
+				CC000027000000000000001A /* ObjectContextMenu.swift */,
+				CC000028000000000000001A /* SceneTimelineBar.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -308,6 +323,11 @@
 				CC000021000000000000001B /* SemanticMeshClassifier.swift in Sources */,
 				CC000022000000000000001B /* SceneLayerManager.swift in Sources */,
 				CC000023000000000000001B /* SceneLayerTogglePanel.swift in Sources */,
+				CC000024000000000000001B /* SpatialCanvasView.swift in Sources */,
+				CC000025000000000000001B /* RadialModeSelector.swift in Sources */,
+				CC000026000000000000001B /* SideInspectorPanel.swift in Sources */,
+				CC000027000000000000001B /* ObjectContextMenu.swift in Sources */,
+				CC000028000000000000001B /* SceneTimelineBar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
