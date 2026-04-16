@@ -33,6 +33,13 @@ class SceneViewerViewController: UIViewController {
     private var playback: NavigationPlaybackController?
     private var isWalkthroughActive: Bool = false
 
+    // Multi-layer visualization
+    private var layerPanel: LayerTogglePanel?
+    private var cachedDescriptors: [MeshDescriptor] = []
+    private var cachedPersistedAnchors: [PersistedMeshAnchor] = []
+    private var panoramaNodeEntities: [ModelEntity] = []
+    private var semanticEntities: [ModelEntity] = []
+
     // MARK: - Ciclo de vida
 
     override func viewDidLoad() {
@@ -42,6 +49,16 @@ class SceneViewerViewController: UIViewController {
         setupARView()
         setupGestures()
         setupNavigationBar()
+        setupLayerPanel()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onSceneModeChanged(_:)),
+            name: .sceneModeDidChange, object: nil
+        )
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        NotificationCenter.default.removeObserver(self, name: .sceneModeDidChange, object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -105,6 +122,21 @@ class SceneViewerViewController: UIViewController {
         )
     }
 
+    // MARK: - Setup panel de capas
+
+    private func setupLayerPanel() {
+        let panel = LayerTogglePanel()
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(panel)
+        NSLayoutConstraint.activate([
+            panel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            panel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            panel.heightAnchor.constraint(equalToConstant: 64),
+        ])
+        layerPanel = panel
+    }
+
     // MARK: - Cargar malla
 
     private func loadMesh() {
@@ -112,14 +144,17 @@ class SceneViewerViewController: UIViewController {
             guard let self = self else { return }
 
             let descriptors: [MeshDescriptor]
+            var persisted: [PersistedMeshAnchor] = []
+
             if let fileName = self.meshFileName,
-               let persisted = MeshPersistenceManager.shared.load(named: fileName) {
-                descriptors = Self.buildDescriptors(from: persisted)
+               let loaded = MeshPersistenceManager.shared.load(named: fileName) {
+                persisted    = loaded
+                descriptors  = Self.buildDescriptors(from: loaded)
             } else {
                 descriptors = Self.buildDescriptors(from: MeshManager.shared.meshAnchors)
             }
 
-            DispatchQueue.main.async { self.displayDescriptors(descriptors) }
+            DispatchQueue.main.async { self.displayDescriptors(descriptors, persisted: persisted) }
         }
     }
 
@@ -175,7 +210,13 @@ class SceneViewerViewController: UIViewController {
         }
     }
 
-    private func displayDescriptors(_ descriptors: [MeshDescriptor]) {
+    private func displayDescriptors(_ descriptors: [MeshDescriptor],
+                                     persisted: [PersistedMeshAnchor] = []) {
+        cachedDescriptors      = descriptors
+        cachedPersistedAnchors = persisted
+
+        clearSemanticEntities()
+        clearPanoramaNodes()
         meshEntity?.removeFromParent()
         bboxEntity?.removeFromParent()
 
@@ -201,6 +242,14 @@ class SceneViewerViewController: UIViewController {
         currentDistance = max(1.0, diag * 1.2)
         updateCameraPosition()
         buildBoundingBox(min: minP, max: maxP, entity: entity)
+
+        // Restaurar modo guardado si no es el default
+        let saved = SceneModeManager.shared.currentMode
+        if saved != .meshSolid && saved != .orbitViewer {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.applySceneMode(saved)
+            }
+        }
     }
 
     private func boundingInfo(from descriptors: [MeshDescriptor])
@@ -395,5 +444,298 @@ extension SceneViewerViewController: NavigationPlaybackDelegate {
         updateWalkthroughButton()
         arView.gestureRecognizers?.forEach { $0.isEnabled = true }
         updateCameraPosition()
+    }
+}
+
+// MARK: - Scene Mode Handling
+
+extension SceneViewerViewController {
+
+    @objc func onSceneModeChanged(_ note: Notification) {
+        guard let mode = note.object as? SceneMode else { return }
+        applySceneMode(mode)
+    }
+
+    func applySceneMode(_ mode: SceneMode) {
+        switch mode {
+
+        case .meshSolid:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearSemanticEntities(); clearPanoramaNodes()
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            setGesturesEnabled(true)
+            updateCameraPosition()
+
+        case .meshWireframe:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearSemanticEntities(); clearPanoramaNodes()
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applyWireframeMaterial()
+            setGesturesEnabled(true)
+            updateCameraPosition()
+
+        case .meshSemantic:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearPanoramaNodes()
+            meshEntity?.isEnabled = false
+            bboxEntity?.isEnabled = false
+            setGesturesEnabled(true)
+            buildSemanticView()
+            updateCameraPosition()
+
+        case .floorPlan2D:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearSemanticEntities(); clearPanoramaNodes()
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            setGesturesEnabled(false)
+            positionCameraTopDown()
+
+        case .roomVolumeBounding:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearSemanticEntities(); clearPanoramaNodes()
+            meshEntity?.isEnabled = false
+            bboxEntity?.isEnabled = true
+            setGesturesEnabled(true)
+            updateCameraPosition()
+
+        case .orbitViewer:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearSemanticEntities(); clearPanoramaNodes()
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            setGesturesEnabled(true)
+            updateCameraPosition()
+
+        case .walkthroughPlayback:
+            clearSemanticEntities(); clearPanoramaNodes()
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            if !isWalkthroughActive { startWalkthrough() }
+
+        case .panoramaNodes:
+            if isWalkthroughActive { stopWalkthrough() }
+            clearSemanticEntities()
+            meshEntity?.isEnabled = true
+            bboxEntity?.isEnabled = false
+            applySolidMaterial()
+            setGesturesEnabled(true)
+            buildPanoramaNodes()
+            updateCameraPosition()
+        }
+    }
+
+    // MARK: Materiales
+
+    func applySolidMaterial() {
+        guard let entity = meshEntity else { return }
+        var mat = PhysicallyBasedMaterial()
+        mat.baseColor = .init(tint: UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 0.85))
+        mat.roughness = .init(floatLiteral: 0.7)
+        mat.metallic  = .init(floatLiteral: 0.0)
+        entity.model?.materials = [mat]
+    }
+
+    func applyWireframeMaterial() {
+        guard let entity = meshEntity else { return }
+        var mat = UnlitMaterial()
+        mat.color = .init(tint: UIColor(red: 0.0, green: 0.9, blue: 0.7, alpha: 0.55))
+        entity.model?.materials = [mat]
+    }
+
+    // MARK: Modo semántico
+
+    func buildSemanticView() {
+        clearSemanticEntities()
+        guard !cachedPersistedAnchors.isEmpty else { return }
+        let anchors = cachedPersistedAnchors
+        let offset  = meshEntity?.position ?? .zero
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let pairs = Self.buildSemanticDescriptors(from: anchors)
+            DispatchQueue.main.async {
+                for (desc, color) in pairs {
+                    guard let mesh = try? MeshResource.generate(from: [desc]) else { continue }
+                    var mat = UnlitMaterial()
+                    mat.color = .init(tint: color)
+                    let entity = ModelEntity(mesh: mesh, materials: [mat])
+                    entity.position = offset
+                    self.anchorEntity.addChild(entity)
+                    self.semanticEntities.append(entity)
+                }
+            }
+        }
+    }
+
+    private static func buildSemanticDescriptors(from anchors: [PersistedMeshAnchor])
+        -> [(MeshDescriptor, UIColor)] {
+        var result: [(MeshDescriptor, UIColor)] = []
+
+        for p in anchors {
+            guard p.vertices.count >= 9, !p.faceIndices.isEmpty else { continue }
+            let mat4 = p.transformMatrix
+
+            // Vértices → espacio mundo
+            var worldVerts = [SIMD3<Float>]()
+            worldVerts.reserveCapacity(p.vertices.count / 3)
+            for i in stride(from: 0, to: p.vertices.count - 2, by: 3) {
+                let local = SIMD4<Float>(p.vertices[i], p.vertices[i+1], p.vertices[i+2], 1)
+                let w = mat4 * local
+                worldVerts.append(SIMD3<Float>(w.x, w.y, w.z))
+            }
+
+            // Agrupar caras por clasificación
+            let triCount = p.faceIndices.count / 3
+            var classFaces: [UInt8: [(Int, Int, Int)]] = [:]
+            for t in 0..<triCount {
+                let base = t * 3
+                guard base + 2 < p.faceIndices.count else { continue }
+                let cls: UInt8 = t < p.classifications.count ? p.classifications[t] : 0
+                classFaces[cls, default: []].append(
+                    (Int(p.faceIndices[base]),
+                     Int(p.faceIndices[base + 1]),
+                     Int(p.faceIndices[base + 2]))
+                )
+            }
+
+            for (cls, faces) in classFaces {
+                guard faces.count >= 120 else { continue }   // filtrar clústeres pequeños
+
+                // Re-indexar vértices para este sub-mesh
+                var remapped = [Int: UInt32]()
+                var verts    = [SIMD3<Float>]()
+                var indices  = [UInt32]()
+
+                for (i0, i1, i2) in faces {
+                    for vi in [i0, i1, i2] {
+                        if remapped[vi] == nil {
+                            remapped[vi] = UInt32(verts.count)
+                            if vi < worldVerts.count { verts.append(worldVerts[vi]) }
+                        }
+                        indices.append(remapped[vi] ?? 0)
+                    }
+                }
+                guard verts.count >= 3, !indices.isEmpty else { continue }
+
+                // Laplacian smoothing — 2 iteraciones
+                laplacianSmooth(&verts, indices: indices, iterations: 2)
+
+                var desc = MeshDescriptor()
+                desc.name      = "\(p.id)_cls\(cls)"
+                desc.positions = .init(verts)
+                desc.primitives = .triangles(indices)
+                result.append((desc, colorForClassification(cls)))
+            }
+        }
+        return result
+    }
+
+    private static func laplacianSmooth(_ positions: inout [SIMD3<Float>],
+                                         indices: [UInt32],
+                                         iterations: Int) {
+        let n = positions.count
+        guard n > 0 else { return }
+        for _ in 0..<iterations {
+            var sums  = [SIMD3<Float>](repeating: .zero, count: n)
+            var count = [Int](repeating: 0, count: n)
+            let tc = indices.count / 3
+            for t in 0..<tc {
+                let base = t * 3
+                guard base + 2 < indices.count else { break }
+                let a = Int(indices[base])
+                let b = Int(indices[base + 1])
+                let c = Int(indices[base + 2])
+                guard a < n, b < n, c < n else { continue }
+                sums[a] += positions[b]; sums[a] += positions[c]; count[a] += 2
+                sums[b] += positions[a]; sums[b] += positions[c]; count[b] += 2
+                sums[c] += positions[a]; sums[c] += positions[b]; count[c] += 2
+            }
+            for i in 0..<n where count[i] > 0 {
+                let avg = sums[i] / Float(count[i])
+                positions[i] = (positions[i] + avg) * 0.5
+            }
+        }
+    }
+
+    private static func colorForClassification(_ cls: UInt8) -> UIColor {
+        switch cls {
+        case 1: return UIColor(red: 0.45, green: 0.80, blue: 0.45, alpha: 0.9) // wall — verde
+        case 2: return UIColor(red: 0.80, green: 0.70, blue: 0.50, alpha: 0.9) // floor — beige
+        case 3: return UIColor(red: 0.55, green: 0.55, blue: 0.90, alpha: 0.9) // ceiling — azul claro
+        case 4: return UIColor(red: 0.90, green: 0.70, blue: 0.35, alpha: 0.9) // table — naranja
+        case 5: return UIColor(red: 0.70, green: 0.50, blue: 0.35, alpha: 0.9) // seat — marrón
+        case 6: return UIColor(red: 0.75, green: 0.90, blue: 1.00, alpha: 0.9) // window — azul pálido
+        case 7: return UIColor(red: 0.55, green: 0.35, blue: 0.25, alpha: 0.9) // door — marrón oscuro
+        default: return UIColor(red: 0.55, green: 0.55, blue: 0.55, alpha: 0.9) // none — gris
+        }
+    }
+
+    func clearSemanticEntities() {
+        semanticEntities.forEach { $0.removeFromParent() }
+        semanticEntities.removeAll()
+    }
+
+    // MARK: Nodos panorama
+
+    func buildPanoramaNodes() {
+        clearPanoramaNodes()
+        let nodes  = NavigationManager.shared.cameraNodes
+        guard !nodes.isEmpty else { return }
+        let offset = meshEntity?.position ?? .zero
+
+        let sphereMesh = MeshResource.generateSphere(radius: 0.08)
+        for (i, node) in nodes.enumerated() {
+            let hue = CGFloat(i) / CGFloat(max(nodes.count, 1))
+            let color = UIColor(hue: hue, saturation: 0.8, brightness: 1.0, alpha: 1.0)
+            var mat = UnlitMaterial()
+            mat.color = .init(tint: color)
+            let sphere = ModelEntity(mesh: sphereMesh, materials: [mat])
+            sphere.position = node.position + offset
+            anchorEntity.addChild(sphere)
+            panoramaNodeEntities.append(sphere)
+        }
+
+        // Puntos de trayectoria entre nodos
+        if nodes.count > 1 {
+            let dotMesh = MeshResource.generateSphere(radius: 0.025)
+            var dotMat  = UnlitMaterial()
+            dotMat.color = .init(tint: UIColor.white.withAlphaComponent(0.45))
+            for i in 0..<nodes.count - 1 {
+                let mid = (nodes[i].position + nodes[i+1].position) * 0.5 + offset
+                let dot = ModelEntity(mesh: dotMesh, materials: [dotMat])
+                dot.position = mid
+                anchorEntity.addChild(dot)
+                panoramaNodeEntities.append(dot)
+            }
+        }
+    }
+
+    func clearPanoramaNodes() {
+        panoramaNodeEntities.forEach { $0.removeFromParent() }
+        panoramaNodeEntities.removeAll()
+    }
+
+    // MARK: Helpers de cámara y gestos
+
+    func positionCameraTopDown() {
+        let height: Float = max(currentDistance, 5.0)
+        let pos = SIMD3<Float>(0, height, 0.001)
+        let cameraAnchor = AnchorEntity(world: pos)
+        let camera = PerspectiveCamera()
+        camera.camera.fieldOfViewInDegrees = 60
+        cameraAnchor.addChild(camera)
+        arView.scene.anchors.filter { $0 !== anchorEntity }.forEach { arView.scene.removeAnchor($0) }
+        arView.scene.addAnchor(cameraAnchor)
+        cameraAnchor.look(at: .zero, from: pos, relativeTo: nil)
+    }
+
+    func setGesturesEnabled(_ enabled: Bool) {
+        arView.gestureRecognizers?.forEach { $0.isEnabled = enabled }
     }
 }

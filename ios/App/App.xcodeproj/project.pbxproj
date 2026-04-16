@@ -45,6 +45,8 @@
 		CC000019000000000000001B /* PanoramaCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000019000000000000001A /* PanoramaCaptureManager.swift */; };
 		CC00001A000000000000001B /* MultiRoomMergeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001A000000000000001A /* MultiRoomMergeManager.swift */; };
 		CC00001B000000000000001B /* NavigationPlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001B000000000000001A /* NavigationPlaybackController.swift */; };
+		CC00001C000000000000001B /* SceneModeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001C000000000000001A /* SceneModeManager.swift */; };
+		CC00001D000000000000001B /* LayerTogglePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001D000000000000001A /* LayerTogglePanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -85,6 +87,8 @@
 		CC000019000000000000001A /* PanoramaCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanoramaCaptureManager.swift; sourceTree = "<group>"; };
 		CC00001A000000000000001A /* MultiRoomMergeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiRoomMergeManager.swift; sourceTree = "<group>"; };
 		CC00001B000000000000001A /* NavigationPlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationPlaybackController.swift; sourceTree = "<group>"; };
+		CC00001C000000000000001A /* SceneModeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneModeManager.swift; sourceTree = "<group>"; };
+		CC00001D000000000000001A /* LayerTogglePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayerTogglePanel.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -155,6 +159,8 @@
 				CC000019000000000000001A /* PanoramaCaptureManager.swift */,
 				CC00001A000000000000001A /* MultiRoomMergeManager.swift */,
 				CC00001B000000000000001A /* NavigationPlaybackController.swift */,
+				CC00001C000000000000001A /* SceneModeManager.swift */,
+				CC00001D000000000000001A /* LayerTogglePanel.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -276,6 +282,8 @@
 				CC000019000000000000001B /* PanoramaCaptureManager.swift in Sources */,
 				CC00001A000000000000001B /* MultiRoomMergeManager.swift in Sources */,
 				CC00001B000000000000001B /* NavigationPlaybackController.swift in Sources */,
+				CC00001C000000000000001B /* SceneModeManager.swift in Sources */,
+				CC00001D000000000000001B /* LayerTogglePanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
