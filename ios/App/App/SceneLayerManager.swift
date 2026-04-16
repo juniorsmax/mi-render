@@ -54,6 +54,9 @@ class SceneLayerManager {
     /// Modo activo actualmente. Solo se modifica via switchMode(to:).
     private(set) var currentMode: SceneLayerMode
 
+    /// Lista de todos los modos disponibles (para construir UI dinámicamente).
+    var availableModes: [SceneLayerMode] { SceneLayerMode.allCases }
+
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
         currentMode = SceneLayerMode(rawValue: saved) ?? .meshRaw
