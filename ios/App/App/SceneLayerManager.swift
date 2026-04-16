@@ -56,7 +56,7 @@ class SceneLayerManager {
     private(set) var currentMode: SceneLayerMode
 
     /// ID del proyecto cargado actualmente (nil si no hay ninguno activo).
-    private(set) var currentProjectID: UUID? {
+    private(set) var currentProjectID: UUID? = nil {
         didSet {
             let value = currentProjectID?.uuidString
             UserDefaults.standard.set(value, forKey: Self.defaultsKeyProject)
@@ -65,6 +65,9 @@ class SceneLayerManager {
 
     /// Lista de todos los modos disponibles (para construir UI dinámicamente).
     var availableModes: [SceneLayerMode] { SceneLayerMode.allCases }
+
+    // Token del observer — debe retenerse para que el observer viva mientras el singleton
+    private var projectLoadObserver: NSObjectProtocol?
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: Self.defaultsKey) ?? ""
@@ -75,14 +78,21 @@ class SceneLayerManager {
         observeProjectLoad()
     }
 
+    deinit {
+        if let token = projectLoadObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+    }
+
     private func observeProjectLoad() {
-        NotificationCenter.default.addObserver(
+        projectLoadObserver = NotificationCenter.default.addObserver(
             forName: .sceneProjectDidLoad,
             object: nil,
             queue: .main
         ) { [weak self] note in
+            guard let self else { return }
             if let project = note.object as? SceneProject {
-                self?.currentProjectID = project.id
+                self.currentProjectID = project.id
             }
         }
     }

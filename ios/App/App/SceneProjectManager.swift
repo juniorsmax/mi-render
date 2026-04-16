@@ -13,6 +13,7 @@
 
 import UIKit
 import Foundation
+import simd
 
 // MARK: - SceneProject
 
@@ -188,7 +189,11 @@ class SceneProjectManager {
         )) ?? []
 
         return contents
-            .filter { $0.hasDirectoryPath }
+            .filter { url in
+                var isDir: ObjCBool = false
+                fm.fileExists(atPath: url.path, isDirectory: &isDir)
+                return isDir.boolValue
+            }
             .compactMap { project(at: $0) }
             .sorted { $0.createdAt > $1.createdAt }
     }
