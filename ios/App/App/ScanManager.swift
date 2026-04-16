@@ -187,6 +187,44 @@ extension ScanManager {
         }
     }
 
+    /// Construye un MeshDescriptor desde la geometría del ARMeshAnchor.
+    static func buildDescriptor(from anchor: ARMeshAnchor) -> MeshDescriptor? {
+        let geo = anchor.geometry
+
+        var positions = [SIMD3<Float>]()
+        positions.reserveCapacity(geo.vertices.count)
+        let vPtr = geo.vertices.buffer.contents()
+            .advanced(by: geo.vertices.offset)
+            .assumingMemoryBound(to: Float.self)
+        let vStride = geo.vertices.stride / MemoryLayout<Float>.stride
+        for i in 0..<geo.vertices.count {
+            positions.append(SIMD3<Float>(
+                vPtr[i * vStride],
+                vPtr[i * vStride + 1],
+                vPtr[i * vStride + 2]
+            ))
+        }
+
+        let faceCount = geo.faces.count
+        let iCount    = geo.faces.indexCountPerPrimitive
+        var indices   = [UInt32]()
+        indices.reserveCapacity(faceCount * iCount)
+        let iPtr = geo.faces.buffer.contents()
+            .assumingMemoryBound(to: UInt32.self)
+        for f in 0..<faceCount {
+            for k in 0..<iCount {
+                indices.append(iPtr[f * iCount + k])
+            }
+        }
+
+        guard !positions.isEmpty, !indices.isEmpty else { return nil }
+
+        var desc = MeshDescriptor(name: anchor.identifier.uuidString)
+        desc.positions  = MeshBuffer(positions)
+        desc.primitives = .triangles(indices)
+        return desc
+    }
+
     /// Construye un MeshResource desde la geometría del ARMeshAnchor.
     private static func buildMeshResource(from anchor: ARMeshAnchor) -> MeshResource? {
         let geo = anchor.geometry

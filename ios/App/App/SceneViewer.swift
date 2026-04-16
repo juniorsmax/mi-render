@@ -6,8 +6,6 @@
 import UIKit
 import RealityKit
 import ARKit
-import ModelIO
-import MetalKit
 import simd
 
 // MARK: - SceneViewerViewController
@@ -108,107 +106,92 @@ class SceneViewerViewController: UIViewController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            let mdlAsset: MDLAsset
+            let descriptors: [MeshDescriptor]
             if let fileName = self.meshFileName,
                let persisted = MeshPersistenceManager.shared.load(named: fileName) {
-                mdlAsset = self.buildAsset(from: persisted)
+                descriptors = Self.buildDescriptors(from: persisted)
             } else {
-                mdlAsset = MeshManager.shared.combinedMesh()
+                descriptors = Self.buildDescriptors(from: MeshManager.shared.meshAnchors)
             }
 
-            DispatchQueue.main.async { self.displayAsset(mdlAsset) }
+            DispatchQueue.main.async { self.displayDescriptors(descriptors) }
         }
     }
 
-    private func buildAsset(from anchors: [PersistedMeshAnchor]) -> MDLAsset {
-        let asset = MDLAsset()
-        guard let device = MTLCreateSystemDefaultDevice() else { return asset }
-        let allocator = MTKMeshBufferAllocator(device: device)
-
-        for p in anchors {
-            let vData = Data(bytes: p.vertices, count: p.vertices.count * MemoryLayout<Float>.size)
-            let vBuf  = allocator.newBuffer(with: vData, type: .vertex)
-            let iData = Data(bytes: p.faceIndices, count: p.faceIndices.count * MemoryLayout<UInt32>.size)
-            let iBuf  = allocator.newBuffer(with: iData, type: .index)
-
-            let desc = MDLVertexDescriptor()
-            desc.attributes[0] = MDLVertexAttribute(
-                name: MDLVertexAttributePosition, format: .float3, offset: 0, bufferIndex: 0)
-            desc.layouts[0] = MDLVertexBufferLayout(stride: MemoryLayout<Float>.size * 3)
-
-            let sub  = MDLSubmesh(indexBuffer: iBuf,
-                                  indexCount: p.faceIndices.count,
-                                  indexType: .uInt32,
-                                  geometryType: .triangles,
-                                  material: nil)
-            let mesh = MDLMesh(vertexBuffer: vBuf,
-                               vertexCount: p.vertices.count / 3,
-                               descriptor: desc,
-                               submeshes: [sub])
-            asset.add(mesh)
+    /// Convierte PersistedMeshAnchor → [MeshDescriptor] (sin MDLMesh/MDLAsset)
+    private static func buildDescriptors(from anchors: [PersistedMeshAnchor]) -> [MeshDescriptor] {
+        anchors.compactMap { p -> MeshDescriptor? in
+            guard p.vertices.count >= 3, !p.faceIndices.isEmpty else { return nil }
+            var positions = [SIMD3<Float>]()
+            positions.reserveCapacity(p.vertices.count / 3)
+            for i in stride(from: 0, to: p.vertices.count - 2, by: 3) {
+                positions.append(SIMD3<Float>(p.vertices[i], p.vertices[i+1], p.vertices[i+2]))
+            }
+            var desc = MeshDescriptor(name: p.id)
+            desc.positions  = MeshBuffer(positions)
+            desc.primitives = .triangles(p.faceIndices)
+            return desc
         }
-        return asset
     }
 
-    private func displayAsset(_ asset: MDLAsset) {
-        // Limpiar entidades previas
+    /// Convierte ARMeshAnchor[] vivos → [MeshDescriptor]
+    private static func buildDescriptors(from anchors: [ARMeshAnchor]) -> [MeshDescriptor] {
+        anchors.compactMap { anchor -> MeshDescriptor? in
+            guard let desc = ScanManager.buildDescriptor(from: anchor) else { return nil }
+            return desc
+        }
+    }
+
+    private func displayDescriptors(_ descriptors: [MeshDescriptor]) {
         meshEntity?.removeFromParent()
         bboxEntity?.removeFromParent()
 
-        guard asset.count > 0 else {
+        guard !descriptors.isEmpty,
+              let meshResource = try? MeshResource.generate(from: descriptors) else {
             showEmptyState()
             return
         }
 
-        // Generar MeshResource combinando todos los MDLMesh del asset
-        var parts: [MeshResource] = []
-        for i in 0..<asset.count {
-            guard let mdlMesh = asset.object(at: i) as? MDLMesh,
-                  let resource = try? MeshResource.generate(from: mdlMesh) else { continue }
-            parts.append(resource)
-        }
-        guard !parts.isEmpty else {
-            showEmptyState()
-            return
-        }
-        // Usar el primero; los demás se añaden como entidades hijas
-        let meshResource = parts[0]
-
-        // Material PBR semitransparente
         var material = PhysicallyBasedMaterial()
         material.baseColor = .init(tint: UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 0.85))
         material.roughness = .init(floatLiteral: 0.7)
-        material.metallic  = .init(floatLiteral: 0.1)
+        material.metallic  = .init(floatLiteral: 0.0)
 
         let entity = ModelEntity(mesh: meshResource, materials: [material])
-        // Añadir partes extra como entidades hijas con el mismo material
-        for extra in parts.dropFirst() {
-            entity.addChild(ModelEntity(mesh: extra, materials: [material]))
-        }
         anchorEntity.addChild(entity)
         meshEntity = entity
 
-        // Centrar en escena
-        let bbox = asset.boundingBox
-        let center = (bbox.maxBounds + bbox.minBounds) * 0.5
-        entity.position = [-center.x, -center.y, -center.z]
-
-        // Distancia inicial basada en el tamaño del bbox
-        let size = bbox.maxBounds - bbox.minBounds
-        currentDistance = max(Float(size.x), Float(size.y), Float(size.z)) * 1.8
+        // Calcular bbox manualmente desde los descriptores
+        let (minP, maxP, center) = boundingInfo(from: descriptors)
+        entity.position = -center
+        let diag = simd_distance(minP, maxP)
+        currentDistance = max(1.0, diag * 1.2)
         updateCameraPosition()
+        buildBoundingBox(min: minP, max: maxP, entity: entity)
+    }
 
-        buildBoundingBox(bbox: bbox, entity: entity)
+    private func boundingInfo(from descriptors: [MeshDescriptor])
+        -> (min: SIMD3<Float>, max: SIMD3<Float>, center: SIMD3<Float>) {
+        var minP = SIMD3<Float>(repeating:  Float.greatestFiniteMagnitude)
+        var maxP = SIMD3<Float>(repeating: -Float.greatestFiniteMagnitude)
+        for d in descriptors {
+            for p in d.positions ?? [] {
+                minP = simd_min(minP, p)
+                maxP = simd_max(maxP, p)
+            }
+        }
+        if minP.x == Float.greatestFiniteMagnitude { minP = .zero; maxP = .zero }
+        return (minP, maxP, (minP + maxP) * 0.5)
     }
 
     // MARK: - Bounding box
 
-    private func buildBoundingBox(bbox: MDLAxisAlignedBoundingBox, entity: ModelEntity) {
-        let size    = bbox.maxBounds - bbox.minBounds
-        let boxMesh = MeshResource.generateBox(
-            size: SIMD3<Float>(Float(size.x), Float(size.y), Float(size.z)),
-            cornerRadius: 0
-        )
+    private func buildBoundingBox(min minP: SIMD3<Float>,
+                                   max maxP: SIMD3<Float>,
+                                   entity: ModelEntity) {
+        let size = maxP - minP
+        guard size.x > 0.01 else { return }
+        let boxMesh = MeshResource.generateBox(size: size, cornerRadius: 0)
         var mat = UnlitMaterial()
         mat.color = .init(tint: UIColor.cyan.withAlphaComponent(0.25))
         let boxEntity = ModelEntity(mesh: boxMesh, materials: [mat])
