@@ -651,6 +651,7 @@ extension SceneViewerViewController {
                     var mat = UnlitMaterial()
                     mat.color = .init(tint: color)
                     let entity = ModelEntity(mesh: mesh, materials: [mat])
+                    entity.name = desc.name   // preservar nombre para applyMaterialLibrary()
                     entity.position = offset
                     self.anchorEntity.addChild(entity)
                     self.semanticEntities.append(entity)
@@ -766,6 +767,21 @@ extension SceneViewerViewController {
     func clearSemanticEntities() {
         semanticEntities.forEach { $0.removeFromParent() }
         semanticEntities.removeAll()
+    }
+
+    /// Aplica MaterialLibraryManager a todas las entidades semánticas ya creadas.
+    /// Los nombres de entidad siguen el patrón "<anchorID>_cls<UInt8>".
+    func applyMaterialLibrary() {
+        let lib = MaterialLibraryManager.shared
+        for entity in semanticEntities {
+            // Extraer código de clasificación del nombre ("…_cls2" → 2)
+            guard let range = entity.name.range(of: "_cls"),
+                  let code = UInt8(entity.name[range.upperBound...]) else { continue }
+            let category = MeshCategory.from(arKitCode: code)
+            if let mat = lib.material(for: category) {
+                lib.applyMaterial(mat, to: entity)
+            }
+        }
     }
 
     // MARK: Nodos panorama

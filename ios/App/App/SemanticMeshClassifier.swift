@@ -356,5 +356,25 @@ class SemanticMeshClassifier {
     }
 }
 
+// MARK: - MeshCategory helpers
+
+extension MeshCategory {
+    /// Convierte un código ARMeshClassification (UInt8) en MeshCategory.
+    static func from(arKitCode code: UInt8) -> MeshCategory {
+        // ARMeshClassification: 0=none, 1=wall, 2=floor, 3=ceiling,
+        //                       4=table, 5=seat, 6=window, 7=door
+        switch code {
+        case 1: return .wall
+        case 2: return .floor
+        case 3: return .ceiling
+        case 4: return .furniture
+        case 5: return .furniture
+        case 6: return .window
+        case 7: return .door
+        default: return .unknown
+        }
+    }
+}
+
 // ARMeshGeometry.classification es una propiedad pública de ARKit (iOS 14+).
 // No se necesita extensión — se accede directamente como geo.classification en el código.
