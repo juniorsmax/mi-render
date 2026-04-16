@@ -177,8 +177,7 @@ class SceneViewerViewController: UIViewController {
         var minP = SIMD3<Float>(repeating:  Float.greatestFiniteMagnitude)
         var maxP = SIMD3<Float>(repeating: -Float.greatestFiniteMagnitude)
         for d in descriptors {
-            guard let positions = d.positions else { continue }
-            for p in positions {
+            for p in d.positions {
                 minP = simd_min(minP, p)
                 maxP = simd_max(maxP, p)
             }
