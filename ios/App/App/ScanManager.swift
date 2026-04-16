@@ -85,6 +85,13 @@ class ScanManager: NSObject {
 
     func stopScan() {
         session?.pause()
+        // Clasificar malla semántica y guardar en Documents/semantic_mesh.json
+        let anchors = MeshManager.shared.meshAnchors
+        if !anchors.isEmpty {
+            DispatchQueue.global(qos: .utility).async {
+                SemanticMeshClassifier.shared.classifyAndSave(anchors: anchors)
+            }
+        }
     }
 
     // MARK: - Object Capture (iOS 17+)

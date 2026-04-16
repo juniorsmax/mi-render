@@ -668,15 +668,16 @@ extension SceneViewerViewController {
     }
 
     private static func colorForClassification(_ cls: UInt8) -> UIColor {
+        // Mapear código ARKit → MeshCategory → color canónico definido en SemanticMeshClassifier
         switch cls {
-        case 1: return UIColor(red: 0.45, green: 0.80, blue: 0.45, alpha: 0.9) // wall — verde
-        case 2: return UIColor(red: 0.80, green: 0.70, blue: 0.50, alpha: 0.9) // floor — beige
-        case 3: return UIColor(red: 0.55, green: 0.55, blue: 0.90, alpha: 0.9) // ceiling — azul claro
-        case 4: return UIColor(red: 0.90, green: 0.70, blue: 0.35, alpha: 0.9) // table — naranja
-        case 5: return UIColor(red: 0.70, green: 0.50, blue: 0.35, alpha: 0.9) // seat — marrón
-        case 6: return UIColor(red: 0.75, green: 0.90, blue: 1.00, alpha: 0.9) // window — azul pálido
-        case 7: return UIColor(red: 0.55, green: 0.35, blue: 0.25, alpha: 0.9) // door — marrón oscuro
-        default: return UIColor(red: 0.55, green: 0.55, blue: 0.55, alpha: 0.9) // none — gris
+        case 1: return MeshCategory.wall.displayColor       // blanco
+        case 2: return MeshCategory.floor.displayColor      // gris
+        case 3: return MeshCategory.ceiling.displayColor    // gris claro
+        case 4: return MeshCategory.furniture.displayColor  // naranja (table)
+        case 5: return MeshCategory.furniture.displayColor  // naranja (seat)
+        case 6: return MeshCategory.window.displayColor     // cian
+        case 7: return MeshCategory.door.displayColor       // azul
+        default: return MeshCategory.unknown.displayColor   // gris oscuro
         }
     }
 

@@ -50,6 +50,7 @@
 		CC00001E000000000000001B /* FloorPlan2DGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001E000000000000001A /* FloorPlan2DGenerator.swift */; };
 		CC00001F000000000000001B /* FloorPlanOverlayEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001F000000000000001A /* FloorPlanOverlayEntity.swift */; };
 		CC000020000000000000001B /* ObjectCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000020000000000000001A /* ObjectCaptureManager.swift */; };
+		CC000021000000000000001B /* SemanticMeshClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000021000000000000001A /* SemanticMeshClassifier.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -95,6 +96,7 @@
 		CC00001E000000000000001A /* FloorPlan2DGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloorPlan2DGenerator.swift; sourceTree = "<group>"; };
 		CC00001F000000000000001A /* FloorPlanOverlayEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloorPlanOverlayEntity.swift; sourceTree = "<group>"; };
 		CC000020000000000000001A /* ObjectCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectCaptureManager.swift; sourceTree = "<group>"; };
+		CC000021000000000000001A /* SemanticMeshClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticMeshClassifier.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -170,6 +172,7 @@
 				CC00001E000000000000001A /* FloorPlan2DGenerator.swift */,
 				CC00001F000000000000001A /* FloorPlanOverlayEntity.swift */,
 				CC000020000000000000001A /* ObjectCaptureManager.swift */,
+				CC000021000000000000001A /* SemanticMeshClassifier.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -296,6 +299,7 @@
 				CC00001E000000000000001B /* FloorPlan2DGenerator.swift in Sources */,
 				CC00001F000000000000001B /* FloorPlanOverlayEntity.swift in Sources */,
 				CC000020000000000000001B /* ObjectCaptureManager.swift in Sources */,
+				CC000021000000000000001B /* SemanticMeshClassifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
