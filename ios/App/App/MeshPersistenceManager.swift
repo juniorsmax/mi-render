@@ -17,11 +17,22 @@ import simd
 // MARK: - Struct serializable de un anchor
 
 struct PersistedMeshAnchor: Codable {
-    let id:            String           // UUID
-    let transform:     [Float]          // 16 floats (column-major float4x4)
-    let vertices:      [Float]          // tripletes XYZ
-    let faceIndices:   [UInt32]         // tripletes por triángulo
-    let classifications: [UInt8]        // 1 por cara
+    let id:              String           // UUID
+    let transform:       [Float]          // 16 floats (column-major float4x4)
+    let vertices:        [Float]          // tripletes XYZ (espacio local del anchor)
+    let normals:         [Float]          // tripletes XYZ normales (mismo orden que vértices)
+    let faceIndices:     [UInt32]         // tripletes por triángulo
+    let classifications: [UInt8]          // 1 por cara
+
+    /// Reconstruye la simd_float4x4 del transform guardado.
+    var transformMatrix: simd_float4x4 {
+        simd_float4x4(columns: (
+            SIMD4<Float>(transform[0],  transform[1],  transform[2],  transform[3]),
+            SIMD4<Float>(transform[4],  transform[5],  transform[6],  transform[7]),
+            SIMD4<Float>(transform[8],  transform[9],  transform[10], transform[11]),
+            SIMD4<Float>(transform[12], transform[13], transform[14], transform[15])
+        ))
+    }
 }
 
 // MARK: - MeshPersistenceManager
@@ -143,6 +154,19 @@ class MeshPersistenceManager {
             }
         }
 
+        // normales
+        var norms = [Float]()
+        norms.reserveCapacity(geo.normals.count * 3)
+        let nPtr = geo.normals.buffer.contents()
+            .advanced(by: geo.normals.offset)
+            .assumingMemoryBound(to: Float.self)
+        let nStride = geo.normals.stride / MemoryLayout<Float>.stride
+        for i in 0..<geo.normals.count {
+            norms.append(nPtr[i * nStride])
+            norms.append(nPtr[i * nStride + 1])
+            norms.append(nPtr[i * nStride + 2])
+        }
+
         // clasificaciones (1 UInt8 por cara)
         var classes = [UInt8]()
         if let cls = geo.classification {
@@ -160,6 +184,7 @@ class MeshPersistenceManager {
             id:              anchor.identifier.uuidString,
             transform:       transformArr,
             vertices:        verts,
+            normals:         norms,
             faceIndices:     indices,
             classifications: classes
         )

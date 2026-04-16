@@ -122,14 +122,40 @@ class SceneViewerViewController: UIViewController {
     private static func buildDescriptors(from anchors: [PersistedMeshAnchor]) -> [MeshDescriptor] {
         anchors.compactMap { p -> MeshDescriptor? in
             guard p.vertices.count >= 3, !p.faceIndices.isEmpty else { return nil }
+
+            let mat = p.transformMatrix
+
+            // Vértices en espacio mundo (aplica transform del anchor)
             var positions = [SIMD3<Float>]()
             positions.reserveCapacity(p.vertices.count / 3)
             for i in stride(from: 0, to: p.vertices.count - 2, by: 3) {
-                positions.append(SIMD3<Float>(p.vertices[i], p.vertices[i+1], p.vertices[i+2]))
+                let local = SIMD4<Float>(p.vertices[i], p.vertices[i+1], p.vertices[i+2], 1)
+                let world = mat * local
+                positions.append(SIMD3<Float>(world.x, world.y, world.z))
             }
+
+            // Normales en espacio mundo (solo rotación, sin traslación)
+            var normals = [SIMD3<Float>]()
+            if p.normals.count >= 3 {
+                normals.reserveCapacity(p.normals.count / 3)
+                // Matrix 3x3 de rotación (sin escala ni traslación)
+                let r = simd_float3x3(
+                    SIMD3<Float>(mat.columns.0.x, mat.columns.0.y, mat.columns.0.z),
+                    SIMD3<Float>(mat.columns.1.x, mat.columns.1.y, mat.columns.1.z),
+                    SIMD3<Float>(mat.columns.2.x, mat.columns.2.y, mat.columns.2.z)
+                )
+                for i in stride(from: 0, to: p.normals.count - 2, by: 3) {
+                    let n = SIMD3<Float>(p.normals[i], p.normals[i+1], p.normals[i+2])
+                    normals.append(simd_normalize(r * n))
+                }
+            }
+
             var desc = MeshDescriptor()
-            desc.name = p.id
-            desc.positions  = .init(positions)
+            desc.name      = p.id
+            desc.positions = .init(positions)
+            if !normals.isEmpty {
+                desc.normals = .init(normals)
+            }
             let uintIndices = p.faceIndices.map { UInt32($0) }
             desc.primitives = .triangles(uintIndices)
             return desc
