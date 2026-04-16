@@ -39,6 +39,7 @@ class SceneViewerViewController: UIViewController {
     private var cachedPersistedAnchors: [PersistedMeshAnchor] = []
     private var panoramaNodeEntities: [ModelEntity] = []
     private var semanticEntities: [ModelEntity] = []
+    private var floorPlanOverlay: FloorPlanOverlayEntity?
 
     // MARK: - Ciclo de vida
 
@@ -457,6 +458,9 @@ extension SceneViewerViewController {
     }
 
     func applySceneMode(_ mode: SceneMode) {
+        // Limpiar overlay de plano para todos los modos excepto floorPlan2D
+        if mode != .floorPlan2D { clearFloorPlanOverlay() }
+
         switch mode {
 
         case .meshSolid:
@@ -489,10 +493,10 @@ extension SceneViewerViewController {
         case .floorPlan2D:
             if isWalkthroughActive { stopWalkthrough() }
             clearSemanticEntities(); clearPanoramaNodes()
-            meshEntity?.isEnabled = true
+            meshEntity?.isEnabled = false
             bboxEntity?.isEnabled = false
-            applySolidMaterial()
             setGesturesEnabled(false)
+            buildFloorPlanOverlay()
             positionCameraTopDown()
 
         case .roomVolumeBounding:
@@ -737,5 +741,41 @@ extension SceneViewerViewController {
 
     func setGesturesEnabled(_ enabled: Bool) {
         arView.gestureRecognizers?.forEach { $0.isEnabled = enabled }
+    }
+
+    // MARK: Floor Plan Overlay
+
+    func buildFloorPlanOverlay() {
+        clearFloorPlanOverlay()
+
+        // 1. Intentar generar desde anchors vivos
+        let anchors = MeshManager.shared.meshAnchors as [ARAnchor]
+        var plan = FloorPlan2DGenerator.shared.generateFloorPlan(from: anchors)
+
+        // 2. Si no hay datos en vivo, usar plan guardado en disco
+        if plan.segments.isEmpty {
+            plan = FloorPlan2DGenerator.shared.loadSaved() ?? .empty
+        }
+
+        guard !plan.segments.isEmpty else { return }
+
+        // 3. Guardar para sesiones futuras
+        FloorPlan2DGenerator.shared.save(plan)
+
+        // 4. Crear y posicionar la entidad overlay
+        let overlay = FloorPlanOverlayEntity()
+        overlay.build(from: plan)
+
+        // Alinear horizontalmente con el mesh centrado
+        let meshPos = meshEntity?.position ?? .zero
+        overlay.position = SIMD3<Float>(meshPos.x, 0.02, meshPos.z)
+
+        anchorEntity.addChild(overlay)
+        floorPlanOverlay = overlay
+    }
+
+    func clearFloorPlanOverlay() {
+        floorPlanOverlay?.removeFromParent()
+        floorPlanOverlay = nil
     }
 }

@@ -47,6 +47,8 @@
 		CC00001B000000000000001B /* NavigationPlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001B000000000000001A /* NavigationPlaybackController.swift */; };
 		CC00001C000000000000001B /* SceneModeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001C000000000000001A /* SceneModeManager.swift */; };
 		CC00001D000000000000001B /* LayerTogglePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001D000000000000001A /* LayerTogglePanel.swift */; };
+		CC00001E000000000000001B /* FloorPlan2DGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001E000000000000001A /* FloorPlan2DGenerator.swift */; };
+		CC00001F000000000000001B /* FloorPlanOverlayEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00001F000000000000001A /* FloorPlanOverlayEntity.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,6 +91,8 @@
 		CC00001B000000000000001A /* NavigationPlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationPlaybackController.swift; sourceTree = "<group>"; };
 		CC00001C000000000000001A /* SceneModeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneModeManager.swift; sourceTree = "<group>"; };
 		CC00001D000000000000001A /* LayerTogglePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayerTogglePanel.swift; sourceTree = "<group>"; };
+		CC00001E000000000000001A /* FloorPlan2DGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloorPlan2DGenerator.swift; sourceTree = "<group>"; };
+		CC00001F000000000000001A /* FloorPlanOverlayEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloorPlanOverlayEntity.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -161,6 +165,8 @@
 				CC00001B000000000000001A /* NavigationPlaybackController.swift */,
 				CC00001C000000000000001A /* SceneModeManager.swift */,
 				CC00001D000000000000001A /* LayerTogglePanel.swift */,
+				CC00001E000000000000001A /* FloorPlan2DGenerator.swift */,
+				CC00001F000000000000001A /* FloorPlanOverlayEntity.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -284,6 +290,8 @@
 				CC00001B000000000000001B /* NavigationPlaybackController.swift in Sources */,
 				CC00001C000000000000001B /* SceneModeManager.swift in Sources */,
 				CC00001D000000000000001B /* LayerTogglePanel.swift in Sources */,
+				CC00001E000000000000001B /* FloorPlan2DGenerator.swift in Sources */,
+				CC00001F000000000000001B /* FloorPlanOverlayEntity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
