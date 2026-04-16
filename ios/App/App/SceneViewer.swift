@@ -29,6 +29,10 @@ class SceneViewerViewController: UIViewController {
     private var currentRotationY:     Float   = 0
     private var currentDistance:      Float   = 3.0   // metros
 
+    // Walkthrough
+    private var playback: NavigationPlaybackController?
+    private var isWalkthroughActive: Bool = false
+
     // MARK: - Ciclo de vida
 
     override func viewDidLoad() {
@@ -92,6 +96,7 @@ class SceneViewerViewController: UIViewController {
 
     private func setupNavigationBar() {
         navigationItem.rightBarButtonItems = [
+            UIBarButtonItem(title: "Walk", style: .plain, target: self, action: #selector(toggleWalkthrough)),
             UIBarButtonItem(title: "BBox", style: .plain, target: self, action: #selector(toggleBBox)),
             UIBarButtonItem(title: "Reset", style: .plain, target: self, action: #selector(resetCamera)),
         ]
@@ -308,5 +313,87 @@ class SceneViewerViewController: UIViewController {
 
     @objc private func dismiss(_ sender: Any) {
         dismiss(animated: true)
+    }
+}
+
+// MARK: - Walkthrough (NavigationPlaybackDelegate)
+
+extension SceneViewerViewController: NavigationPlaybackDelegate {
+
+    /// Alterna entre modo orbital libre y recorrido walkthrough.
+    @objc func toggleWalkthrough() {
+        if isWalkthroughActive {
+            stopWalkthrough()
+        } else {
+            startWalkthrough()
+        }
+    }
+
+    private func startWalkthrough() {
+        let nodes = NavigationManager.shared.cameraNodes
+        guard nodes.count >= 2 else {
+            showAlert("Sin recorrido", "Realiza un escaneo para registrar nodos de cámara.")
+            return
+        }
+
+        let ctrl = NavigationPlaybackController(nodes: nodes)
+        ctrl.delegate = self
+        ctrl.speed    = 1.2
+        ctrl.loops    = false
+        playback      = ctrl
+
+        isWalkthroughActive = true
+        updateWalkthroughButton()
+
+        // Deshabilitar gestos manuales durante el recorrido
+        arView.gestureRecognizers?.forEach { $0.isEnabled = false }
+
+        ctrl.play()
+    }
+
+    private func stopWalkthrough() {
+        playback?.stop()
+        playback = nil
+        isWalkthroughActive = false
+        updateWalkthroughButton()
+        arView.gestureRecognizers?.forEach { $0.isEnabled = true }
+        updateCameraPosition()
+    }
+
+    private func updateWalkthroughButton() {
+        let title = isWalkthroughActive ? "Stop" : "Walk"
+        navigationItem.rightBarButtonItems?.first?.title = title
+    }
+
+    private func showAlert(_ title: String, _ message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
+    // MARK: NavigationPlaybackDelegate
+
+    func playback(_ controller: NavigationPlaybackController,
+                  didMoveTo position: SIMD3<Float>,
+                  lookingAt target: SIMD3<Float>) {
+        // Colocar la cámara en la posición interpolada mirando al target
+        let cameraAnchor = AnchorEntity(world: position)
+        let camera = PerspectiveCamera()
+        camera.camera.fieldOfViewInDegrees = 70
+        cameraAnchor.addChild(camera)
+
+        arView.scene.anchors
+            .filter { $0 !== anchorEntity }
+            .forEach { arView.scene.removeAnchor($0) }
+
+        arView.scene.addAnchor(cameraAnchor)
+        cameraAnchor.look(at: target, from: position, relativeTo: nil)
+    }
+
+    func playbackDidFinish(_ controller: NavigationPlaybackController) {
+        isWalkthroughActive = false
+        updateWalkthroughButton()
+        arView.gestureRecognizers?.forEach { $0.isEnabled = true }
+        updateCameraPosition()
     }
 }
