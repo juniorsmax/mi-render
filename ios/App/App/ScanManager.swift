@@ -221,7 +221,8 @@ extension ScanManager {
 
         var desc = MeshDescriptor(name: anchor.identifier.uuidString)
         desc.positions  = .init(positions)
-        desc.primitives = .triangles(indices)
+        let uintIndices = indices.map { UInt32($0) }
+        desc.primitives = .triangles(uintIndices)
         return desc
     }
 
@@ -262,7 +263,8 @@ extension ScanManager {
 
         var descriptor = MeshDescriptor(name: anchor.identifier.uuidString)
         descriptor.positions = .init(positions)
-        descriptor.primitives = .triangles(indices)
+        let uintIndices = indices.map { UInt32($0) }
+        descriptor.primitives = .triangles(uintIndices)
         return try? MeshResource.generate(from: [descriptor])
     }
 }

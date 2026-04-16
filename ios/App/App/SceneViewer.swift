@@ -129,7 +129,8 @@ class SceneViewerViewController: UIViewController {
             }
             var desc = MeshDescriptor(name: p.id)
             desc.positions  = .init(positions)
-            desc.primitives = .triangles(p.faceIndices)
+            let uintIndices = p.faceIndices.map { UInt32($0) }
+            desc.primitives = .triangles(uintIndices)
             return desc
         }
     }
