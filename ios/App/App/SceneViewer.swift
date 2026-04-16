@@ -791,27 +791,26 @@ extension SceneViewerViewController {
             .filter { $0.name == "objectScanAnchor" }
             .forEach { $0.removeFromParent() }
 
-        if #available(iOS 15.0, *) {
-            Task {
-                do {
-                    let entity = try await Entity.init(contentsOf: url)
-                    let anchor = AnchorEntity(world: .zero)
-                    anchor.name = "objectScanAnchor"
-                    // Escalar para que quepa cómodamente en la escena (~1m max)
-                    let bounds = entity.visualBounds(relativeTo: nil)
-                    let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
-                    if maxDim > 0 {
-                        let scale = min(1.0, 1.0 / maxDim)
-                        entity.scale = SIMD3<Float>(repeating: scale)
-                    }
-                    entity.position = SIMD3<Float>(0, 0, -0.5)
-                    anchor.addChild(entity)
-                    await MainActor.run {
-                        self.arView?.scene.addAnchor(anchor)
-                    }
-                } catch {
-                    print("[SceneViewer] Error cargando USDZ: \(error)")
+        // Entity.load(contentsOf:) — síncrono, disponible iOS 13+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let entity = try Entity.load(contentsOf: url)
+                let anchor = AnchorEntity(world: .zero)
+                anchor.name = "objectScanAnchor"
+                // Escalar para que quepa cómodamente (~1m max)
+                let bounds = entity.visualBounds(relativeTo: nil)
+                let maxDim = max(bounds.extents.x, bounds.extents.y, bounds.extents.z)
+                if maxDim > 0 {
+                    let scale = min(1.0, 1.0 / maxDim)
+                    entity.scale = SIMD3<Float>(repeating: scale)
                 }
+                entity.position = SIMD3<Float>(0, 0, -0.5)
+                anchor.addChild(entity)
+                DispatchQueue.main.async {
+                    self?.arView?.scene.addAnchor(anchor)
+                }
+            } catch {
+                print("[SceneViewer] Error cargando USDZ: \(error)")
             }
         }
     }

@@ -5,6 +5,8 @@
 
 import Foundation
 import Combine
+import RealityKit
+import ModelIO
 
 // MARK: - ScanMode
 

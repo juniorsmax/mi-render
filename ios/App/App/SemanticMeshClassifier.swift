@@ -154,10 +154,8 @@ class SemanticMeshClassifier {
 
     private func computeDominantNormal(geo: ARMeshGeometry,
                                         transform: simd_float4x4) -> SIMD3<Float> {
-        guard let normSource = geo.normals else {
-            // Si no hay normales, usar posiciones para estimar
-            return estimateNormalFromPositions(geo: geo, transform: transform)
-        }
+        // geo.normals es ARGeometrySource no-Optional en ARKit
+        let normSource = geo.normals
 
         let nPtr = normSource.buffer.contents()
             .advanced(by: normSource.offset)
