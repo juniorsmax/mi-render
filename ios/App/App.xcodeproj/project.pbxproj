@@ -132,12 +132,12 @@
 		CC00002B000000000000001A /* MeshRenderStyleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRenderStyleManager.swift; sourceTree = "<group>"; };
 		CC00002C000000000000001A /* AssetLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetLibraryManager.swift; sourceTree = "<group>"; };
 		CC00002D000000000000001A /* ScanProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanProject.swift; sourceTree = "<group>"; };
-		CC00002E000000000000001A /* LoRALoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoRALoader.swift; sourceTree = "<group>"; };
-		CC00002F000000000000001A /* SceneSegmentationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneSegmentationModel.swift; sourceTree = "<group>"; };
-		CC000030000000000000001A /* MaterialClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialClassifier.swift; sourceTree = "<group>"; };
-		CC000031000000000000001A /* ObjectDetector3D.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjectDetector3D.swift; sourceTree = "<group>"; };
-		CC000032000000000000001A /* InteriorStyleClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteriorStyleClassifier.swift; sourceTree = "<group>"; };
-		CC000033000000000000001A /* SpatialInferencePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialInferencePipeline.swift; sourceTree = "<group>"; };
+		CC00002E000000000000001A /* LoRALoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AI/LoRA/LoRALoader.swift"; sourceTree = "<group>"; };
+		CC00002F000000000000001A /* SceneSegmentationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AI/LoRA/SceneSegmentationModel.swift"; sourceTree = "<group>"; };
+		CC000030000000000000001A /* MaterialClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AI/LoRA/MaterialClassifier.swift"; sourceTree = "<group>"; };
+		CC000031000000000000001A /* ObjectDetector3D.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AI/LoRA/ObjectDetector3D.swift"; sourceTree = "<group>"; };
+		CC000032000000000000001A /* InteriorStyleClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AI/LoRA/InteriorStyleClassifier.swift"; sourceTree = "<group>"; };
+		CC000033000000000000001A /* SpatialInferencePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AI/LoRA/SpatialInferencePipeline.swift"; sourceTree = "<group>"; };
 		CC000034000000000000001A /* ProjectPersistenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectPersistenceManager.swift; sourceTree = "<group>"; };
 		CC000035000000000000001A /* ScanViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanViewerView.swift; sourceTree = "<group>"; };
 		CC000036000000000000001A /* SceneGraphManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGraphManager.swift; sourceTree = "<group>"; };
