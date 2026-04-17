@@ -49,6 +49,11 @@ class SceneViewerViewController: UIViewController {
     // Assets 3D colocados: placementID → AnchorEntity
     private var placedAssetAnchors: [UUID: AnchorEntity] = [:]
 
+    // Panorama — mapa nodeIndex → PanoramaNode para tap lookup
+    private var panoramaNodeMap: [Int: PanoramaNode] = [:]
+    // Overlay de imagen panorama activa
+    private var panoramaOverlayView: UIView?
+
     // MARK: - Ciclo de vida
 
     override func viewDidLoad() {
@@ -84,6 +89,11 @@ class SceneViewerViewController: UIViewController {
             self, selector: #selector(onAssetPlacementRequested(_:)),
             name: .assetPlacementRequested, object: nil
         )
+        // Observador de carga de nodos panorama
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onPanoramaNodesLoaded(_:)),
+            name: .panoramaNodesLoaded, object: nil
+        )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -93,6 +103,7 @@ class SceneViewerViewController: UIViewController {
         NotificationCenter.default.removeObserver(self, name: .sceneProjectDidLoad,       object: nil)
         NotificationCenter.default.removeObserver(self, name: .meshRenderStyleDidChange, object: nil)
         NotificationCenter.default.removeObserver(self, name: .assetPlacementRequested,  object: nil)
+        NotificationCenter.default.removeObserver(self, name: .panoramaNodesLoaded,       object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -143,6 +154,11 @@ class SceneViewerViewController: UIViewController {
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(resetCamera))
         doubleTap.numberOfTapsRequired = 2
         arView.addGestureRecognizer(doubleTap)
+
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        arView.addGestureRecognizer(singleTap)
     }
 
     private func setupNavigationBar() {
@@ -870,6 +886,52 @@ extension SceneViewerViewController {
 
     func buildPanoramaNodes() {
         clearPanoramaNodes()
+        panoramaNodeMap.removeAll()
+
+        // Preferir nodos de PanoramaCaptureManager; si no hay, usar NavigationManager
+        let panNodes = PanoramaCaptureManager.shared.nodes
+        if !panNodes.isEmpty {
+            buildPanoramaNodesFromCapture(panNodes)
+        } else {
+            buildPanoramaNodesFromNavigation()
+        }
+    }
+
+    private func buildPanoramaNodesFromCapture(_ panoramas: [PanoramaNode]) {
+        let offset     = meshEntity?.position ?? .zero
+        let sphereMesh = MeshResource.generateSphere(radius: 0.09)
+
+        for (i, node) in panoramas.enumerated() {
+            // Color degradado sobre la trayectoria
+            let hue = CGFloat(i) / CGFloat(max(panoramas.count, 1))
+            var mat = UnlitMaterial()
+            mat.color = .init(tint: UIColor(hue: hue, saturation: 0.85, brightness: 1.0, alpha: 0.9))
+            let sphere = ModelEntity(mesh: sphereMesh, materials: [mat])
+            sphere.name = "panoramaNode_\(i)"
+            sphere.position = node.position + offset
+            // Añadir CollisionComponent para hit-testing
+            sphere.collision = CollisionComponent(shapes: [.generateSphere(radius: 0.09)])
+            anchorEntity.addChild(sphere)
+            panoramaNodeEntities.append(sphere)
+            panoramaNodeMap[i] = node
+        }
+
+        // Línea de trayectoria entre nodos
+        if panoramas.count > 1 {
+            let dotMesh = MeshResource.generateSphere(radius: 0.025)
+            var dotMat  = UnlitMaterial()
+            dotMat.color = .init(tint: UIColor.white.withAlphaComponent(0.40))
+            for i in 0..<panoramas.count - 1 {
+                let mid = (panoramas[i].position + panoramas[i+1].position) * 0.5 + offset
+                let dot = ModelEntity(mesh: dotMesh, materials: [dotMat])
+                dot.position = mid
+                anchorEntity.addChild(dot)
+                panoramaNodeEntities.append(dot)
+            }
+        }
+    }
+
+    private func buildPanoramaNodesFromNavigation() {
         let nodes  = NavigationManager.shared.cameraNodes
         guard !nodes.isEmpty else { return }
         let offset = meshEntity?.position ?? .zero
@@ -877,16 +939,15 @@ extension SceneViewerViewController {
         let sphereMesh = MeshResource.generateSphere(radius: 0.08)
         for (i, node) in nodes.enumerated() {
             let hue = CGFloat(i) / CGFloat(max(nodes.count, 1))
-            let color = UIColor(hue: hue, saturation: 0.8, brightness: 1.0, alpha: 1.0)
             var mat = UnlitMaterial()
-            mat.color = .init(tint: color)
+            mat.color = .init(tint: UIColor(hue: hue, saturation: 0.8, brightness: 1.0, alpha: 1.0))
             let sphere = ModelEntity(mesh: sphereMesh, materials: [mat])
+            sphere.name = "navNode_\(i)"
             sphere.position = node.position + offset
             anchorEntity.addChild(sphere)
             panoramaNodeEntities.append(sphere)
         }
 
-        // Puntos de trayectoria entre nodos
         if nodes.count > 1 {
             let dotMesh = MeshResource.generateSphere(radius: 0.025)
             var dotMat  = UnlitMaterial()
@@ -1176,5 +1237,170 @@ extension SceneViewerViewController {
             arView.scene.removeAnchor(anchor)
         }
         placedAssetAnchors.removeAll()
+    }
+}
+
+// MARK: - Panorama Tap Navigation
+
+extension SceneViewerViewController {
+
+    // MARK: - Single tap — detección de nodo panorama
+
+    @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+        // Solo actúa en modo panoramaNodes
+        guard SceneLayerManager.shared.currentMode == .panoramaNodes else { return }
+        let point = gesture.location(in: arView)
+
+        // Hit test contra entidades con CollisionComponent
+        if let hit = arView.entity(at: point) {
+            handlePanoramaEntityTap(hit)
+        }
+    }
+
+    private func handlePanoramaEntityTap(_ entity: Entity) {
+        // Nombre: "panoramaNode_<index>"
+        guard entity.name.hasPrefix("panoramaNode_"),
+              let indexStr = entity.name.components(separatedBy: "_").last,
+              let index = Int(indexStr),
+              let node = panoramaNodeMap[index]
+        else { return }
+
+        // Snap: mover la cámara del visor a la posición del nodo
+        snapCamera(to: node)
+        showPanoramaOverlay(for: node)
+    }
+
+    /// Mueve la cámara orbital a la posición del nodo y orienta hacia su forward.
+    private func snapCamera(to node: PanoramaNode) {
+        let offset   = meshEntity?.position ?? .zero
+        let position = node.position + offset
+        let target   = position + node.forward
+
+        let cameraAnchor = AnchorEntity(world: position + SIMD3<Float>(0, 0.1, 0))
+        let camera = PerspectiveCamera()
+        camera.camera.fieldOfViewInDegrees = 70
+        cameraAnchor.addChild(camera)
+
+        arView.scene.anchors
+            .filter { $0 !== anchorEntity }
+            .forEach { arView.scene.removeAnchor($0) }
+
+        arView.scene.addAnchor(cameraAnchor)
+        cameraAnchor.look(at: target, from: cameraAnchor.position, relativeTo: nil)
+
+        // Actualizar playback si está activo
+        if let pb = playback, pb.state == .playing || pb.state == .paused {
+            pb.jumpToNearest(position: node.position)
+        }
+    }
+
+    // MARK: - Panorama image overlay
+
+    /// Muestra la imagen JPEG capturada del nodo como overlay de pantalla completa.
+    func showPanoramaOverlay(for node: PanoramaNode) {
+        dismissPanoramaOverlay()
+        guard FileManager.default.fileExists(atPath: node.imageURL.path),
+              let image = UIImage(contentsOfFile: node.imageURL.path)
+        else { return }
+
+        // Contenedor semitransparente
+        let container = UIView(frame: view.bounds)
+        container.backgroundColor = UIColor.black.withAlphaComponent(0.92)
+        container.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        // ImageView
+        let imageView = UIImageView(image: image)
+        imageView.contentMode = .scaleAspectFit
+        imageView.frame = container.bounds.insetBy(dx: 20, dy: 60)
+        imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(imageView)
+
+        // Label de índice
+        let label = UILabel()
+        label.text = "Nodo \(node.index + 1) de \(PanoramaCaptureManager.shared.nodes.count)"
+        label.textColor = UIColor.white.withAlphaComponent(0.75)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.sizeToFit()
+        label.frame.origin = CGPoint(x: 20, y: 16)
+        container.addSubview(label)
+
+        // Botón cerrar
+        let closeBtn = UIButton(type: .system)
+        closeBtn.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        closeBtn.tintColor = .white
+        closeBtn.frame = CGRect(x: view.bounds.width - 52, y: 8, width: 44, height: 44)
+        closeBtn.autoresizingMask = [.flexibleLeftMargin]
+        closeBtn.addTarget(self, action: #selector(dismissPanoramaOverlay), for: .touchUpInside)
+        container.addSubview(closeBtn)
+
+        // Navegación ← →
+        addNavigationArrows(to: container, currentIndex: node.index)
+
+        view.addSubview(container)
+        panoramaOverlayView = container
+
+        // Animación de entrada
+        container.alpha = 0
+        UIView.animate(withDuration: 0.22) { container.alpha = 1.0 }
+    }
+
+    private func addNavigationArrows(to container: UIView, currentIndex: Int) {
+        let total = PanoramaCaptureManager.shared.nodes.count
+        let btnW: CGFloat = 56
+
+        if currentIndex > 0 {
+            let prev = UIButton(type: .system)
+            prev.setImage(UIImage(systemName: "chevron.left.circle.fill"), for: .normal)
+            prev.tintColor = .white
+            prev.frame = CGRect(x: 12, y: container.bounds.midY - 28, width: btnW, height: 56)
+            prev.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin]
+            prev.tag = currentIndex - 1
+            prev.addTarget(self, action: #selector(panoramaNavTapped(_:)), for: .touchUpInside)
+            container.addSubview(prev)
+        }
+        if currentIndex < total - 1 {
+            let next = UIButton(type: .system)
+            next.setImage(UIImage(systemName: "chevron.right.circle.fill"), for: .normal)
+            next.tintColor = .white
+            next.frame = CGRect(x: container.bounds.width - btnW - 12,
+                                y: container.bounds.midY - 28,
+                                width: btnW, height: 56)
+            next.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin, .flexibleLeftMargin]
+            next.tag = currentIndex + 1
+            next.addTarget(self, action: #selector(panoramaNavTapped(_:)), for: .touchUpInside)
+            container.addSubview(next)
+        }
+    }
+
+    @objc private func panoramaNavTapped(_ sender: UIButton) {
+        let nodes = PanoramaCaptureManager.shared.nodes
+        guard sender.tag < nodes.count else { return }
+        let node = nodes[sender.tag]
+        snapCamera(to: node)
+        showPanoramaOverlay(for: node)
+    }
+
+    @objc func dismissPanoramaOverlay() {
+        guard let overlay = panoramaOverlayView else { return }
+        UIView.animate(withDuration: 0.18, animations: { overlay.alpha = 0 }) { _ in
+            overlay.removeFromSuperview()
+        }
+        panoramaOverlayView = nil
+    }
+
+    // MARK: - Observers panorama
+
+    @objc func onPanoramaNodesLoaded(_ note: Notification) {
+        // Si el modo activo es panoramaNodes, reconstruir la visualización
+        guard SceneLayerManager.shared.currentMode == .panoramaNodes else { return }
+        buildPanoramaNodes()
+    }
+
+    // MARK: - Nearest-node snapping durante walkthrough
+
+    /// Llama durante cada frame de walkthrough para snap automático.
+    func snapToNearestPanoramaNode(camera: SIMD3<Float>) {
+        guard let node = PanoramaCaptureManager.shared.snapNode(near: camera) else { return }
+        showPanoramaOverlay(for: node)
     }
 }

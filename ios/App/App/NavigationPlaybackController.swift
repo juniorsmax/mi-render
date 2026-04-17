@@ -71,6 +71,19 @@ class NavigationPlaybackController {
         self.init(nodes: NavigationManager.shared.cameraNodes)
     }
 
+    /// Inicializa la reproducción desde nodos panorama de PanoramaCaptureManager.
+    convenience init(panoramaNodes: [PanoramaNode]) {
+        let cameraNodes = panoramaNodes.enumerated().map { i, n in
+            NavigationManager.CameraNode(
+                index:     i,
+                position:  n.position,
+                forward:   n.forward,
+                transform: n.transform
+            )
+        }
+        self.init(nodes: cameraNodes)
+    }
+
     // MARK: - Control de reproducción
 
     func play() {
@@ -111,6 +124,20 @@ class NavigationPlaybackController {
         segmentT         = 0
         traveledDistance = segmentLengths.prefix(currentSegment).reduce(0, +)
         emitCurrentPose()
+    }
+
+    /// Salta al nodo más cercano a una posición en espacio mundo.
+    /// Devuelve el índice del nodo al que saltó, o nil si no hay nodos.
+    @discardableResult
+    func jumpToNearest(position: SIMD3<Float>) -> Int? {
+        guard !nodes.isEmpty else { return nil }
+        var best: (index: Int, dist: Float) = (0, Float.greatestFiniteMagnitude)
+        for (i, node) in nodes.enumerated() {
+            let d = simd_distance(node.position, position)
+            if d < best.dist { best = (i, d) }
+        }
+        seek(to: best.index)
+        return best.index
     }
 
     /// Salta a un progreso normalizado (0.0–1.0) del recorrido.

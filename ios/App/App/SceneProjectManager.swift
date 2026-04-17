@@ -18,15 +18,16 @@ import simd
 // MARK: - SceneProject
 
 struct SceneProject: Codable, Identifiable, Hashable {
-    let id:               UUID
-    let name:             String
-    let createdAt:        Date
-    let meshFileURL:      URL
-    let floorplanFileURL: URL
-    let semanticFileURL:  URL
-    let cameraPathFileURL:URL
-    let materialsFileURL: URL
-    let previewImageURL:  URL
+    let id:                   UUID
+    let name:                 String
+    let createdAt:            Date
+    let meshFileURL:          URL
+    let floorplanFileURL:     URL
+    let semanticFileURL:      URL
+    let cameraPathFileURL:    URL
+    let materialsFileURL:     URL
+    let previewImageURL:      URL
+    let panoramaNodesFileURL: URL
 
     // MARK: Hashable & Equatable
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -115,6 +116,10 @@ class SceneProjectManager {
                 try png.write(to: folder.appendingPathComponent("preview.png"), options: .atomic)
             }
 
+            // Nodos panorama — guarda JSON + copia JPEGs desde la subcarpeta activa
+            PanoramaCaptureManager.shared.saveNodes(toFolder: folder)
+            copyPanoramaImages(toFolder: folder)
+
             // Metadata
             let meta = SceneProjectMetadata(id: id, name: projName, createdAt: Date())
             let metaData = try JSONEncoder().encode(meta)
@@ -149,6 +154,8 @@ class SceneProjectManager {
         // 5. Preferencias de material → JSON temporal
         let materialsURL = writeMaterialPrefsJSON()
 
+        // 6. Nodos panorama — se guardan directamente en la carpeta del proyecto
+        //    después de obtener el ID; se hace en saveCurrentScene vía callback
         return saveCurrentScene(
             meshURL:       meshURL ?? URL(fileURLWithPath: "/dev/null"),
             floorplanURL:  floorplanURL,
@@ -175,6 +182,10 @@ class SceneProjectManager {
 
         // Restaurar preferencias de material
         restoreMaterialPrefs(from: project.materialsFileURL)
+
+        // Restaurar nodos panorama
+        let projectFolder = folder(for: id)
+        PanoramaCaptureManager.shared.loadNodes(fromFolder: projectFolder)
 
         // Notificar a SceneViewer (y cualquier observer)
         NotificationCenter.default.post(name: .sceneProjectDidLoad, object: project)
@@ -225,15 +236,16 @@ class SceneProjectManager {
 
     private func buildProject(from meta: SceneProjectMetadata, folder: URL) -> SceneProject {
         SceneProject(
-            id:                meta.id,
-            name:              meta.name,
-            createdAt:         meta.createdAt,
-            meshFileURL:       folder.appendingPathComponent("mesh.miremesh"),
-            floorplanFileURL:  folder.appendingPathComponent("floorplan.json"),
-            semanticFileURL:   folder.appendingPathComponent("semantic.json"),
-            cameraPathFileURL: folder.appendingPathComponent("cameraPath.json"),
-            materialsFileURL:  folder.appendingPathComponent("materials.json"),
-            previewImageURL:   folder.appendingPathComponent("preview.png")
+            id:                   meta.id,
+            name:                 meta.name,
+            createdAt:            meta.createdAt,
+            meshFileURL:          folder.appendingPathComponent("mesh.miremesh"),
+            floorplanFileURL:     folder.appendingPathComponent("floorplan.json"),
+            semanticFileURL:      folder.appendingPathComponent("semantic.json"),
+            cameraPathFileURL:    folder.appendingPathComponent("cameraPath.json"),
+            materialsFileURL:     folder.appendingPathComponent("materials.json"),
+            previewImageURL:      folder.appendingPathComponent("preview.png"),
+            panoramaNodesFileURL: folder.appendingPathComponent("panoramaNodes.json")
         )
     }
 
@@ -321,6 +333,21 @@ class SceneProjectManager {
     }
 
     // MARK: - Helpers
+
+    /// Copia las imágenes JPEG capturadas por PanoramaCaptureManager a la carpeta del proyecto.
+    private func copyPanoramaImages(toFolder folder: URL) {
+        let panoramaCapMgr = PanoramaCaptureManager.shared
+        guard !panoramaCapMgr.nodes.isEmpty else { return }
+        let destFolder = folder.appendingPathComponent("panoramas")
+        try? fm.createDirectory(at: destFolder, withIntermediateDirectories: true)
+        for node in panoramaCapMgr.nodes {
+            let srcURL = node.imageURL
+            let destURL = destFolder.appendingPathComponent(srcURL.lastPathComponent)
+            guard fm.fileExists(atPath: srcURL.path) else { continue }
+            if fm.fileExists(atPath: destURL.path) { try? fm.removeItem(at: destURL) }
+            try? fm.copyItem(at: srcURL, to: destURL)
+        }
+    }
 
     private func copyIfExists(from source: URL, to dest: URL) throws {
         guard fm.fileExists(atPath: source.path) else { return }
