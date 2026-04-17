@@ -30,43 +30,6 @@ struct ProjectMetadata: Codable {
     var hasThumbnail:    Bool
 }
 
-// MARK: - Nodo del grafo de escena
-
-struct SceneGraphNode: Codable {
-    let id:         UUID
-    let anchorID:   String          // ARMeshAnchor.identifier.uuidString
-    let label:      String          // clasificación semántica
-    // transform column-major
-    let t00: Float; let t01: Float; let t02: Float; let t03: Float
-    let t10: Float; let t11: Float; let t12: Float; let t13: Float
-    let t20: Float; let t21: Float; let t22: Float; let t23: Float
-    let t30: Float; let t31: Float; let t32: Float; let t33: Float
-
-    var transform: simd_float4x4 {
-        simd_float4x4(columns: (
-            SIMD4(t00, t01, t02, t03),
-            SIMD4(t10, t11, t12, t13),
-            SIMD4(t20, t21, t22, t23),
-            SIMD4(t30, t31, t32, t33)
-        ))
-    }
-
-    init(anchorID: String, label: String, transform t: simd_float4x4) {
-        self.id       = UUID()
-        self.anchorID = anchorID
-        self.label    = label
-        t00 = t.columns.0.x; t01 = t.columns.0.y; t02 = t.columns.0.z; t03 = t.columns.0.w
-        t10 = t.columns.1.x; t11 = t.columns.1.y; t12 = t.columns.1.z; t13 = t.columns.1.w
-        t20 = t.columns.2.x; t21 = t.columns.2.y; t22 = t.columns.2.z; t23 = t.columns.2.w
-        t30 = t.columns.3.x; t31 = t.columns.3.y; t32 = t.columns.3.z; t33 = t.columns.3.w
-    }
-}
-
-struct SceneGraph: Codable {
-    var nodes:     [SceneGraphNode]
-    var createdAt: Date
-}
-
 // MARK: - ProjectPersistenceManager
 
 class ProjectPersistenceManager {
@@ -183,25 +146,27 @@ class ProjectPersistenceManager {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
 
-            let nodes: [SceneGraphNode] = anchors.map { anchor in
+            var graph = SceneGraph(projectId: id)
+            for anchor in anchors {
                 let cls = anchor.geometry.faces.count > 0
                     ? anchor.geometry.faceClassification(at: 0).debugDescription
                     : "unknown"
-                return SceneGraphNode(
-                    anchorID: anchor.identifier.uuidString,
-                    label:    cls,
+                var node = SceneNode(
+                    type:      .unknown,
+                    label:     cls,
                     transform: anchor.transform
                 )
+                node.metadata["anchorID"] = anchor.identifier.uuidString
+                graph.nodes[node.id] = node
             }
 
-            let graph   = SceneGraph(nodes: nodes, createdAt: Date())
             let graphURL = self.folder(for: id).appendingPathComponent("sceneGraph.json")
 
             do {
                 let data = try JSONEncoder().encode(graph)
                 try data.write(to: graphURL, options: .atomic)
                 self.updateMetadata(id: id) { $0.hasSceneGraph = true }
-                print("[ProjectPersistence] sceneGraph.json guardado (\(nodes.count) nodos)")
+                print("[ProjectPersistence] sceneGraph.json guardado (\(graph.nodes.count) nodos)")
                 DispatchQueue.main.async { completion(true) }
             } catch {
                 print("[ProjectPersistence] sceneGraph write error: \(error)")
