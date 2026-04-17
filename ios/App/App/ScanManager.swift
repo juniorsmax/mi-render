@@ -3,25 +3,39 @@
 // Punto de entrada único para la sesión ARKit.
 // Activa: sceneReconstruction(.mesh), sceneDepth, clasificación, detección de planos.
 // Propaga ARMeshAnchor a MeshManager en tiempo real.
+// Soporta: pause/resume sin resetTracking, ARCoachingOverlay, occlusion, WorldMap restore.
 
 import ARKit
 import RealityKit
+import ModelIO
+import MetalKit
+import UIKit
+import simd
 
 class ScanManager: NSObject {
 
     static let shared = ScanManager()
 
     weak var session: ARSession?
-    weak var arView: ARView?
+    weak var arView:  ARView?
 
     /// Modo de escaneo activo (habitación LiDAR u objeto fotogrametría).
     private(set) var currentScanMode: ScanMode = .roomScan
 
-    // Callback adicional para que LiDARPlugin reciba los anchors directamente
+    /// Última configuración activa — permite resumeScan sin resetTracking.
+    private var lastConfig: ARWorldTrackingConfiguration?
+
+    /// Timestamp del último frame procesado — throttle a 1 fps para onFrameCaptured.
+    private var lastFrameTimestamp: TimeInterval = 0
+
+    /// Callback adicional para que LiDARPlugin reciba los anchors directamente.
     var onMeshAnchorsUpdated: (([ARMeshAnchor]) -> Void)?
 
+    /// Callback de frame capturado — throttled a 1 fps. Útil para thumbnails.
+    var onFrameCaptured: ((ARFrame) -> Void)?
+
     // MARK: - Escaneo completo (modo profesional)
-    // Activa sceneReconstruction + sceneDepth + clasificación + planos.
+    // Activa sceneReconstruction + sceneDepth + clasificación + planos + occlusion.
 
     func startFullScan(arView: ARView) {
         self.arView  = arView
@@ -37,7 +51,7 @@ class ScanManager: NSObject {
             config.sceneReconstruction = .mesh
         }
 
-        // 2. frameSemantics — depth + semántica de escena
+        // 2. frameSemantics — depth + segmentación de personas
         var semantics: ARConfiguration.FrameSemantics = []
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
             semantics.insert(.sceneDepth)
@@ -48,10 +62,24 @@ class ScanManager: NSObject {
         }
         if !semantics.isEmpty { config.frameSemantics = semantics }
 
-        config.planeDetection      = [.horizontal, .vertical]
+        config.planeDetection       = [.horizontal, .vertical]
         config.environmentTexturing = .automatic
 
+        lastConfig = config
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+
+        // 3. sceneUnderstanding — occlusion, physics, lighting
+        arView.environment.sceneUnderstanding.options = [.occlusion, .physics, .receivesLighting]
+
+        // 4. Conectar RoomPlanManager si está disponible (iOS 16+)
+        if #available(iOS 16.0, *) {
+            RoomPlanManager.shared.onRoomUpdated = { [weak self] room in
+                guard let self = self, let arView = self.arView else { return }
+                let anchors = MeshManager.shared.meshAnchors
+                anchors.forEach { self.renderMesh($0) }
+                self.onMeshAnchorsUpdated?(anchors)
+            }
+        }
     }
 
     // MARK: - Modo rápido (solo planos, sin mesh pesado)
@@ -64,6 +92,8 @@ class ScanManager: NSObject {
         let config = ARWorldTrackingConfiguration()
         config.planeDetection       = [.horizontal, .vertical]
         config.environmentTexturing = .none
+
+        lastConfig = config
         arView.session.run(config)
     }
 
@@ -78,14 +108,27 @@ class ScanManager: NSObject {
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
             config.frameSemantics = [.sceneDepth, .smoothedSceneDepth]
         }
+
+        lastConfig = config
         arView.session.run(config)
     }
 
-    // MARK: - Parar sesión
+    // MARK: - Pause / Resume sin resetTracking
+
+    func pauseScan() {
+        session?.pause()
+    }
+
+    func resumeScan() {
+        guard let arView = arView,
+              let config = lastConfig else { return }
+        arView.session.run(config, options: [])
+    }
+
+    // MARK: - Parar sesión y clasificar mesh
 
     func stopScan() {
         session?.pause()
-        // Clasificar malla semántica y guardar en Documents/semantic_mesh.json
         let anchors = MeshManager.shared.meshAnchors
         if !anchors.isEmpty {
             DispatchQueue.global(qos: .utility).async {
@@ -94,15 +137,52 @@ class ScanManager: NSObject {
         }
     }
 
+    // MARK: - Restaurar desde ARWorldMap (sin resetTracking)
+
+    func restoreFromWorldMap(_ worldMap: ARWorldMap, arView: ARView) {
+        self.arView  = arView
+        self.session = arView.session
+        arView.session.delegate = self
+
+        let config = ARWorldTrackingConfiguration()
+        config.initialWorldMap = worldMap
+        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
+            config.sceneReconstruction = .meshWithClassification
+        } else if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            config.sceneReconstruction = .mesh
+        }
+        config.planeDetection = [.horizontal, .vertical]
+
+        lastConfig = config
+        arView.session.run(config, options: [])   // sin resetTracking para preservar anchors
+    }
+
+    // MARK: - ARCoachingOverlayView
+
+    func addCoachingOverlay(to view: ARView) {
+        #if !targetEnvironment(simulator)
+        let overlay = ARCoachingOverlayView()
+        overlay.session = view.session
+        overlay.goal    = .anyPlane
+        overlay.activatesAutomatically = true
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        #endif
+    }
+
     // MARK: - Object Capture (iOS 17+)
 
-    /// Inicia captura de objeto en modo fotogrametría.
     func startObjectCapture() {
         currentScanMode = .objectScan
         ObjectCaptureManager.shared.startCapture()
     }
 
-    /// Vuelve al modo LiDAR y reanuda sesión ARKit.
     func switchToRoomScan(arView: ARView) {
         ObjectCaptureManager.shared.cancelCapture()
         currentScanMode = .roomScan
@@ -117,6 +197,7 @@ class ScanManager: NSObject {
         arView.session.delegate = self
 
         let config = ARWorldTrackingConfiguration()
+        lastConfig = config
         arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
         MeshManager.shared.clearAll(session: arView.session)
     }
@@ -130,7 +211,62 @@ class ScanManager: NSObject {
 
         let config = ARWorldTrackingConfiguration()
         config.planeDetection = [.horizontal, .vertical]
+
+        lastConfig = config
         arView.session.run(config)
+    }
+
+    // MARK: - Fusionar ARMeshAnchor → MDLAsset (para exportación)
+
+    func mergedMDLAsset(from anchors: [ARMeshAnchor]) -> MDLAsset {
+        let asset = MDLAsset()
+        guard let device = MTLCreateSystemDefaultDevice() else { return asset }
+        let allocator = MTKMeshBufferAllocator(device: device)
+
+        for anchor in anchors {
+            let geo       = anchor.geometry
+            let transform = anchor.transform
+            let vBuf      = geo.vertices
+            let fBuf      = geo.faces
+
+            let vPtr    = vBuf.buffer.contents().advanced(by: vBuf.offset).assumingMemoryBound(to: Float.self)
+            let vStride = vBuf.stride / MemoryLayout<Float>.stride
+            let iPtr    = fBuf.buffer.contents().assumingMemoryBound(to: UInt32.self)
+            let iCount  = fBuf.indexCountPerPrimitive
+
+            var worldVerts = [Float]()
+            worldVerts.reserveCapacity(vBuf.count * 3)
+            for i in 0..<vBuf.count {
+                let local = SIMD3<Float>(vPtr[i*vStride], vPtr[i*vStride+1], vPtr[i*vStride+2])
+                let world = transform * SIMD4<Float>(local, 1)
+                worldVerts.append(world.x); worldVerts.append(world.y); worldVerts.append(world.z)
+            }
+
+            var indices = [UInt32]()
+            indices.reserveCapacity(fBuf.count * iCount)
+            for f in 0..<fBuf.count { for k in 0..<iCount { indices.append(iPtr[f*iCount+k]) } }
+
+            guard !worldVerts.isEmpty, !indices.isEmpty else { continue }
+
+            let vData   = Data(bytes: worldVerts, count: worldVerts.count * MemoryLayout<Float>.size)
+            let iData   = Data(bytes: indices,    count: indices.count    * MemoryLayout<UInt32>.size)
+            let vBufMDL = allocator.newBuffer(with: vData, type: .vertex)
+            let iBufMDL = allocator.newBuffer(with: iData, type: .index)
+
+            let desc = MDLVertexDescriptor()
+            desc.attributes[0] = MDLVertexAttribute(
+                name: MDLVertexAttributePosition, format: .float3, offset: 0, bufferIndex: 0)
+            desc.layouts[0] = MDLVertexBufferLayout(stride: MemoryLayout<Float>.size * 3)
+
+            let sub  = MDLSubmesh(indexBuffer: iBufMDL, indexCount: indices.count,
+                                  indexType: .uInt32, geometryType: .triangles, material: nil)
+            let mesh = MDLMesh(vertexBuffer: vBufMDL,
+                               vertexCount: vBuf.count,
+                               descriptor: desc,
+                               submeshes: [sub])
+            asset.add(mesh)
+        }
+        return asset
     }
 }
 
@@ -162,6 +298,14 @@ extension ScanManager: ARSessionDelegate {
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         guard !meshAnchors.isEmpty else { return }
         meshAnchors.forEach { MeshManager.shared.remove(anchor: $0) }
+    }
+
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        // Throttle: un frame por segundo para thumbnail/preview
+        let now = frame.timestamp
+        guard now - lastFrameTimestamp >= 1.0 else { return }
+        lastFrameTimestamp = now
+        onFrameCaptured?(frame)
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
@@ -196,7 +340,6 @@ extension ScanManager {
             let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
 
             DispatchQueue.main.async {
-                // Buscar AnchorEntity existente para este anchor o crear uno nuevo
                 let anchorId = anchor.identifier.uuidString
                 if let existing = arView.scene.anchors.first(
                     where: { $0.name == anchorId }) as? AnchorEntity {
@@ -251,51 +394,13 @@ extension ScanManager {
         var desc = MeshDescriptor()
         desc.name       = anchor.identifier.uuidString
         desc.positions  = .init(positions)
-        let uintIndices = indices.map { UInt32($0) }
-        desc.primitives = .triangles(uintIndices)
+        desc.primitives = .triangles(indices)
         return desc
     }
 
-    /// Construye un MeshResource desde la geometría del ARMeshAnchor.
-    private static func buildMeshResource(from anchor: ARMeshAnchor) -> MeshResource? {
-        let geo = anchor.geometry
-
-        // Vértices
-        let vertexCount = geo.vertices.count
-        var positions = [SIMD3<Float>]()
-        positions.reserveCapacity(vertexCount)
-        let vPtr = geo.vertices.buffer.contents()
-            .advanced(by: geo.vertices.offset)
-            .assumingMemoryBound(to: Float.self)
-        let vStride = geo.vertices.stride / MemoryLayout<Float>.stride
-        for i in 0..<vertexCount {
-            positions.append(SIMD3<Float>(
-                vPtr[i * vStride],
-                vPtr[i * vStride + 1],
-                vPtr[i * vStride + 2]
-            ))
-        }
-
-        // Índices de caras
-        let faceCount = geo.faces.count
-        let iCount    = geo.faces.indexCountPerPrimitive
-        var indices   = [UInt32]()
-        indices.reserveCapacity(faceCount * iCount)
-        let iPtr = geo.faces.buffer.contents()
-            .assumingMemoryBound(to: UInt32.self)
-        for f in 0..<faceCount {
-            for k in 0..<iCount {
-                indices.append(iPtr[f * iCount + k])
-            }
-        }
-
-        guard !positions.isEmpty, !indices.isEmpty else { return nil }
-
-        var descriptor = MeshDescriptor()
-        descriptor.name      = anchor.identifier.uuidString
-        descriptor.positions = .init(positions)
-        let uintIndices = indices.map { UInt32($0) }
-        descriptor.primitives = .triangles(uintIndices)
-        return try? MeshResource.generate(from: [descriptor])
+    /// Genera MeshResource en tiempo real desde ARMeshAnchor.
+    static func buildMeshResource(from anchor: ARMeshAnchor) -> MeshResource? {
+        guard let desc = buildDescriptor(from: anchor) else { return nil }
+        return try? MeshResource.generate(from: [desc])
     }
 }
