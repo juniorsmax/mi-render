@@ -1,11 +1,23 @@
 // PanoramaCaptureManager.swift
-// Sistema de captura de panoramas para nodos de navegación walkthrough.
-// Cada nodo almacena posición, transform de ARKit y una imagen JPEG del frame.
+// Sistema de captura, costura y persistencia de panoramas para navegación walkthrough.
+//
+// Ciclo de uso:
+//   startCapture()           → arranca ARSession interna + activa recepción de frames
+//   stopCapture()            → pausa ARSession, finaliza la lista de nodos
+//   exportPanorama()         → cose todos los frames capturados en una tira horizontal
+//                              y guarda panorama_stitched.jpg en la carpeta del proyecto
+//   loadPanorama()           → carga panorama_stitched.jpg desde disco → UIImage?
+//
+// Compatibilidad simulador:
+//   ARSession y ARFrame están guardados tras #if !targetEnvironment(simulator).
+//   En simulador: startCapture/stopCapture son no-op; exportPanorama devuelve
+//   un placeholder generado programáticamente; loadPanorama devuelve el mismo.
 //
 // Estructura de archivos por proyecto:
-//   Documents/Projects/<id>/panoramaNodes.json  — metadatos de todos los nodos
-//   Documents/Projects/<id>/panoramas/           — carpeta de imágenes
+//   Documents/Projects/<id>/panoramaNodes.json      — metadatos de nodos
+//   Documents/Projects/<id>/panoramas/              — frames individuales
 //     panorama_001.jpg, panorama_002.jpg …
+//   Documents/Projects/<id>/panorama_stitched.jpg   — costura final
 
 import ARKit
 import UIKit
@@ -21,7 +33,7 @@ struct PanoramaNode: Identifiable, Hashable {
     let timestamp: Date
     let index:     Int
 
-    // Dirección de mirada: -Z del transform de cámara ARKit
+    /// Dirección de mirada: -Z del transform de cámara ARKit.
     var forward: SIMD3<Float> {
         let col = transform.columns.2
         return SIMD3<Float>(-col.x, -col.y, -col.z)
@@ -98,56 +110,135 @@ extension PanoramaNode: Codable {
 
 // MARK: - PanoramaCaptureManager
 
-class PanoramaCaptureManager {
+final class PanoramaCaptureManager: NSObject {
 
     static let shared = PanoramaCaptureManager()
 
-    // MARK: Estado público
+    // MARK: - Estado público
 
-    /// Todos los nodos capturados en la sesión activa o cargados desde disco.
+    /// Nodos capturados en la sesión activa o restaurados desde disco.
     private(set) var nodes: [PanoramaNode] = []
+
+    /// true entre startCapture() y stopCapture().
+    private(set) var isCapturing: Bool = false
 
     /// Distancia mínima entre nodos consecutivos (metros).
     var minNodeDistance: Float = 0.5
 
-    /// Intervalo mínimo entre capturas (segundos).
+    /// Intervalo mínimo entre capturas de frame (segundos).
     var minCaptureInterval: TimeInterval = 1.0
 
-    // MARK: Estado privado
+    // MARK: - Estado privado
 
     private var lastCaptureTime: Date = .distantPast
     private var nodeCounter: Int = 0
     private let fm = FileManager.default
 
-    // Nombre de archivo de metadatos
     private static let metadataFileName = "panoramaNodes.json"
-    // Subcarpeta de imágenes
     private static let imagesFolderName  = "panoramas"
+    private static let stitchedFileName  = "panorama_stitched.jpg"
 
-    private init() {}
+#if !targetEnvironment(simulator)
+    private var arSession: ARSession?
+#endif
 
-    // MARK: - Carpeta de proyecto activo
+    private override init() {}
 
-    /// Carpeta raíz del proyecto actual (nil si no hay proyecto activo).
+    // MARK: - Carpetas de proyecto
+
     private var activeProjectFolder: URL? {
         guard let projectID = SceneLayerManager.shared.currentProjectID else { return nil }
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("Projects/\(projectID.uuidString)")
     }
 
-    /// Subcarpeta de imágenes del proyecto activo.
     private var activePanoramasFolder: URL? {
         activeProjectFolder?.appendingPathComponent(Self.imagesFolderName)
     }
 
-    // MARK: - capturePanorama(from:)
+    private var stitchedPanoramaURL: URL? {
+        activeProjectFolder?.appendingPathComponent(Self.stitchedFileName)
+    }
 
-    /// Captura un nodo panorama desde el ARFrame actual.
-    /// Solo registra si han pasado `minCaptureInterval` segundos
-    /// y la cámara se movió más de `minNodeDistance` metros.
-    /// - Returns: el `PanoramaNode` creado, o nil si se omitió.
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: startCapture()
+
+    /// Inicia la captura de panorama.
+    /// En dispositivo real: arranca una ARSession de world tracking.
+    /// En simulador: solo activa el flag `isCapturing`.
+    func startCapture() {
+        guard !isCapturing else { return }
+        isCapturing = true
+        reset()
+
+#if targetEnvironment(simulator)
+        print("[PanoramaCapture] Simulador — AR desactivado, modo placeholder activo")
+#else
+        let config = ARWorldTrackingConfiguration()
+        config.frameSemantics = []
+        arSession = ARSession()
+        arSession?.delegate = self
+        arSession?.run(config, options: [.resetTracking, .removeExistingAnchors])
+        print("[PanoramaCapture] ARSession iniciada")
+#endif
+        NotificationCenter.default.post(name: .panoramaCaptureDidStart, object: nil)
+    }
+
+    // MARK: stopCapture()
+
+    /// Detiene la captura y persiste los nodos automáticamente si hay proyecto activo.
+    func stopCapture() {
+        guard isCapturing else { return }
+        isCapturing = false
+
+#if !targetEnvironment(simulator)
+        arSession?.pause()
+        arSession = nil
+#endif
+
+        saveNodes()
+        print("[PanoramaCapture] Captura detenida — \(nodes.count) nodos")
+        NotificationCenter.default.post(name: .panoramaCaptureDidStop, object: nodes)
+    }
+
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: exportPanorama()
+
+    /// Cose todos los frames capturados en una tira horizontal y la guarda en disco.
+    /// - Returns: URL del archivo panorama_stitched.jpg, o nil si falla.
+    @discardableResult
+    func exportPanorama() -> URL? {
+#if targetEnvironment(simulator)
+        return exportSimulatorPlaceholder()
+#else
+        return stitchAndSave()
+#endif
+    }
+
+    // MARK: loadPanorama()
+
+    /// Carga la costura guardada como UIImage.
+    /// En simulador devuelve el placeholder generado.
+    /// - Returns: UIImage del panorama, o nil si no existe.
+    func loadPanorama() -> UIImage? {
+#if targetEnvironment(simulator)
+        return makeSimulatorPlaceholder()
+#else
+        guard let url = stitchedPanoramaURL,
+              fm.fileExists(atPath: url.path) else { return nil }
+        return UIImage(contentsOfFile: url.path)
+#endif
+    }
+
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: capturePanorama(from:)  — alimentado externamente o por ARSessionDelegate
+
+    /// Captura un nodo desde un ARFrame externo (frame del escáner principal).
+    /// Solo registra si se cumplen los umbrales de distancia e intervalo.
     @discardableResult
     func capturePanorama(from frame: ARFrame) -> PanoramaNode? {
+        guard isCapturing || true else { return nil }   // acepta frames externos siempre
+
         let now = Date()
         guard now.timeIntervalSince(lastCaptureTime) >= minCaptureInterval else { return nil }
 
@@ -158,11 +249,9 @@ class PanoramaCaptureManager {
             guard simd_distance(position, last.position) >= minNodeDistance else { return nil }
         }
 
-        // Necesitamos carpeta de proyecto activa
         guard let imagesFolder = activePanoramasFolder else { return nil }
         try? fm.createDirectory(at: imagesFolder, withIntermediateDirectories: true)
 
-        // Guardar imagen JPEG
         let filename = String(format: "panorama_%03d.jpg", nodeCounter + 1)
         let imageURL = imagesFolder.appendingPathComponent(filename)
         if let jpeg = jpegData(from: frame.capturedImage) {
@@ -186,93 +275,66 @@ class PanoramaCaptureManager {
         return node
     }
 
-    // MARK: - saveNodes()
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: Persistencia de nodos
 
-    /// Persiste el array de nodos en `<projectFolder>/panoramaNodes.json`.
     func saveNodes() {
-        guard let folder = activeProjectFolder else {
-            print("[PanoramaCapture] saveNodes: sin proyecto activo")
-            return
-        }
+        guard let folder = activeProjectFolder else { return }
         saveNodes(toFolder: folder)
     }
 
-    /// Versión interna usada por SceneProjectManager.
     func saveNodes(toFolder folder: URL) {
         let url = folder.appendingPathComponent(Self.metadataFileName)
         guard let data = try? JSONEncoder().encode(nodes) else { return }
         try? data.write(to: url, options: .atomic)
-        print("[PanoramaCapture] \(nodes.count) nodos guardados → \(url.lastPathComponent)")
+        print("[PanoramaCapture] \(nodes.count) nodos guardados")
     }
 
-    // MARK: - loadNodes()
-
-    /// Carga los nodos del proyecto activo.
     func loadNodes() {
         guard let folder = activeProjectFolder else { return }
         loadNodes(fromFolder: folder)
     }
 
-    /// Carga nodos desde una carpeta de proyecto explícita.
-    /// Llamado por SceneProjectManager al restaurar un proyecto.
     func loadNodes(fromFolder folder: URL) {
         let url = folder.appendingPathComponent(Self.metadataFileName)
         guard let data   = try? Data(contentsOf: url),
               let loaded = try? JSONDecoder().decode([PanoramaNode].self, from: data)
         else { return }
-
-        nodes        = loaded
-        nodeCounter  = (loaded.last?.index ?? -1) + 1
+        nodes           = loaded
+        nodeCounter     = (loaded.last?.index ?? -1) + 1
         lastCaptureTime = .distantPast
-
-        print("[PanoramaCapture] \(loaded.count) nodos cargados")
+        print("[PanoramaCapture] \(loaded.count) nodos restaurados")
         NotificationCenter.default.post(name: .panoramaNodesLoaded, object: nodes)
     }
 
-    // MARK: - nearestNode(to:)
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: Consultas
 
-    /// Devuelve el nodo más cercano a una posición en espacio mundo.
     func nearestNode(to position: SIMD3<Float>) -> PanoramaNode? {
         nodes.min { simd_distance($0.position, position) < simd_distance($1.position, position) }
     }
 
-    // MARK: - Snapping automático
-
-    /// Indica si `position` está dentro del radio de snap de algún nodo.
     func snapNode(near position: SIMD3<Float>, radius: Float = 0.4) -> PanoramaNode? {
-        guard let nearest = nearestNode(to: position) else { return nil }
-        return simd_distance(nearest.position, position) <= radius ? nearest : nil
+        guard let n = nearestNode(to: position) else { return nil }
+        return simd_distance(n.position, position) <= radius ? n : nil
     }
-
-    // MARK: - Conversión a NavigationManager.CameraNode (para NavigationPlaybackController)
 
     func asCameraNodes() -> [NavigationManager.CameraNode] {
         nodes.enumerated().map { i, n in
-            NavigationManager.CameraNode(
-                index:     i,
-                position:  n.position,
-                forward:   n.forward,
-                transform: n.transform
-            )
+            NavigationManager.CameraNode(index: i, position: n.position,
+                                         forward: n.forward, transform: n.transform)
         }
     }
 
-    // MARK: - Trayectoria (compatibilidad legacy)
-
-    func getTrajectory() -> [SIMD3<Float>] {
-        nodes.map { $0.position }
-    }
+    func getTrajectory() -> [SIMD3<Float>] { nodes.map { $0.position } }
 
     var totalPathLength: Float {
         guard nodes.count > 1 else { return 0 }
-        var total: Float = 0
-        for i in 1..<nodes.count {
-            total += simd_distance(nodes[i].position, nodes[i-1].position)
-        }
-        return total
+        return (1..<nodes.count).reduce(0) { $0 + simd_distance(nodes[$1].position, nodes[$1-1].position) }
     }
 
-    // MARK: - Reset
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: Reset
 
     func reset() {
         nodes           = []
@@ -280,7 +342,82 @@ class PanoramaCaptureManager {
         lastCaptureTime = .distantPast
     }
 
-    // MARK: - JPEG desde CVPixelBuffer
+    // MARK: ─────────────────────────────────────────────────────────────────
+    // MARK: Privado — costura de frames
+
+    /// Cose los JPEGs de todos los nodos en una tira horizontal.
+    private func stitchAndSave() -> URL? {
+        let images: [UIImage] = nodes.compactMap { node in
+            guard fm.fileExists(atPath: node.imageURL.path) else { return nil }
+            return UIImage(contentsOfFile: node.imageURL.path)
+        }
+        guard !images.isEmpty else { return nil }
+
+        let frameW = images[0].size.width
+        let frameH = images[0].size.height
+        let totalW = frameW * CGFloat(images.count)
+        let size   = CGSize(width: totalW, height: frameH)
+
+        UIGraphicsBeginImageContextWithOptions(size, true, 1.0)
+        defer { UIGraphicsEndImageContext() }
+
+        for (i, img) in images.enumerated() {
+            img.draw(in: CGRect(x: frameW * CGFloat(i), y: 0, width: frameW, height: frameH))
+        }
+
+        guard let stitched   = UIGraphicsGetImageFromCurrentImageContext(),
+              let jpegData   = stitched.jpegData(compressionQuality: 0.80),
+              let outputURL  = stitchedPanoramaURL
+        else { return nil }
+
+        try? jpegData.write(to: outputURL, options: .atomic)
+        print("[PanoramaCapture] Panorama guardado → \(outputURL.lastPathComponent) (\(images.count) frames)")
+        NotificationCenter.default.post(name: .panoramaExportDidFinish, object: outputURL)
+        return outputURL
+    }
+
+    // MARK: Simulador — placeholder
+
+    private func exportSimulatorPlaceholder() -> URL? {
+        guard let folder = activeProjectFolder,
+              let jpeg   = makeSimulatorPlaceholder()?.jpegData(compressionQuality: 0.80)
+        else { return nil }
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent(Self.stitchedFileName)
+        try? jpeg.write(to: url, options: .atomic)
+        NotificationCenter.default.post(name: .panoramaExportDidFinish, object: url)
+        return url
+    }
+
+    private func makeSimulatorPlaceholder() -> UIImage? {
+        let size = CGSize(width: 800, height: 400)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            // Fondo degradado azul-gris
+            let colors = [UIColor(red: 0.12, green: 0.18, blue: 0.28, alpha: 1).cgColor,
+                          UIColor(red: 0.22, green: 0.30, blue: 0.42, alpha: 1).cgColor]
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                      colors: colors as CFArray,
+                                      locations: [0, 1])!
+            ctx.cgContext.drawLinearGradient(gradient,
+                                             start: .zero,
+                                             end: CGPoint(x: size.width, y: size.height),
+                                             options: [])
+            // Texto central
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font:            UIFont.systemFont(ofSize: 22, weight: .medium),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.75),
+            ]
+            let label = "Panorama — Simulator Placeholder"
+            let textSize = label.size(withAttributes: attrs)
+            let textRect = CGRect(x: (size.width  - textSize.width)  / 2,
+                                  y: (size.height - textSize.height) / 2,
+                                  width: textSize.width, height: textSize.height)
+            label.draw(in: textRect, withAttributes: attrs)
+        }
+    }
+
+    // MARK: Privado — JPEG desde CVPixelBuffer
 
     private func jpegData(from pixelBuffer: CVPixelBuffer, quality: CGFloat = 0.75) -> Data? {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
@@ -290,12 +427,33 @@ class PanoramaCaptureManager {
     }
 }
 
+// MARK: - ARSessionDelegate (solo dispositivo real)
+
+#if !targetEnvironment(simulator)
+extension PanoramaCaptureManager: ARSessionDelegate {
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        capturePanorama(from: frame)
+    }
+
+    func session(_ session: ARSession, didFailWithError error: Error) {
+        print("[PanoramaCapture] ARSession error: \(error.localizedDescription)")
+        isCapturing = false
+        NotificationCenter.default.post(name: .panoramaCaptureDidStop, object: nil)
+    }
+}
+#endif
+
 // MARK: - Notification.Name
 
 extension Notification.Name {
-    /// Emitida al capturar un nuevo nodo (object: PanoramaNode).
-    static let panoramaNodeAdded   = Notification.Name("mi_render_panoramaNodeAdded")
-
+    /// Emitida al iniciar captura.
+    static let panoramaCaptureDidStart  = Notification.Name("mi_render_panoramaCaptureDidStart")
+    /// Emitida al detener captura (object: [PanoramaNode]).
+    static let panoramaCaptureDidStop   = Notification.Name("mi_render_panoramaCaptureDidStop")
+    /// Emitida al capturar un nodo (object: PanoramaNode).
+    static let panoramaNodeAdded        = Notification.Name("mi_render_panoramaNodeAdded")
     /// Emitida al cargar nodos desde disco (object: [PanoramaNode]).
-    static let panoramaNodesLoaded = Notification.Name("mi_render_panoramaNodesLoaded")
+    static let panoramaNodesLoaded      = Notification.Name("mi_render_panoramaNodesLoaded")
+    /// Emitida al terminar exportPanorama() (object: URL del archivo .jpg).
+    static let panoramaExportDidFinish  = Notification.Name("mi_render_panoramaExportDidFinish")
 }
