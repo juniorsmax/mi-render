@@ -43,8 +43,11 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Clean DerivedData
-        run: rm -rf ~/Library/Developer/Xcode/DerivedData
+      - name: Clean DerivedData and Swift package cache
+        working-directory: ios/App
+        run: |
+          rm -rf ~/Library/Developer/Xcode/DerivedData
+          rm -rf ./SourcePackages
 
       - name: Resolve Swift packages
         working-directory: ios/App
