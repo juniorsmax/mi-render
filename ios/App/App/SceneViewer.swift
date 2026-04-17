@@ -46,6 +46,9 @@ class SceneViewerViewController: UIViewController {
     private var semanticEntities: [ModelEntity] = []
     private var floorPlanOverlay: FloorPlanOverlayEntity?
 
+    // Assets 3D colocados: placementID → AnchorEntity
+    private var placedAssetAnchors: [UUID: AnchorEntity] = [:]
+
     // MARK: - Ciclo de vida
 
     override func viewDidLoad() {
@@ -76,6 +79,11 @@ class SceneViewerViewController: UIViewController {
             self, selector: #selector(onRenderStyleChanged(_:)),
             name: .meshRenderStyleDidChange, object: nil
         )
+        // Observador de solicitud de placement de asset
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onAssetPlacementRequested(_:)),
+            name: .assetPlacementRequested, object: nil
+        )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -84,6 +92,7 @@ class SceneViewerViewController: UIViewController {
         NotificationCenter.default.removeObserver(self, name: .sceneLayerDidChange,      object: nil)
         NotificationCenter.default.removeObserver(self, name: .sceneProjectDidLoad,       object: nil)
         NotificationCenter.default.removeObserver(self, name: .meshRenderStyleDidChange, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .assetPlacementRequested,  object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -500,8 +509,8 @@ extension SceneViewerViewController {
 
             DispatchQueue.main.async {
                 self.displayDescriptors(descriptors, persisted: persisted)
-                // Aplicar el modo de capa guardado
                 self.applySceneLayerMode(mode: SceneLayerManager.shared.currentMode)
+                self.restoreAssetPlacements(for: project)
             }
         }
     }
@@ -1051,5 +1060,121 @@ extension SceneViewerViewController {
                 print("[SceneViewer] Error cargando USDZ: \(error)")
             }
         }
+    }
+}
+
+// MARK: - Asset Placement
+
+extension SceneViewerViewController {
+
+    /// Muestra un picker de categorías y luego de assets para insertar en escena.
+    @objc func onAssetPlacementRequested(_ note: Notification) {
+        AssetLibraryManager.shared.loadAssets()
+        let categories = AssetCategory.allCases
+        let alert = UIAlertController(title: "Insertar Asset", message: "Categoría", preferredStyle: .actionSheet)
+
+        for category in categories {
+            let count = AssetLibraryManager.shared.assets.filter { $0.category == category }.count
+            alert.addAction(UIAlertAction(title: "\(category.displayName) (\(count))", style: .default) { [weak self] _ in
+                self?.showAssetPicker(for: category)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancelar", style: .cancel))
+
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.maxY - 100, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+
+    private func showAssetPicker(for category: AssetCategory) {
+        let items = AssetLibraryManager.shared.assets.filter { $0.category == category }
+        guard !items.isEmpty else {
+            let alert = UIAlertController(title: "Sin assets", message: "No hay archivos en Assets3D/\(category.folderName)/", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            present(alert, animated: true)
+            return
+        }
+
+        let alert = UIAlertController(title: category.displayName, message: "Selecciona un asset", preferredStyle: .actionSheet)
+        for asset in items {
+            alert.addAction(UIAlertAction(title: asset.name, style: .default) { [weak self] _ in
+                self?.placeAsset(asset)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancelar", style: .cancel))
+
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.maxY - 100, width: 0, height: 0)
+        }
+        present(alert, animated: true)
+    }
+
+    private func placeAsset(_ asset: SceneAsset) {
+        // Colocar frente al centro de la escena a ~1.5m
+        let position = SIMD3<Float>(
+            anchorEntity.position.x,
+            anchorEntity.position.y,
+            anchorEntity.position.z - 1.5
+        )
+
+        AssetLibraryManager.shared.placeAsset(asset: asset, at: position, in: arView.scene) { [weak self] anchor in
+            guard let self, let anchor else { return }
+            let placementID = UUID()
+            self.placedAssetAnchors[placementID] = anchor
+
+            if let projectID = SceneLayerManager.shared.currentProjectID {
+                self.savePlacementsForProject(projectID)
+            }
+        }
+    }
+
+    /// Guarda todos los placements actuales para el proyecto indicado.
+    func savePlacementsForProject(_ projectID: UUID) {
+        let fm = FileManager.default
+        guard let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let folder = docsURL.appendingPathComponent("Projects/\(projectID.uuidString)")
+
+        var records: [AssetPlacementRecord] = []
+        for (_, anchor) in placedAssetAnchors {
+            guard anchor.name.hasPrefix("asset_") else { continue }
+            let name = String(anchor.name.dropFirst("asset_".count))
+            guard let asset = AssetLibraryManager.shared.asset(named: name) else { continue }
+            records.append(AssetLibraryManager.shared.record(for: anchor, asset: asset))
+        }
+        AssetLibraryManager.shared.savePlacements(records, toProjectFolder: folder)
+    }
+
+    /// Restaura los placements desde el proyecto cargado.
+    func restoreAssetPlacements(for project: SceneProject) {
+        let folder = project.meshFileURL.deletingLastPathComponent()
+        let records = AssetLibraryManager.shared.loadPlacements(fromProjectFolder: folder)
+        guard !records.isEmpty else { return }
+
+        AssetLibraryManager.shared.loadAssets()
+
+        for record in records {
+            guard let asset = AssetLibraryManager.shared.asset(named: record.assetName) else { continue }
+            AssetLibraryManager.shared.placeAsset(
+                asset: asset,
+                at: record.position,
+                in: arView.scene
+            ) { [weak self] anchor in
+                guard let self, let anchor else { return }
+                anchor.orientation = record.rotation
+                anchor.scale = record.scale
+                self.placedAssetAnchors[record.placementID] = anchor
+            }
+        }
+    }
+
+    /// Elimina todos los anchors de assets colocados.
+    func clearPlacedAssets() {
+        for (_, anchor) in placedAssetAnchors {
+            arView.scene.removeAnchor(anchor)
+        }
+        placedAssetAnchors.removeAll()
     }
 }

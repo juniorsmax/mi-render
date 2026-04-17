@@ -23,6 +23,10 @@ class SceneLayerTogglePanel: UIView {
     private var styleStackView:  UIStackView!
     private var styleButtons: [MeshRenderStyle: UIButton] = [:]
 
+    // MARK: - Subvistas — botón Assets
+
+    private var assetButton: UIButton!
+
     // MARK: - Init
 
     override init(frame: CGRect) {
@@ -77,6 +81,10 @@ class SceneLayerTogglePanel: UIView {
             layerStackView.addArrangedSubview(btn)
             modeButtons[mode] = btn
         }
+
+        // Botón Assets — al final de la fila de capas
+        assetButton = makeAssetButton()
+        layerStackView.addArrangedSubview(assetButton)
 
         // ---- Separador ----
         let separator = UIView()
@@ -186,6 +194,25 @@ class SceneLayerTogglePanel: UIView {
         return button
     }
 
+    // MARK: - Fábrica de botón — Assets
+
+    private func makeAssetButton() -> UIButton {
+        var config = UIButton.Configuration.filled()
+        config.title = "Assets"
+        config.image = UIImage(systemName: "cube.transparent.fill")
+        config.imagePadding = 4
+        config.imagePlacement = .leading
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(scale: .small)
+        config.baseForegroundColor = .white
+        config.baseBackgroundColor = UIColor(red: 0.90, green: 0.55, blue: 0.10, alpha: 0.88)
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9)
+
+        let button = UIButton(configuration: config)
+        button.addTarget(self, action: #selector(assetButtonTapped), for: .touchUpInside)
+        return button
+    }
+
     // MARK: - Acciones
 
     @objc private func layerButtonTapped(_ sender: UIButton) {
@@ -196,6 +223,10 @@ class SceneLayerTogglePanel: UIView {
     @objc private func styleButtonTapped(_ sender: UIButton) {
         guard sender.tag < MeshRenderStyle.allCases.count else { return }
         MeshRenderStyleManager.shared.currentStyle = MeshRenderStyle.allCases[sender.tag]
+    }
+
+    @objc private func assetButtonTapped() {
+        NotificationCenter.default.post(name: .assetPlacementRequested, object: nil)
     }
 
     // MARK: - Observar cambios

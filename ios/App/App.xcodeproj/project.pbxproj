@@ -61,6 +61,7 @@
 		CC000029000000000000001B /* MaterialLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000029000000000000001A /* MaterialLibraryManager.swift */; };
 		CC00002A000000000000001B /* SceneProjectManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002A000000000000001A /* SceneProjectManager.swift */; };
 		CC00002B000000000000001B /* MeshRenderStyleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002B000000000000001A /* MeshRenderStyleManager.swift */; };
+		CC00002C000000000000001B /* AssetLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002C000000000000001A /* AssetLibraryManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -117,6 +118,7 @@
 		CC000029000000000000001A /* MaterialLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLibraryManager.swift; sourceTree = "<group>"; };
 		CC00002A000000000000001A /* SceneProjectManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneProjectManager.swift; sourceTree = "<group>"; };
 		CC00002B000000000000001A /* MeshRenderStyleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeshRenderStyleManager.swift; sourceTree = "<group>"; };
+		CC00002C000000000000001A /* AssetLibraryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssetLibraryManager.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -203,6 +205,7 @@
 				CC000029000000000000001A /* MaterialLibraryManager.swift */,
 				CC00002A000000000000001A /* SceneProjectManager.swift */,
 				CC00002B000000000000001A /* MeshRenderStyleManager.swift */,
+				CC00002C000000000000001A /* AssetLibraryManager.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -340,6 +343,7 @@
 				CC000029000000000000001B /* MaterialLibraryManager.swift in Sources */,
 				CC00002A000000000000001B /* SceneProjectManager.swift in Sources */,
 				CC00002B000000000000001B /* MeshRenderStyleManager.swift in Sources */,
+				CC00002C000000000000001B /* AssetLibraryManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
