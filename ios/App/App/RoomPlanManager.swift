@@ -24,6 +24,9 @@ class RoomPlanManager: NSObject {
     var onRoomUpdated: ((CapturedRoom) -> Void)?
     var onScanComplete: ((CapturedRoom) -> Void)?
 
+    /// Habilita actualizaciones en tiempo real del SceneGraph durante el escaneo.
+    var enableRealtimeSceneGraph: Bool = true
+
     override init() {
         super.init()
         captureSession.delegate = self
@@ -97,6 +100,12 @@ extension RoomPlanManager: RoomCaptureSessionDelegate {
     func captureSession(_ session: RoomCaptureSession,
                         didUpdate room: CapturedRoom) {
         lastCapturedRoom = room
+
+        // Actualizar SceneGraph en tiempo real
+        if enableRealtimeSceneGraph {
+            SceneGraphManager.shared.buildGraph(from: room)
+        }
+
         onRoomUpdated?(room)
     }
 
@@ -112,6 +121,11 @@ extension RoomPlanManager: RoomCaptureSessionDelegate {
         Task {
             if let room = try? await request.capturedRoom(from: data) {
                 self.lastCapturedRoom = room
+
+                // Grafo final con modelo refinado
+                SceneGraphManager.shared.buildGraph(from: room)
+                SceneGraphManager.shared.saveGraph()
+
                 // Generar footprint desde el mesh ARKit capturado durante el escaneo
                 self.buildFloorFootprint()
                 self.onScanComplete?(room)
