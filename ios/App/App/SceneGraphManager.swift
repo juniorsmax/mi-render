@@ -266,10 +266,10 @@ class SceneGraphManager {
         for object in roomPlan.objects {
             let node = SceneNode(
                 type:     .furniture,
-                label:    object.category.rawValue,
+                label:    String(describing: object.category),
                 transform: object.transform,
                 metadata: [
-                    "category": object.category.rawValue,
+                    "category": String(describing: object.category),
                     "width":    String(format: "%.2f", object.dimensions.x),
                     "height":   String(format: "%.2f", object.dimensions.y),
                     "depth":    String(format: "%.2f", object.dimensions.z)

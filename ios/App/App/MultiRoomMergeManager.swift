@@ -101,7 +101,7 @@ private extension CapturedSurface {
         let d = object.dimensions
         let t = object.transform
         self.init(
-            category: object.category.rawValue,
+            category: String(describing: object.category),
             widthM:  d.x, heightM: d.y, depthM: d.z,
             t00: t.columns.0.x, t01: t.columns.0.y,
             t02: t.columns.0.z, t03: t.columns.0.w,
