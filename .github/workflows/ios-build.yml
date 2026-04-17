@@ -84,7 +84,7 @@ jobs:
             ${{ steps.xc_target.outputs.flag_local }} \
             -scheme App \
             -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
             -configuration ${{ inputs.configuration || 'Debug' }} \
             -clonedSourcePackagesDirPath ./SourcePackages \
             CODE_SIGN_IDENTITY="" \
