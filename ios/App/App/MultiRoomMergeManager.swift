@@ -324,7 +324,7 @@ class MultiRoomMergeManager {
             } else if xzDist < 15.0 {
                 // Habitaciones adyacentes: usar delta de centroides proyectado en XZ
                 deltaX = centRef.x - centRoom.x
-                deltaZ = centRef.z - centRoom.z
+                deltaZ = centRef.y - centRoom.y   // SIMD2: .x = worldX, .y = worldZ
             }
             // else: más de 15 m aparte → escaneos independientes, usar fallback X
 
