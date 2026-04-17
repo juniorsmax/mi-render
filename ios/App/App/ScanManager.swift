@@ -203,7 +203,11 @@ extension ScanManager {
                     existing.children.forEach { $0.removeFromParent() }
                     existing.addChild(modelEntity)
                 } else {
+                    #if targetEnvironment(simulator)
+                    let anchorEntity = AnchorEntity(world: .zero)
+                    #else
                     let anchorEntity = AnchorEntity(anchor: anchor)
+                    #endif
                     anchorEntity.name = anchorId
                     anchorEntity.addChild(modelEntity)
                     arView.scene.addAnchor(anchorEntity)
