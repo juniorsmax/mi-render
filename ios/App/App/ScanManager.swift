@@ -28,6 +28,9 @@ class ScanManager: NSObject {
     /// Timestamp del último frame procesado — throttle a 1 fps para onFrameCaptured.
     private var lastFrameTimestamp: TimeInterval = 0
 
+    /// Mapa UUID→AnchorEntity para actualizar entidades de mesh sin recrearlas.
+    private(set) var meshEntities: [UUID: AnchorEntity] = [:]
+
     /// Callback adicional para que LiDARPlugin reciba los anchors directamente.
     var onMeshAnchorsUpdated: (([ARMeshAnchor]) -> Void)?
 
@@ -297,7 +300,10 @@ extension ScanManager: ARSessionDelegate {
     func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         guard !meshAnchors.isEmpty else { return }
-        meshAnchors.forEach { MeshManager.shared.remove(anchor: $0) }
+        meshAnchors.forEach {
+            MeshManager.shared.remove(anchor: $0)
+            removeMeshEntity(for: $0)
+        }
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -326,6 +332,7 @@ extension ScanManager: ARSessionDelegate {
 extension ScanManager {
 
     /// Construye un ModelEntity desde ARMeshAnchor y lo añade/actualiza en ARView.scene.
+    /// Usa meshEntities[uuid] para actualizar sin buscar por nombre.
     func renderMesh(_ anchor: ARMeshAnchor) {
         guard let arView = arView else { return }
 
@@ -340,22 +347,39 @@ extension ScanManager {
             let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
 
             DispatchQueue.main.async {
-                let anchorId = anchor.identifier.uuidString
-                if let existing = arView.scene.anchors.first(
-                    where: { $0.name == anchorId }) as? AnchorEntity {
+                if let existing = self.meshEntities[anchor.identifier] {
+                    // Actualizar ModelEntity existente
                     existing.children.forEach { $0.removeFromParent() }
                     existing.addChild(modelEntity)
                 } else {
+                    // Crear nueva AnchorEntity y registrarla
                     #if targetEnvironment(simulator)
                     let anchorEntity = AnchorEntity(world: .zero)
                     #else
                     let anchorEntity = AnchorEntity(anchor: anchor)
                     #endif
-                    anchorEntity.name = anchorId
+                    anchorEntity.name = anchor.identifier.uuidString
                     anchorEntity.addChild(modelEntity)
                     arView.scene.addAnchor(anchorEntity)
+                    self.meshEntities[anchor.identifier] = anchorEntity
                 }
             }
+        }
+    }
+
+    /// Elimina la AnchorEntity de un anchor del diccionario y de la escena.
+    func removeMeshEntity(for anchor: ARMeshAnchor) {
+        DispatchQueue.main.async {
+            self.meshEntities[anchor.identifier]?.removeFromParent()
+            self.meshEntities.removeValue(forKey: anchor.identifier)
+        }
+    }
+
+    /// Limpia todas las entidades de mesh de la escena.
+    func clearMeshEntities() {
+        DispatchQueue.main.async {
+            self.meshEntities.values.forEach { $0.removeFromParent() }
+            self.meshEntities.removeAll()
         }
     }
 
