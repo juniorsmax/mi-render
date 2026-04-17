@@ -70,6 +70,7 @@
 		CC000032000000000000001B /* InteriorStyleClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000032000000000000001A /* InteriorStyleClassifier.swift */; };
 		CC000033000000000000001B /* SpatialInferencePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000033000000000000001A /* SpatialInferencePipeline.swift */; };
 		CC000034000000000000001B /* ProjectPersistenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000034000000000000001A /* ProjectPersistenceManager.swift */; };
+		CC000035000000000000001B /* ScanViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000035000000000000001A /* ScanViewerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -135,6 +136,7 @@
 		CC000032000000000000001A /* InteriorStyleClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteriorStyleClassifier.swift; sourceTree = "<group>"; };
 		CC000033000000000000001A /* SpatialInferencePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialInferencePipeline.swift; sourceTree = "<group>"; };
 		CC000034000000000000001A /* ProjectPersistenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectPersistenceManager.swift; sourceTree = "<group>"; };
+		CC000035000000000000001A /* ScanViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanViewerView.swift; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -230,6 +232,7 @@
 				CC000032000000000000001A /* InteriorStyleClassifier.swift */,
 				CC000033000000000000001A /* SpatialInferencePipeline.swift */,
 				CC000034000000000000001A /* ProjectPersistenceManager.swift */,
+				CC000035000000000000001A /* ScanViewerView.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -376,6 +379,7 @@
 				CC000032000000000000001B /* InteriorStyleClassifier.swift in Sources */,
 				CC000033000000000000001B /* SpatialInferencePipeline.swift in Sources */,
 				CC000034000000000000001B /* ProjectPersistenceManager.swift in Sources */,
+				CC000035000000000000001B /* ScanViewerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
