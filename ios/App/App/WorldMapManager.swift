@@ -13,7 +13,109 @@ class WorldMapManager {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }()
 
-    // MARK: - Guardar mapa del entorno actual
+    /// Sesión ARKit activa — asignar antes de llamar saveCurrentWorldMap/loadWorldMap.
+    weak var session: ARSession?
+
+    /// ARView activo — necesario para restoreSession(arView:).
+    weak var arView: (AnyObject & ARSessionProviding)?
+
+    // MARK: - saveCurrentWorldMap (por projectId)
+
+    /// Guarda el ARWorldMap activo en Documents/projects/{projectId}/worldMap.arexperience
+    func saveCurrentWorldMap(projectId: UUID,
+                             completion: @escaping (Result<URL, Error>) -> Void) {
+
+        guard let session = session else {
+            completion(.failure(WorldMapError.noSession))
+            return
+        }
+
+        let projectDir = saveDirectory
+            .appendingPathComponent("projects")
+            .appendingPathComponent(projectId.uuidString)
+
+        try? FileManager.default.createDirectory(
+            at: projectDir, withIntermediateDirectories: true)
+
+        let destURL = projectDir.appendingPathComponent("worldMap.arexperience")
+
+        session.getCurrentWorldMap { worldMap, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            guard let worldMap = worldMap else {
+                completion(.failure(WorldMapError.noMap))
+                return
+            }
+
+            do {
+                let data = try NSKeyedArchiver.archivedData(
+                    withRootObject: worldMap, requiringSecureCoding: true)
+                try data.write(to: destURL, options: .atomic)
+                print("[WorldMapManager] guardado → \(destURL.lastPathComponent) "
+                      + "(\(data.count / 1024) KB)")
+                completion(.success(destURL))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+
+    // MARK: - loadWorldMap (por projectId)
+
+    /// Carga worldMap.arexperience del proyecto y reanuda la sesión con initialWorldMap.
+    /// No usa .resetTracking para preservar la alineación de cámara.
+    func loadWorldMap(projectId: UUID,
+                      completion: @escaping (Result<ARWorldMap, Error>) -> Void) {
+
+        let url = saveDirectory
+            .appendingPathComponent("projects")
+            .appendingPathComponent(projectId.uuidString)
+            .appendingPathComponent("worldMap.arexperience")
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            completion(.failure(WorldMapError.fileNotFound(url.path)))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let data = try Data(contentsOf: url)
+                guard let worldMap = try NSKeyedUnarchiver.unarchivedObject(
+                    ofClass: ARWorldMap.self, from: data)
+                else {
+                    DispatchQueue.main.async {
+                        completion(.failure(WorldMapError.decodingFailed))
+                    }
+                    return
+                }
+                print("[WorldMapManager] cargado ← \(url.lastPathComponent)")
+                DispatchQueue.main.async { completion(.success(worldMap)) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
+    /// Carga el worldMap y restaura la sesión ARKit con configuration.initialWorldMap.
+    func loadWorldMapAndRestore(projectId: UUID,
+                                session: ARSession,
+                                completion: @escaping (Bool) -> Void) {
+
+        loadWorldMap(projectId: projectId) { result in
+            switch result {
+            case .failure(let error):
+                print("[WorldMapManager] restore error: \(error.localizedDescription)")
+                completion(false)
+            case .success(let worldMap):
+                self.restoreSession(from: worldMap, session: session)
+                completion(true)
+            }
+        }
+    }
+
+    // MARK: - Guardar mapa del entorno actual (API legacy — nombre libre)
 
     func saveWorldMap(session: ARSession,
                       named name: String,
@@ -62,17 +164,22 @@ class WorldMapManager {
 
     // MARK: - Restaurar sesión desde mapa guardado
 
+    /// Restaura la sesión ARKit con el worldMap dado.
+    /// Usa options: [] para mantener continuidad de transform de cámara.
     func restoreSession(from map: ARWorldMap, session: ARSession) {
         let config = ARWorldTrackingConfiguration()
 
         if ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
             config.sceneReconstruction = .meshWithClassification
+        } else if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            config.sceneReconstruction = .mesh
         }
 
         config.initialWorldMap = map
         config.planeDetection  = [.horizontal, .vertical]
 
-        session.run(config, options: [.resetTracking])
+        // options: [] — NO resetTracking, NO removeExistingAnchors
+        session.run(config, options: [])
     }
 
     // MARK: - Listar mapas guardados
@@ -227,9 +334,16 @@ extension WorldMapManager {
 
 enum WorldMapError: LocalizedError {
     case noMap
+    case noSession
+    case fileNotFound(String)
+    case decodingFailed
+
     var errorDescription: String? {
         switch self {
-        case .noMap: return "No se pudo obtener el mapa del entorno"
+        case .noMap:               return "No se pudo obtener el mapa del entorno"
+        case .noSession:           return "No hay sesión ARKit activa"
+        case .fileNotFound(let p): return "Archivo no encontrado: \(p)"
+        case .decodingFailed:      return "Error al decodificar el ARWorldMap"
         }
     }
 }
