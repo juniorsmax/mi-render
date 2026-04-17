@@ -1,6 +1,7 @@
 // MeshRenderer.swift
-// Renderizado del mesh en pantalla con materiales PBR.
-// Permite visualizar la reconstrucción 3D con texturas físicas realistas.
+// Renderizado del mesh LiDAR como overlay semi-transparente coloreado por clasificación.
+// Usa UnlitMaterial (no escribe depth de forma agresiva, alpha funciona correctamente)
+// para que el mesh sea un overlay visual sin bloquear la cámara AR.
 
 import RealityKit
 import ARKit
@@ -9,51 +10,44 @@ class MeshRenderer {
 
     static let shared = MeshRenderer()
 
-    // MARK: - Material PBR base
+    // MARK: - Material Unlit por clasificación (overlay transparente)
 
-    func createMaterial(roughness: Float = 0.5,
-                        metallic: Float = 0.2,
-                        color: UIColor = .white) -> PhysicallyBasedMaterial {
-
-        var material = PhysicallyBasedMaterial()
-        material.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: roughness)
-        material.metallic  = PhysicallyBasedMaterial.Metallic(floatLiteral: metallic)
-        material.baseColor = .init(tint: color)
-
-        return material
-    }
-
-    // MARK: - Material con color según clasificación
-
-    func material(for classification: ARMeshClassification) -> PhysicallyBasedMaterial {
-
-        var mat = PhysicallyBasedMaterial()
-        mat.roughness = PhysicallyBasedMaterial.Roughness(floatLiteral: 0.8)
-        mat.metallic  = PhysicallyBasedMaterial.Metallic(floatLiteral: 0.0)
-
+    func material(for classification: ARMeshClassification) -> UnlitMaterial {
+        var mat = UnlitMaterial()
         switch classification {
         case .wall:
-            mat.baseColor = .init(tint: UIColor(red: 0.8, green: 0.8, blue: 0.9, alpha: 0.6))
+            mat.color = .init(tint: UIColor(red: 0.55, green: 0.70, blue: 1.00, alpha: 0.45))
         case .floor:
-            mat.baseColor = .init(tint: UIColor(red: 0.6, green: 0.5, blue: 0.4, alpha: 0.6))
+            mat.color = .init(tint: UIColor(red: 0.60, green: 0.85, blue: 0.60, alpha: 0.40))
         case .ceiling:
-            mat.baseColor = .init(tint: UIColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 0.4))
+            mat.color = .init(tint: UIColor(red: 0.90, green: 0.90, blue: 0.95, alpha: 0.30))
         case .table:
-            mat.baseColor = .init(tint: UIColor(red: 0.7, green: 0.5, blue: 0.3, alpha: 0.8))
+            mat.color = .init(tint: UIColor(red: 0.90, green: 0.70, blue: 0.35, alpha: 0.60))
         case .seat:
-            mat.baseColor = .init(tint: UIColor(red: 0.3, green: 0.5, blue: 0.8, alpha: 0.8))
+            mat.color = .init(tint: UIColor(red: 0.35, green: 0.55, blue: 0.90, alpha: 0.60))
         case .window:
-            mat.baseColor = .init(tint: UIColor(red: 0.5, green: 0.8, blue: 0.9, alpha: 0.4))
+            mat.color = .init(tint: UIColor(red: 0.50, green: 0.85, blue: 0.95, alpha: 0.35))
         case .door:
-            mat.baseColor = .init(tint: UIColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 0.8))
+            mat.color = .init(tint: UIColor(red: 0.75, green: 0.50, blue: 0.25, alpha: 0.65))
         default:
-            mat.baseColor = .init(tint: UIColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 0.3))
+            mat.color = .init(tint: UIColor(red: 0.45, green: 0.85, blue: 1.00, alpha: 0.35))
         }
-
         return mat
     }
 
-    // MARK: - Material wireframe (para debug)
+    // MARK: - Material PBR para exportación/visualización offline
+
+    func pbr(roughness: Float = 0.8,
+             metallic: Float = 0.0,
+             color: UIColor = .white) -> PhysicallyBasedMaterial {
+        var mat = PhysicallyBasedMaterial()
+        mat.roughness  = .init(floatLiteral: roughness)
+        mat.metallic   = .init(floatLiteral: metallic)
+        mat.baseColor  = .init(tint: color)
+        return mat
+    }
+
+    // MARK: - Material wireframe (debug)
 
     func wireframeMaterial() -> UnlitMaterial {
         var mat = UnlitMaterial()
@@ -61,12 +55,10 @@ class MeshRenderer {
         return mat
     }
 
-    // MARK: - Entidad de mesh para RealityKit
+    // MARK: - ModelEntity directo
 
     func meshEntity(from mesh: MeshResource,
                     classification: ARMeshClassification = .none) -> ModelEntity {
-
-        let material = self.material(for: classification)
-        return ModelEntity(mesh: mesh, materials: [material])
+        ModelEntity(mesh: mesh, materials: [material(for: classification)])
     }
 }

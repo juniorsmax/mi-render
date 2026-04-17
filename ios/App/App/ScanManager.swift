@@ -37,6 +37,9 @@ class ScanManager: NSObject {
     /// Callback de frame capturado — throttled a 1 fps. Útil para thumbnails.
     var onFrameCaptured: ((ARFrame) -> Void)?
 
+    /// Callback de frame sin throttle — para point cloud en tiempo real.
+    var onEveryFrame: ((ARFrame) -> Void)?
+
     // MARK: - Escaneo completo (modo profesional)
     // Activa sceneReconstruction + sceneDepth + clasificación + planos + occlusion.
 
@@ -307,6 +310,7 @@ extension ScanManager: ARSessionDelegate {
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        onEveryFrame?(frame)
         // Throttle: un frame por segundo para thumbnail/preview
         let now = frame.timestamp
         guard now - lastFrameTimestamp >= 1.0 else { return }
@@ -332,39 +336,50 @@ extension ScanManager: ARSessionDelegate {
 extension ScanManager {
 
     /// Construye un ModelEntity desde ARMeshAnchor y lo añade/actualiza en ARView.scene.
-    /// Usa meshEntities[uuid] para actualizar sin buscar por nombre.
+    /// Usa AnchorEntity(anchor:) para que el mesh siga el tracking de ARKit automáticamente.
     func renderMesh(_ anchor: ARMeshAnchor) {
         guard let arView = arView else { return }
 
+        // Clasificación dominante del anchor para colorear el mesh semánticamente
+        let classification = dominantClassification(of: anchor)
+
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let meshResource = Self.buildMeshResource(from: anchor) else { return }
+            guard let meshResource = Self.buildMeshResource(from: anchor) else {
+                print("[ScanManager] renderMesh: no se pudo generar MeshResource para \(anchor.identifier)")
+                return
+            }
 
-            var material = PhysicallyBasedMaterial()
-            material.baseColor = .init(tint: UIColor(red: 0.5, green: 0.8, blue: 1.0, alpha: 0.6))
-            material.roughness = .init(floatLiteral: 0.8)
-            material.metallic  = .init(floatLiteral: 0.0)
-
+            let material    = MeshRenderer.shared.material(for: classification)
             let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
 
             DispatchQueue.main.async {
                 if let existing = self.meshEntities[anchor.identifier] {
-                    // Actualizar ModelEntity existente
                     existing.children.forEach { $0.removeFromParent() }
                     existing.addChild(modelEntity)
                 } else {
-                    // Crear nueva AnchorEntity y registrarla
                     #if targetEnvironment(simulator)
                     let anchorEntity = AnchorEntity(world: .zero)
                     #else
                     let anchorEntity = AnchorEntity(anchor: anchor)
                     #endif
-                    anchorEntity.name = anchor.identifier.uuidString
+                    anchorEntity.name = "mesh_\(anchor.identifier.uuidString.prefix(8))"
                     anchorEntity.addChild(modelEntity)
                     arView.scene.addAnchor(anchorEntity)
                     self.meshEntities[anchor.identifier] = anchorEntity
                 }
             }
         }
+    }
+
+    /// Infiere la clasificación ARMeshClassification dominante de un anchor.
+    private func dominantClassification(of anchor: ARMeshAnchor) -> ARMeshClassification {
+        let geo = anchor.geometry
+        guard geo.faces.count > 0 else { return .none }
+        var counts: [ARMeshClassification: Int] = [:]
+        for f in 0..<min(geo.faces.count, 200) {   // muestreo de hasta 200 caras
+            counts[geo.faceClassification(at: f), default: 0] += 1
+        }
+        return counts.max(by: { $0.value < $1.value })?.key ?? .none
     }
 
     /// Elimina la AnchorEntity de un anchor del diccionario y de la escena.

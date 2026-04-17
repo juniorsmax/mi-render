@@ -1,10 +1,16 @@
 // ARViewContainer.swift
 // Contenedor SwiftUI del ARView de RealityKit.
-// Pipeline de visualización en tiempo real:
-//   - Mesh semántico desde ARMeshAnchor (coloreado por clasificación)
+//
+// Pipeline de renderizado:
+//   ScanManager es el ÚNICO ARSessionDelegate.
+//   Gestiona la malla LiDAR con AnchorEntity(anchor:) para seguimiento automático.
+//
+// Este Coordinator se encarga de:
 //   - Overlay de superficies RoomPlan durante sesión activa
-//   - Overlay del SceneGraph en debug
-//   - Point cloud desde sceneDepth si LiDAR disponible
+//   - Point cloud desde sceneDepth (via ScanManager.onEveryFrame)
+//   - Tap gesture forwarding
+//
+// NO repite renderizado de mesh — eso lo hace exclusivamente ScanManager.
 
 import SwiftUI
 import ARKit
@@ -36,10 +42,11 @@ struct ARViewContainer: UIViewRepresentable {
         )
         arView.addGestureRecognizer(tapGesture)
 
+        // ScanManager inicia la sesión y se asigna como ÚNICO session.delegate
         ScanManager.shared.startFullScan(arView: arView)
 
         context.coordinator.arView = arView
-        context.coordinator.startObservingMesh()
+        context.coordinator.setupCallbacks(showPointCloud: showPointCloud)
         context.coordinator.connectRoomPlan()
 
         return arView
@@ -56,20 +63,15 @@ struct ARViewContainer: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onTap: onTap, showPointCloud: showPointCloud)
+        Coordinator(onTap: onTap)
     }
 
     // MARK: - Coordinator
 
-    class Coordinator: NSObject, ARSessionDelegate {
+    class Coordinator: NSObject {
 
-        var onTap:        ((CGPoint) -> Void)?
-        var showPointCloud: Bool
-
+        var onTap: ((CGPoint) -> Void)?
         weak var arView: ARView?
-
-        /// ARMeshAnchor → AnchorEntity (mesh LiDAR)
-        private var meshAnchors: [UUID: AnchorEntity] = [:]
 
         /// RoomPlan surface identifier → AnchorEntity (overlay sesión RoomPlan)
         private var roomPlanAnchors: [UUID: AnchorEntity] = [:]
@@ -77,15 +79,18 @@ struct ARViewContainer: UIViewRepresentable {
         /// Point cloud anchor activo
         private var pointCloudAnchor: AnchorEntity?
 
-        init(onTap: ((CGPoint) -> Void)?, showPointCloud: Bool) {
-            self.onTap         = onTap
-            self.showPointCloud = showPointCloud
+        init(onTap: ((CGPoint) -> Void)?) {
+            self.onTap = onTap
         }
 
-        // MARK: - Setup
+        // MARK: - Setup callbacks (en lugar de ser el delegate)
 
-        func startObservingMesh() {
-            arView?.session.delegate = self
+        func setupCallbacks(showPointCloud: Bool) {
+            guard showPointCloud else { return }
+            // Suscribirse al stream de frames de ScanManager para point cloud
+            ScanManager.shared.onEveryFrame = { [weak self] frame in
+                self?.updatePointCloud(frame: frame)
+            }
         }
 
         func connectRoomPlan() {
@@ -116,8 +121,9 @@ struct ARViewContainer: UIViewRepresentable {
                     let mesh = MeshResource.generateBox(
                         size: SIMD3<Float>(d.x, d.y, max(d.z, 0.05))
                     )
-                    let entity = ModelEntity(mesh: mesh)
-                    entity.model?.materials = [SimpleMaterial(color: color, isMetallic: false)]
+                    var mat  = UnlitMaterial()
+                    mat.color = .init(tint: color)
+                    let entity = ModelEntity(mesh: mesh, materials: [mat])
                     let anchor = AnchorEntity(world: surface.transform)
                     anchor.name = "rp_\(surface.identifier.uuidString.prefix(8))"
                     anchor.addChild(entity)
@@ -127,12 +133,10 @@ struct ARViewContainer: UIViewRepresentable {
             }
 
             for object in room.objects {
-                let mesh   = MeshResource.generateBox(size: object.dimensions)
-                let entity = ModelEntity(mesh: mesh)
-                entity.model?.materials = [
-                    SimpleMaterial(color: UIColor(red: 0.3, green: 0.6, blue: 0.3, alpha: 0.6),
-                                   isMetallic: false)
-                ]
+                let mesh = MeshResource.generateBox(size: object.dimensions)
+                var mat  = UnlitMaterial()
+                mat.color = .init(tint: UIColor(red: 0.3, green: 0.7, blue: 0.3, alpha: 0.55))
+                let entity = ModelEntity(mesh: mesh, materials: [mat])
                 let anchor = AnchorEntity(world: object.transform)
                 anchor.name = "rp_obj_\(object.identifier.uuidString.prefix(8))"
                 anchor.addChild(entity)
@@ -146,114 +150,6 @@ struct ARViewContainer: UIViewRepresentable {
         private func clearRoomPlanOverlays(in arView: ARView) {
             roomPlanAnchors.values.forEach { $0.removeFromParent() }
             roomPlanAnchors.removeAll()
-        }
-
-        // MARK: - ARSessionDelegate — mesh LiDAR
-
-        func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-            processAnchors(anchors)
-        }
-
-        func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-            processAnchors(anchors)
-        }
-
-        func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                for anchor in anchors {
-                    self.meshAnchors.removeValue(forKey: anchor.identifier)?.removeFromParent()
-                }
-            }
-        }
-
-        func session(_ session: ARSession, didUpdate frame: ARFrame) {
-            guard showPointCloud else { return }
-            updatePointCloud(frame: frame)
-        }
-
-        // MARK: - Procesar ARMeshAnchor
-
-        private func processAnchors(_ anchors: [ARAnchor]) {
-            let meshes = anchors.compactMap { $0 as? ARMeshAnchor }
-            guard !meshes.isEmpty else { return }
-
-            meshes.forEach { MeshManager.shared.addAnchor($0) }
-            SceneGraphManager.shared.buildGraph(from: MeshManager.shared.meshAnchors)
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self, let arView = self.arView else { return }
-                meshes.forEach { self.renderMeshAnchor($0, in: arView) }
-            }
-        }
-
-        // MARK: - Renderizar ARMeshAnchor
-
-        private func renderMeshAnchor(_ anchor: ARMeshAnchor, in arView: ARView) {
-            guard let descriptor = meshDescriptor(from: anchor.geometry),
-                  let meshResource = try? MeshResource.generate(from: [descriptor]) else { return }
-
-            let modelEntity = ModelEntity(mesh: meshResource)
-
-            // Material visible por defecto; reemplazar con semántico si disponible
-            let classification: ARMeshClassification = anchor.geometry.faces.count > 0
-                ? anchor.geometry.faceClassification(at: 0)
-                : .none
-
-            modelEntity.model?.materials = [
-                classification != .none
-                    ? MeshRenderer.shared.material(for: classification)
-                    : SimpleMaterial(color: .blue.withAlphaComponent(0.4), isMetallic: false)
-            ]
-
-            if let existing = meshAnchors[anchor.identifier] {
-                existing.children.forEach { $0.removeFromParent() }
-                existing.addChild(modelEntity)
-                existing.transform = Transform(matrix: anchor.transform)
-            } else {
-                let anchorEntity = AnchorEntity(world: anchor.transform)
-                anchorEntity.name = "mesh_\(anchor.identifier.uuidString.prefix(8))"
-                anchorEntity.addChild(modelEntity)
-                arView.scene.addAnchor(anchorEntity)
-                meshAnchors[anchor.identifier] = anchorEntity
-            }
-        }
-
-        /// Convierte ARMeshGeometry en MeshDescriptor leyendo directamente los buffers MTL.
-        private func meshDescriptor(from geometry: ARMeshGeometry) -> MeshDescriptor? {
-            let vSrc   = geometry.vertices
-            let fSrc   = geometry.faces
-
-            // Vértices (format .float3, stride >= 12, offset suele ser 0)
-            let vPtr   = vSrc.buffer.contents()
-            var positions = [SIMD3<Float>]()
-            positions.reserveCapacity(vSrc.count)
-            for i in 0..<vSrc.count {
-                let byteOffset = vSrc.offset + i * vSrc.stride
-                let x = vPtr.load(fromByteOffset: byteOffset,     as: Float.self)
-                let y = vPtr.load(fromByteOffset: byteOffset + 4, as: Float.self)
-                let z = vPtr.load(fromByteOffset: byteOffset + 8, as: Float.self)
-                positions.append(SIMD3(x, y, z))
-            }
-
-            // Índices de triángulos (3 índices por cara)
-            let fPtr   = fSrc.buffer.contents()
-            let bpi    = fSrc.bytesPerIndex          // 2 (UInt16) o 4 (UInt32)
-            let total  = fSrc.count * 3
-            var indices = [UInt32]()
-            indices.reserveCapacity(total)
-            for i in 0..<total {
-                let byteOffset = i * bpi
-                let idx: UInt32 = bpi == 2
-                    ? UInt32(fPtr.load(fromByteOffset: byteOffset, as: UInt16.self))
-                    : fPtr.load(fromByteOffset: byteOffset, as: UInt32.self)
-                indices.append(idx)
-            }
-
-            var descriptor = MeshDescriptor(name: "arMesh")
-            descriptor.positions  = MeshBuffer(positions)
-            descriptor.primitives = .triangles(indices)
-            return descriptor
         }
 
         // MARK: - Point cloud (sceneDepth, LiDAR)
@@ -304,8 +200,8 @@ struct ARViewContainer: UIViewRepresentable {
             pointCloudAnchor?.removeFromParent()
 
             let tiny: Float = 0.004
-            var verts    = [SIMD3<Float>]()
-            var indices  = [UInt32]()
+            var verts   = [SIMD3<Float>]()
+            var indices = [UInt32]()
             verts.reserveCapacity(points.count * 3)
             indices.reserveCapacity(points.count * 3)
 
