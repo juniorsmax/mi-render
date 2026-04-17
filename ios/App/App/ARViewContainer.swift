@@ -91,6 +91,17 @@ struct ARViewContainer: UIViewRepresentable {
 
         func startObservingMesh() {
             arView?.session.delegate = self
+
+            // Reconectar mesh cuando RoomPlan emite una sala actualizada (iOS 16+)
+            if #available(iOS 16.0, *) {
+                RoomPlanManager.shared.onRoomUpdated = { [weak self] _ in
+                    guard let self = self, let arView = self.arView else { return }
+                    let anchors = MeshManager.shared.meshAnchors
+                    DispatchQueue.main.async {
+                        anchors.forEach { self.renderMeshAnchor($0, in: arView) }
+                    }
+                }
+            }
         }
 
         // MARK: - ARSessionDelegate — mesh anchors
@@ -149,21 +160,25 @@ struct ARViewContainer: UIViewRepresentable {
                 return
             }
 
-            // Material coloreado por clasificación semántica de la primera cara
+            // ModelEntity con material visible garantizado (azul semitransparente)
+            let modelEntity = ModelEntity(mesh: meshResource)
+            modelEntity.model?.materials = [
+                SimpleMaterial(color: .blue.withAlphaComponent(0.4), isMetallic: false)
+            ]
+
+            // Aplicar material semántico encima si la clasificación es conocida
             let classification: ARMeshClassification = anchor.geometry.faces.count > 0
                 ? anchor.geometry.faceClassification(at: 0)
                 : .none
-
-            let material = MeshRenderer.shared.material(for: classification)
-            let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
+            if classification != .none {
+                modelEntity.model?.materials = [MeshRenderer.shared.material(for: classification)]
+            }
 
             if let existing = meshAnchors[anchor.identifier] {
-                // Actualizar entidad existente
                 existing.children.forEach { $0.removeFromParent() }
                 existing.addChild(modelEntity)
                 existing.transform = Transform(matrix: anchor.transform)
             } else {
-                // Crear nueva AnchorEntity anclada al transform del anchor
                 let anchorEntity = AnchorEntity(world: anchor.transform)
                 anchorEntity.name = "mesh_\(anchor.identifier.uuidString.prefix(8))"
                 anchorEntity.addChild(modelEntity)
