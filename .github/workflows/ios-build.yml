@@ -60,9 +60,6 @@ jobs:
           echo "Using: ${{ steps.xc_target.outputs.type }}"
           xcrun simctl list devices available | grep "iPhone 15" || true
 
-      - name: Install xcpretty
-        run: gem install xcpretty --no-document
-
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData
 
@@ -83,7 +80,7 @@ jobs:
       - name: Build iOS app
         working-directory: ios/App
         run: |
-          set -o pipefail && xcodebuild \
+          xcodebuild \
             ${{ steps.xc_target.outputs.flag_local }} \
             -scheme App \
             -sdk iphonesimulator \
@@ -94,7 +91,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-            clean build 2>&1 | xcpretty
+            clean build
 
       - name: Create .ipa
         working-directory: ios/App
