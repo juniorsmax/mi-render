@@ -81,7 +81,7 @@ class MultiRoomMergeManager {
             }
 
             // 3. Guardar panorama
-            PanoramaCaptureManager.shared.save(named: baseName)
+            PanoramaCaptureManager.shared.saveNodes()
 
             // 4. Registrar habitación
             let surfaces = MeshManager.shared.surfaces
