@@ -63,12 +63,7 @@
 		CC00002B000000000000001B /* MeshRenderStyleManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002B000000000000001A /* MeshRenderStyleManager.swift */; };
 		CC00002C000000000000001B /* AssetLibraryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002C000000000000001A /* AssetLibraryManager.swift */; };
 		CC00002D000000000000001B /* ScanProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002D000000000000001A /* ScanProject.swift */; };
-		CC00002E000000000000001B /* LoRALoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002E000000000000001A /* LoRALoader.swift */; };
-		CC00002F000000000000001B /* SceneSegmentationModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00002F000000000000001A /* SceneSegmentationModel.swift */; };
-		CC000030000000000000001B /* MaterialClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000030000000000000001A /* MaterialClassifier.swift */; };
-		CC000031000000000000001B /* ObjectDetector3D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000031000000000000001A /* ObjectDetector3D.swift */; };
-		CC000032000000000000001B /* InteriorStyleClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000032000000000000001A /* InteriorStyleClassifier.swift */; };
-		CC000033000000000000001B /* SpatialInferencePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000033000000000000001A /* SpatialInferencePipeline.swift */; };
+		/* AI/LoRA files excluded from App target — not compiled */
 		CC000034000000000000001B /* ProjectPersistenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000034000000000000001A /* ProjectPersistenceManager.swift */; };
 		CC000035000000000000001B /* ScanViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000035000000000000001A /* ScanViewerView.swift */; };
 		CC000036000000000000001B /* SceneGraphManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000036000000000000001A /* SceneGraphManager.swift */; };
@@ -381,12 +376,6 @@
 				CC00002B000000000000001B /* MeshRenderStyleManager.swift in Sources */,
 				CC00002C000000000000001B /* AssetLibraryManager.swift in Sources */,
 				CC00002D000000000000001B /* ScanProject.swift in Sources */,
-				CC00002E000000000000001B /* LoRALoader.swift in Sources */,
-				CC00002F000000000000001B /* SceneSegmentationModel.swift in Sources */,
-				CC000030000000000000001B /* MaterialClassifier.swift in Sources */,
-				CC000031000000000000001B /* ObjectDetector3D.swift in Sources */,
-				CC000032000000000000001B /* InteriorStyleClassifier.swift in Sources */,
-				CC000033000000000000001B /* SpatialInferencePipeline.swift in Sources */,
 				CC000034000000000000001B /* ProjectPersistenceManager.swift in Sources */,
 				CC000035000000000000001B /* ScanViewerView.swift in Sources */,
 				CC000036000000000000001B /* SceneGraphManager.swift in Sources */,
