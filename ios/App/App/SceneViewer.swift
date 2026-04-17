@@ -71,13 +71,19 @@ class SceneViewerViewController: UIViewController {
             self, selector: #selector(onSceneProjectDidLoad(_:)),
             name: .sceneProjectDidLoad, object: nil
         )
+        // Observador de cambio de estilo de renderizado
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(onRenderStyleChanged(_:)),
+            name: .meshRenderStyleDidChange, object: nil
+        )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         NotificationCenter.default.removeObserver(self, name: .sceneModeDidChange,       object: nil)
         NotificationCenter.default.removeObserver(self, name: .sceneLayerDidChange,      object: nil)
-        NotificationCenter.default.removeObserver(self, name: .sceneProjectDidLoad,      object: nil)
+        NotificationCenter.default.removeObserver(self, name: .sceneProjectDidLoad,       object: nil)
+        NotificationCenter.default.removeObserver(self, name: .meshRenderStyleDidChange, object: nil)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -151,7 +157,7 @@ class SceneViewerViewController: UIViewController {
             panel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             panel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            panel.heightAnchor.constraint(equalToConstant: 64),
+            panel.heightAnchor.constraint(equalToConstant: 96),
         ])
         sceneLayerPanel = panel
         // Restaurar modo guardado al arrancar
@@ -650,11 +656,7 @@ extension SceneViewerViewController {
 
     func applySolidMaterial() {
         guard let entity = meshEntity else { return }
-        var mat = PhysicallyBasedMaterial()
-        mat.baseColor = .init(tint: UIColor(red: 0.4, green: 0.7, blue: 1.0, alpha: 0.85))
-        mat.roughness = .init(floatLiteral: 0.7)
-        mat.metallic  = .init(floatLiteral: 0.0)
-        entity.model?.materials = [mat]
+        MeshRenderStyleManager.shared.applyStyle(to: entity, category: nil)
     }
 
     func applyWireframeMaterial() {
@@ -662,6 +664,40 @@ extension SceneViewerViewController {
         var mat = UnlitMaterial()
         mat.color = .init(tint: UIColor(red: 0.0, green: 0.9, blue: 0.7, alpha: 0.55))
         entity.model?.materials = [mat]
+    }
+
+    // MARK: - Render style handler
+
+    @objc func onRenderStyleChanged(_ note: Notification) {
+        reapplyRenderStyle()
+    }
+
+    /// Re-aplica el estilo de renderizado activo a todas las entidades visibles.
+    func reapplyRenderStyle() {
+        let mgr  = MeshRenderStyleManager.shared
+        let mode = SceneLayerManager.shared.currentMode
+
+        switch mode {
+        case .meshRaw, .walkthrough, .panoramaNodes:
+            guard let entity = meshEntity else { return }
+            mgr.applyStyle(to: entity, category: nil)
+
+        case .meshSemantic:
+            for entity in semanticEntities {
+                guard let range = entity.name.range(of: "_cls"),
+                      let code  = UInt8(entity.name[range.upperBound...])
+                else { continue }
+                mgr.applyStyle(to: entity, category: MeshCategory.from(arKitCode: code))
+            }
+
+        case .floorplan3D:
+            for entity in floorPlan3DEntities {
+                mgr.applyStyle(to: entity, category: .wall)
+            }
+
+        case .floorplan2D:
+            break   // overlay 2D, sin cambio de material
+        }
     }
 
     // MARK: Modo semántico
@@ -675,12 +711,20 @@ extension SceneViewerViewController {
             guard let self = self else { return }
             let pairs = Self.buildSemanticDescriptors(from: anchors)
             DispatchQueue.main.async {
-                for (desc, color) in pairs {
+                let styleManager = MeshRenderStyleManager.shared
+                for (desc, _) in pairs {
                     guard let mesh = try? MeshResource.generate(from: [desc]) else { continue }
-                    var mat = UnlitMaterial()
-                    mat.color = .init(tint: color)
+                    // Extraer categoría desde el nombre "…_cls<N>"
+                    let category: MeshCategory? = {
+                        guard let r = desc.name.range(of: "_cls"),
+                              let code = UInt8(desc.name[r.upperBound...])
+                        else { return nil }
+                        return MeshCategory.from(arKitCode: code)
+                    }()
+                    let mat = styleManager.material(for: styleManager.currentStyle,
+                                                    category: category)
                     let entity = ModelEntity(mesh: mesh, materials: [mat])
-                    entity.name = desc.name   // preservar nombre para applyMaterialLibrary()
+                    entity.name = desc.name   // preservar nombre para reapplyRenderStyle()
                     entity.position = offset
                     self.anchorEntity.addChild(entity)
                     self.semanticEntities.append(entity)
