@@ -97,22 +97,6 @@ jobs:
           path: ios/App/mi-render.ipa
           retention-days: 30
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: "mi-render build #${{ github.run_number }}"
-          body: |
-            **Commit:** ${{ github.sha }}
-            **Rama:** ${{ github.ref_name }}
-            **SDK:** iphoneos — dispositivo físico
-
-            Instalar con Sideloadly o AltStore.
-          files: ios/App/mi-render.ipa
-          make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build summary
         run: |
           echo "## iOS Build completado" >> $GITHUB_STEP_SUMMARY
