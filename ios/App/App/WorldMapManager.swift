@@ -4,6 +4,7 @@
 // Base para multiusuario y re-scan inteligente.
 
 import ARKit
+import RealityKit
 
 class WorldMapManager {
 
