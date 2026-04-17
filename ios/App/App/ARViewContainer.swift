@@ -2,13 +2,14 @@
 // Contenedor SwiftUI del ARView de RealityKit.
 // Pipeline de visualización en tiempo real:
 //   - Mesh semántico desde ARMeshAnchor (coloreado por clasificación)
+//   - Overlay de superficies RoomPlan durante sesión activa
 //   - Overlay del SceneGraph en debug
 //   - Point cloud desde sceneDepth si LiDAR disponible
 
 import SwiftUI
 import ARKit
 import RealityKit
-import Combine
+import RoomPlan
 
 struct ARViewContainer: UIViewRepresentable {
 
@@ -17,45 +18,34 @@ struct ARViewContainer: UIViewRepresentable {
     var showPointCloud:  Bool = false
 
     func makeUIView(context: Context) -> ARView {
-
         let arView = ARView(frame: .zero)
 
-        // Scene understanding — oclusión + física + mesh clasificado
         arView.environment.sceneUnderstanding.options = [
-            .occlusion,
-            .physics,
-            .receivesLighting,
-            .collision
+            .occlusion, .physics, .receivesLighting, .collision
         ]
 
-        // Debug: wireframe + estadísticas si SceneGraph overlay activo
         #if DEBUG
         if showSceneGraph {
             arView.debugOptions = [.showSceneUnderstanding, .showAnchorGeometry]
         }
         #endif
 
-        // Gesto tap
         let tapGesture = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleTap(_:))
         )
         arView.addGestureRecognizer(tapGesture)
 
-        // Iniciar escaneo
         ScanManager.shared.startFullScan(arView: arView)
 
-        // Conectar delegate de sesión ARKit para mesh LiDAR
         context.coordinator.arView = arView
         context.coordinator.startObservingMesh()
-        // Conectar RoomPlan para overlay en tiempo real durante sesión
         context.coordinator.connectRoomPlan()
 
         return arView
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {
-        // Actualizar opciones debug si cambia showSceneGraph
         #if DEBUG
         if showSceneGraph {
             uiView.debugOptions.insert(.showSceneUnderstanding)
@@ -73,87 +63,81 @@ struct ARViewContainer: UIViewRepresentable {
 
     class Coordinator: NSObject, ARSessionDelegate {
 
-        var onTap: ((CGPoint) -> Void)?
+        var onTap:        ((CGPoint) -> Void)?
         var showPointCloud: Bool
 
         weak var arView: ARView?
 
-        /// ARMeshAnchor → AnchorEntity en escena (mesh LiDAR)
+        /// ARMeshAnchor → AnchorEntity (mesh LiDAR)
         private var meshAnchors: [UUID: AnchorEntity] = [:]
 
-        /// RoomPlan surface → AnchorEntity en escena (overlay sesión RoomPlan)
+        /// RoomPlan surface identifier → AnchorEntity (overlay sesión RoomPlan)
         private var roomPlanAnchors: [UUID: AnchorEntity] = [:]
 
-        /// Entidad raíz del point cloud
+        /// Point cloud anchor activo
         private var pointCloudAnchor: AnchorEntity?
 
         init(onTap: ((CGPoint) -> Void)?, showPointCloud: Bool) {
-            self.onTap        = onTap
+            self.onTap         = onTap
             self.showPointCloud = showPointCloud
         }
 
-        // MARK: - Observar updates de mesh
+        // MARK: - Setup
 
         func startObservingMesh() {
             arView?.session.delegate = self
-            // Mesh desde RoomPlan se genera en captureSession(_:didUpdate:) abajo.
-            // No hay generación de mesh en init/setup.
         }
 
-        // MARK: - RoomPlan captureSession(_:didUpdate:) — mesh en tiempo real
+        func connectRoomPlan() {
+            if #available(iOS 16.0, *) {
+                RoomPlanManager.shared.onRoomUpdated = { [weak self] room in
+                    DispatchQueue.main.async { self?.captureSessionDidUpdate(room: room) }
+                }
+            }
+        }
 
-        /// Llamado desde RoomPlanManager.onRoomUpdated vía connectRoomPlan().
-        /// Genera un ModelEntity por cada superficie de la sala y lo adjunta a la escena.
+        // MARK: - RoomPlan overlay en tiempo real
+
         @available(iOS 16.0, *)
-        func captureSessionDidUpdate(room: CapturedRoom) {
+        private func captureSessionDidUpdate(room: CapturedRoom) {
             guard let arView = arView else { return }
-
-            // Limpiar overlays de sesión anterior
             clearRoomPlanOverlays(in: arView)
-
             var newAnchors: [UUID: AnchorEntity] = [:]
 
-            // Superficies: walls, doors, windows
-            let surfaces: [(surfaces: [CapturedRoom.Surface], color: UIColor)] = [
+            let surfaceGroups: [(surfaces: [CapturedRoom.Surface], color: UIColor)] = [
                 (room.walls,   UIColor(red: 0.8, green: 0.8, blue: 0.9, alpha: 0.5)),
                 (room.doors,   UIColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 0.7)),
                 (room.windows, UIColor(red: 0.5, green: 0.8, blue: 0.9, alpha: 0.4))
             ]
 
-            for (surfaceList, color) in surfaces {
+            for (surfaceList, color) in surfaceGroups {
                 for surface in surfaceList {
-                    let id = surface.identifier
-                    let d  = surface.dimensions
+                    let d    = surface.dimensions
                     let mesh = MeshResource.generateBox(
                         size: SIMD3<Float>(d.x, d.y, max(d.z, 0.05))
                     )
-                    let modelEntity = ModelEntity(mesh: mesh)
-                    modelEntity.model?.materials = [
-                        SimpleMaterial(color: color, isMetallic: false)
-                    ]
+                    let entity = ModelEntity(mesh: mesh)
+                    entity.model?.materials = [SimpleMaterial(color: color, isMetallic: false)]
                     let anchor = AnchorEntity(world: surface.transform)
-                    anchor.name = "rp_\(id.uuidString.prefix(8))"
-                    anchor.addChild(modelEntity)
+                    anchor.name = "rp_\(surface.identifier.uuidString.prefix(8))"
+                    anchor.addChild(entity)
                     arView.scene.addAnchor(anchor)
-                    newAnchors[id] = anchor
+                    newAnchors[surface.identifier] = anchor
                 }
             }
 
-            // Objetos / muebles
             for object in room.objects {
-                let id = object.identifier
-                let d  = object.dimensions
-                let mesh = MeshResource.generateBox(size: d)
-                let modelEntity = ModelEntity(mesh: mesh)
-                modelEntity.model?.materials = [
+                let mesh   = MeshResource.generateBox(size: object.dimensions)
+                let entity = ModelEntity(mesh: mesh)
+                entity.model?.materials = [
                     SimpleMaterial(color: UIColor(red: 0.3, green: 0.6, blue: 0.3, alpha: 0.6),
                                    isMetallic: false)
                 ]
                 let anchor = AnchorEntity(world: object.transform)
-                anchor.name = "rp_obj_\(id.uuidString.prefix(8))"
-                anchor.addChild(modelEntity)
+                anchor.name = "rp_obj_\(object.identifier.uuidString.prefix(8))"
+                anchor.addChild(entity)
                 arView.scene.addAnchor(anchor)
-                newAnchors[id] = anchor
+                newAnchors[object.identifier] = anchor
             }
 
             roomPlanAnchors = newAnchors
@@ -164,38 +148,24 @@ struct ARViewContainer: UIViewRepresentable {
             roomPlanAnchors.removeAll()
         }
 
-        func connectRoomPlan() {
-            if #available(iOS 16.0, *) {
-                RoomPlanManager.shared.onRoomUpdated = { [weak self] room in
-                    DispatchQueue.main.async {
-                        self?.captureSessionDidUpdate(room: room)
-                    }
-                }
-            }
-        }
-
-        // MARK: - ARSessionDelegate — mesh anchors
+        // MARK: - ARSessionDelegate — mesh LiDAR
 
         func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-            processAnchors(anchors, session: session)
+            processAnchors(anchors)
         }
 
         func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-            processAnchors(anchors, session: session)
+            processAnchors(anchors)
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
                 for anchor in anchors {
-                    if let entity = self.meshAnchors.removeValue(forKey: anchor.identifier) {
-                        entity.removeFromParent()
-                    }
+                    self.meshAnchors.removeValue(forKey: anchor.identifier)?.removeFromParent()
                 }
             }
         }
-
-        // MARK: - ARSessionDelegate — frame (point cloud)
 
         func session(_ session: ARSession, didUpdate frame: ARFrame) {
             guard showPointCloud else { return }
@@ -204,45 +174,37 @@ struct ARViewContainer: UIViewRepresentable {
 
         // MARK: - Procesar ARMeshAnchor
 
-        private func processAnchors(_ anchors: [ARAnchor], session: ARSession) {
+        private func processAnchors(_ anchors: [ARAnchor]) {
             let meshes = anchors.compactMap { $0 as? ARMeshAnchor }
             guard !meshes.isEmpty else { return }
 
-            // Actualizar MeshManager
             meshes.forEach { MeshManager.shared.addAnchor($0) }
-
-            // Reconstruir SceneGraph con nuevos anchors
             SceneGraphManager.shared.buildGraph(from: MeshManager.shared.meshAnchors)
 
-            // Renderizar en pantalla
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let arView = self.arView else { return }
-                for meshAnchor in meshes {
-                    self.renderMeshAnchor(meshAnchor, in: arView)
-                }
+                meshes.forEach { self.renderMeshAnchor($0, in: arView) }
             }
         }
 
-        // MARK: - Renderizar un ARMeshAnchor como ModelEntity
+        // MARK: - Renderizar ARMeshAnchor
 
         private func renderMeshAnchor(_ anchor: ARMeshAnchor, in arView: ARView) {
-            guard let meshResource = try? MeshResource.generate(from: anchor.geometry) else {
-                return
-            }
+            guard let descriptor = meshDescriptor(from: anchor.geometry),
+                  let meshResource = try? MeshResource.generate(from: [descriptor]) else { return }
 
-            // ModelEntity con material visible garantizado (azul semitransparente)
             let modelEntity = ModelEntity(mesh: meshResource)
-            modelEntity.model?.materials = [
-                SimpleMaterial(color: .blue.withAlphaComponent(0.4), isMetallic: false)
-            ]
 
-            // Aplicar material semántico encima si la clasificación es conocida
+            // Material visible por defecto; reemplazar con semántico si disponible
             let classification: ARMeshClassification = anchor.geometry.faces.count > 0
                 ? anchor.geometry.faceClassification(at: 0)
                 : .none
-            if classification != .none {
-                modelEntity.model?.materials = [MeshRenderer.shared.material(for: classification)]
-            }
+
+            modelEntity.model?.materials = [
+                classification != .none
+                    ? MeshRenderer.shared.material(for: classification)
+                    : SimpleMaterial(color: .blue.withAlphaComponent(0.4), isMetallic: false)
+            ]
 
             if let existing = meshAnchors[anchor.identifier] {
                 existing.children.forEach { $0.removeFromParent() }
@@ -257,12 +219,48 @@ struct ARViewContainer: UIViewRepresentable {
             }
         }
 
-        // MARK: - Point cloud desde sceneDepth (LiDAR)
+        /// Convierte ARMeshGeometry en MeshDescriptor leyendo directamente los buffers MTL.
+        private func meshDescriptor(from geometry: ARMeshGeometry) -> MeshDescriptor? {
+            let vSrc   = geometry.vertices
+            let fSrc   = geometry.faces
+
+            // Vértices (format .float3, stride >= 12, offset suele ser 0)
+            let vPtr   = vSrc.buffer.contents()
+            var positions = [SIMD3<Float>]()
+            positions.reserveCapacity(vSrc.count)
+            for i in 0..<vSrc.count {
+                let byteOffset = vSrc.offset + i * vSrc.stride
+                let x = vPtr.load(fromByteOffset: byteOffset,     as: Float.self)
+                let y = vPtr.load(fromByteOffset: byteOffset + 4, as: Float.self)
+                let z = vPtr.load(fromByteOffset: byteOffset + 8, as: Float.self)
+                positions.append(SIMD3(x, y, z))
+            }
+
+            // Índices de triángulos (3 índices por cara)
+            let fPtr   = fSrc.buffer.contents()
+            let bpi    = fSrc.bytesPerIndex          // 2 (UInt16) o 4 (UInt32)
+            let total  = fSrc.count * 3
+            var indices = [UInt32]()
+            indices.reserveCapacity(total)
+            for i in 0..<total {
+                let byteOffset = i * bpi
+                let idx: UInt32 = bpi == 2
+                    ? UInt32(fPtr.load(fromByteOffset: byteOffset, as: UInt16.self))
+                    : fPtr.load(fromByteOffset: byteOffset, as: UInt32.self)
+                indices.append(idx)
+            }
+
+            var descriptor = MeshDescriptor(name: "arMesh")
+            descriptor.positions  = MeshBuffer(positions)
+            descriptor.primitives = .triangles(indices)
+            return descriptor
+        }
+
+        // MARK: - Point cloud (sceneDepth, LiDAR)
 
         private func updatePointCloud(frame: ARFrame) {
             guard let depthMap = frame.sceneDepth?.depthMap else { return }
 
-            // Construir posiciones 3D muestreadas (cada 8 píxeles para no saturar)
             let width  = CVPixelBufferGetWidth(depthMap)
             let height = CVPixelBufferGetHeight(depthMap)
             let step   = 8
@@ -273,51 +271,62 @@ struct ARViewContainer: UIViewRepresentable {
             guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return }
             let floatPtr = base.assumingMemoryBound(to: Float32.self)
 
-            let intrinsics = frame.camera.intrinsics
-            let fx = intrinsics[0][0]
-            let fy = intrinsics[1][1]
-            let cx = intrinsics[2][0]
-            let cy = intrinsics[2][1]
+            let intr = frame.camera.intrinsics
+            let fx = intr[0][0], fy = intr[1][1]
+            let cx = intr[2][0], cy = intr[2][1]
 
-            var positions: [SIMD3<Float>] = []
-            positions.reserveCapacity((width / step) * (height / step))
-
+            var points: [SIMD3<Float>] = []
             for row in stride(from: 0, to: height, by: step) {
                 for col in stride(from: 0, to: width, by: step) {
                     let depth = floatPtr[row * width + col]
                     guard depth > 0.1 && depth < 5.0 else { continue }
-                    let x = (Float(col) - cx) / fx * depth
-                    let y = (Float(row) - cy) / fy * depth
-                    positions.append(SIMD3(x, -y, -depth))
+                    points.append(SIMD3(
+                        (Float(col) - cx) / fx * depth,
+                        -(Float(row) - cy) / fy * depth,
+                        -depth
+                    ))
                 }
             }
-
-            guard !positions.isEmpty else { return }
+            guard !points.isEmpty else { return }
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let arView = self.arView else { return }
-                self.renderPointCloud(positions: positions,
+                self.renderPointCloud(points: points,
                                       transform: frame.camera.transform,
                                       in: arView)
             }
         }
 
-        private func renderPointCloud(positions: [SIMD3<Float>],
+        /// Renderiza el point cloud como micro-triángulos (RealityKit no soporta .points).
+        private func renderPointCloud(points: [SIMD3<Float>],
                                       transform: simd_float4x4,
                                       in arView: ARView) {
-            // Eliminar cloud anterior
             pointCloudAnchor?.removeFromParent()
 
-            var meshDescriptor = MeshDescriptor(name: "pointCloud")
-            meshDescriptor.positions = MeshBuffer(positions)
-            meshDescriptor.primitives = .points(Array(UInt32(0)..<UInt32(positions.count)))
+            let tiny: Float = 0.004
+            var verts    = [SIMD3<Float>]()
+            var indices  = [UInt32]()
+            verts.reserveCapacity(points.count * 3)
+            indices.reserveCapacity(points.count * 3)
 
-            guard let mesh = try? MeshResource.generate(from: [meshDescriptor]) else { return }
+            for (i, p) in points.enumerated() {
+                let base = UInt32(i * 3)
+                verts.append(p + SIMD3( 0,     tiny, 0))
+                verts.append(p + SIMD3(-tiny, -tiny, 0))
+                verts.append(p + SIMD3( tiny, -tiny, 0))
+                indices.append(contentsOf: [base, base + 1, base + 2])
+            }
+
+            var descriptor = MeshDescriptor(name: "pointCloud")
+            descriptor.positions  = MeshBuffer(verts)
+            descriptor.primitives = .triangles(indices)
+
+            guard let mesh = try? MeshResource.generate(from: [descriptor]) else { return }
 
             var mat = UnlitMaterial()
             mat.color = .init(tint: UIColor(red: 0.0, green: 0.9, blue: 1.0, alpha: 0.8))
 
-            let cloud = ModelEntity(mesh: mesh, materials: [mat])
+            let cloud  = ModelEntity(mesh: mesh, materials: [mat])
             let anchor = AnchorEntity(world: transform)
             anchor.name = "pointCloud"
             anchor.addChild(cloud)
@@ -328,8 +337,7 @@ struct ARViewContainer: UIViewRepresentable {
         // MARK: - Tap
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            let point = gesture.location(in: gesture.view)
-            onTap?(point)
+            onTap?(gesture.location(in: gesture.view))
         }
     }
 }

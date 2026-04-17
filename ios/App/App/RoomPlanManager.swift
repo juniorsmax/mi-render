@@ -118,7 +118,8 @@ extension RoomPlanManager: RoomCaptureSessionDelegate {
         }
 
         let request = RoomBuilder(options: [.beautifyObjects])
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             if let room = try? await request.capturedRoom(from: data) {
                 self.lastCapturedRoom = room
 

@@ -308,6 +308,8 @@ class MultiRoomMergeManager {
             let floorRoom = floorY(from: mapRoom)
             if let fr = floorRef, let fm = floorRoom {
                 deltaY = fr - fm
+            } else {
+                print("[MultiRoomMerge] Warning: no floor reference found, deltaY = 0")
             }
 
             // — Alineación XZ: centroide de anchors —

@@ -582,10 +582,11 @@ class ScanViewerView: UIView {
 
     // MARK: - Helper
 
-    private func findModelEntity(in entity: Entity) -> ModelEntity? {
+    private func findModelEntity(in entity: Entity, maxDepth: Int = 50) -> ModelEntity? {
+        guard maxDepth > 0 else { return nil }
         if let model = entity as? ModelEntity { return model }
         for child in entity.children {
-            if let found = findModelEntity(in: child) { return found }
+            if let found = findModelEntity(in: child, maxDepth: maxDepth - 1) { return found }
         }
         return nil
     }
