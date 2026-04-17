@@ -8,6 +8,7 @@ import ARKit
 import ModelIO
 import MetalKit
 import simd
+import UIKit
 
 // ── Resultado de cálculo de superficies ──────────────────────────────────────
 
@@ -233,6 +234,152 @@ class MeshManager {
         return asset
     }
 
+    // MARK: - Fusionar anchors en MDLAsset unificado (world-space)
+
+    /// Convierte todos los ARMeshAnchor en MDLMesh con vértices en espacio mundo
+    /// y los añade a un único MDLAsset listo para exportar.
+    func mergedMDLAsset() -> MDLAsset {
+        let asset = MDLAsset()
+        guard let device = MTLCreateSystemDefaultDevice() else { return asset }
+        let allocator = MTKMeshBufferAllocator(device: device)
+
+        for anchor in meshAnchors {
+            guard let mesh = buildWorldSpaceMDLMesh(anchor: anchor,
+                                                     allocator: allocator) else { continue }
+            asset.add(mesh)
+        }
+        return asset
+    }
+
+    /// Exporta el mesh unificado como mesh.usdz en Documents/projects/{projectId}/
+    func exportUnifiedMesh(projectId: UUID,
+                           completion: @escaping (Result<URL, Error>) -> Void) {
+
+        let anchorsSnapshot = meshAnchors
+        guard !anchorsSnapshot.isEmpty else {
+            completion(.failure(MeshExportError.noAnchors))
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            let docs = FileManager.default.urls(for: .documentDirectory,
+                                                in: .userDomainMask)[0]
+            let dir  = docs
+                .appendingPathComponent("projects")
+                .appendingPathComponent(projectId.uuidString)
+
+            do {
+                try FileManager.default.createDirectory(
+                    at: dir, withIntermediateDirectories: true)
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+
+            let usdzURL = dir.appendingPathComponent("mesh.usdz")
+
+            guard let device = MTLCreateSystemDefaultDevice() else {
+                DispatchQueue.main.async {
+                    completion(.failure(MeshExportError.noMetalDevice))
+                }
+                return
+            }
+
+            let allocator = MTKMeshBufferAllocator(device: device)
+            let asset     = MDLAsset()
+
+            for anchor in anchorsSnapshot {
+                if let mesh = self.buildWorldSpaceMDLMesh(anchor: anchor,
+                                                          allocator: allocator) {
+                    asset.add(mesh)
+                }
+            }
+
+            do {
+                try asset.export(to: usdzURL)
+                let size = (try? FileManager.default.attributesOfItem(
+                    atPath: usdzURL.path)[.size] as? Int) ?? 0
+                print("[MeshManager] mesh.usdz exportado — "
+                      + "\(anchorsSnapshot.count) anchors, \(size / 1024) KB")
+                DispatchQueue.main.async { completion(.success(usdzURL)) }
+            } catch {
+                print("[MeshManager] exportUnifiedMesh error: \(error)")
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
+    // MARK: - Helper: MDLMesh con vértices en espacio mundo
+
+    private func buildWorldSpaceMDLMesh(anchor: ARMeshAnchor,
+                                         allocator: MTKMeshBufferAllocator) -> MDLMesh? {
+        let geo       = anchor.geometry
+        let transform = anchor.transform
+        let vBuf      = geo.vertices
+        let fBuf      = geo.faces
+
+        let vPtr    = vBuf.buffer.contents()
+            .advanced(by: vBuf.offset)
+            .assumingMemoryBound(to: Float.self)
+        let vStride = vBuf.stride / MemoryLayout<Float>.stride
+        let iPtr    = fBuf.buffer.contents()
+            .assumingMemoryBound(to: UInt32.self)
+        let iCount  = fBuf.indexCountPerPrimitive
+
+        // Transformar vértices a espacio mundo
+        var worldVerts = [Float]()
+        worldVerts.reserveCapacity(vBuf.count * 3)
+        for i in 0..<vBuf.count {
+            let local = SIMD3<Float>(vPtr[i*vStride],
+                                     vPtr[i*vStride+1],
+                                     vPtr[i*vStride+2])
+            let world = transform * SIMD4<Float>(local, 1)
+            worldVerts.append(world.x)
+            worldVerts.append(world.y)
+            worldVerts.append(world.z)
+        }
+
+        // Índices de caras
+        var indices = [UInt32]()
+        indices.reserveCapacity(fBuf.count * iCount)
+        for f in 0..<fBuf.count {
+            for k in 0..<iCount {
+                indices.append(iPtr[f * iCount + k])
+            }
+        }
+
+        guard !worldVerts.isEmpty, !indices.isEmpty else { return nil }
+
+        let vData   = Data(bytes: worldVerts,
+                           count: worldVerts.count * MemoryLayout<Float>.size)
+        let iData   = Data(bytes: indices,
+                           count: indices.count * MemoryLayout<UInt32>.size)
+        let vBufMDL = allocator.newBuffer(with: vData, type: .vertex)
+        let iBufMDL = allocator.newBuffer(with: iData, type: .index)
+
+        let desc = MDLVertexDescriptor()
+        desc.attributes[0] = MDLVertexAttribute(
+            name: MDLVertexAttributePosition,
+            format: .float3,
+            offset: 0,
+            bufferIndex: 0)
+        desc.layouts[0] = MDLVertexBufferLayout(
+            stride: MemoryLayout<Float>.size * 3)
+
+        let submesh = MDLSubmesh(
+            indexBuffer: iBufMDL,
+            indexCount:  indices.count,
+            indexType:   .uInt32,
+            geometryType: .triangles,
+            material:    nil)
+
+        return MDLMesh(
+            vertexBuffer: vBufMDL,
+            vertexCount:  vBuf.count,
+            descriptor:   desc,
+            submeshes:    [submesh])
+    }
+
     // MARK: - Extraer clasificación de una cara del mesh
 
     func classification(of faceIndex: Int, in anchor: ARMeshAnchor) -> ARMeshClassification {
@@ -411,6 +558,22 @@ class MeshManager {
 
     func anchorsMatching(_ cls: ARMeshClassification) -> [ARMeshAnchor] {
         return anchorsMatching(classification: cls)
+    }
+}
+
+// MARK: - MeshExportError
+
+enum MeshExportError: LocalizedError {
+    case noAnchors
+    case noMetalDevice
+    case exportFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .noAnchors:          return "No hay anchors de mesh disponibles"
+        case .noMetalDevice:      return "No se pudo obtener el dispositivo Metal"
+        case .exportFailed(let m): return "Export fallido: \(m)"
+        }
     }
 }
 
