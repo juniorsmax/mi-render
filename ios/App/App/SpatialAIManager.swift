@@ -1,12 +1,45 @@
 // SpatialAIManager.swift
 // Capa de integración entre el escaneo LiDAR y los modelos LoRA de IA espacial.
-// Orquesta: SceneGraphManager, SpatialInferencePipeline, FloorPlan2DGenerator,
-//           MeshManager y MaterialLibraryManager.
-// Los modelos ML se cargan desde LoRALoader — no hay inferencia directa aquí.
+// Orquesta: SceneGraphManager, FloorPlan2DGenerator, MeshManager.
+// Los modelos LoRA están excluidos del target iOS — hooks preparados para CoreML.
 
 import ARKit
 import RealityKit
 import UIKit
+
+// MARK: - Stub types (LoRA pipeline excluido del target)
+// Estos tipos se sustituirán por los reales cuando los archivos AI/LoRA
+// se reintegren al target con modelos CoreML compilados.
+
+struct SegmentedRegion {
+    var label: String = ""
+    var confidence: Float = 0
+}
+
+struct DetectedObject3D {
+    var label: String = ""
+    var confidence: Float = 0
+    var boundingBox2D: CGRect = .zero
+    var worldPosition: SIMD3<Float> = .zero
+}
+
+struct MaterialPrediction {
+    var material: String = ""
+    var confidence: Float = 0
+    var region: CGRect = .zero
+}
+
+struct RoomTypePrediction {
+    var roomType: RoomTypeLabel = .unknown
+    var confidence: Float = 0
+    enum RoomTypeLabel: String { case unknown, living, bedroom, kitchen, bathroom, office }
+}
+
+struct InteriorStylePrediction {
+    var topStyle: StyleLabel = .unknown
+    var confidence: Float = 0
+    enum StyleLabel: String { case unknown, modern, classic, industrial, nordic }
+}
 
 // MARK: - Estado del manager
 
@@ -21,14 +54,14 @@ enum SpatialAIState {
 // MARK: - Resultado de una operación AI
 
 struct SpatialAIResult {
-    var walls:        [SegmentedRegion]        = []
-    var furniture:    [DetectedObject3D]       = []
-    var materials:    [MaterialPrediction]     = []
+    var walls:        [SegmentedRegion]    = []
+    var furniture:    [DetectedObject3D]   = []
+    var materials:    [MaterialPrediction] = []
     var roomType:     RoomTypePrediction?
     var style:        InteriorStylePrediction?
     var floorplanURL: URL?
-    var meshRefined:  Bool                     = false
-    var timestamp:    Date                     = Date()
+    var meshRefined:  Bool                 = false
+    var timestamp:    Date                 = Date()
 }
 
 // MARK: - SpatialAIManager
@@ -59,76 +92,62 @@ class SpatialAIManager {
     // MARK: - Inicialización
 
     /// Precarga los modelos LoRA en background al iniciar la app.
+    /// TODO: conectar LoRALoader cuando AI/LoRA se reintegre al target.
     func warmUp() {
         state = .loadingModels
-        LoRALoader.shared.preloadAll { [weak self] results in
-            let ready = results.filter { $0.value }.count
-            print("[SpatialAIManager] modelos disponibles: \(ready)/\(results.count)")
-            self?.state = .ready
-        }
+        // Stub: LoRALoader excluido del target iOS
+        // LoRALoader.shared.preloadAll { results in ... }
+        print("[SpatialAIManager] warmUp: LoRA pipeline no disponible (stub)")
+        state = .ready
     }
 
     // MARK: - detectWalls
 
     /// Segmenta las paredes del frame ARKit actual.
+    /// TODO: conectar SpatialInferencePipeline cuando AI/LoRA se reintegre.
     func detectWalls(frame: ARFrame,
                      completion: (([SegmentedRegion]) -> Void)? = nil) {
-
         state = .processing
-
-        SpatialInferencePipeline.shared.detectWalls(frame: frame) { [weak self] walls in
-            guard let self = self else { return }
-            self.lastResult.walls = walls
-            self.onWallsDetected?(walls)
-            completion?(walls)
-            self.state = .ready
-            print("[SpatialAIManager] detectWalls: \(walls.count) paredes")
-        }
+        // Stub: SpatialInferencePipeline excluido del target iOS
+        let walls: [SegmentedRegion] = []
+        lastResult.walls = walls
+        onWallsDetected?(walls)
+        completion?(walls)
+        state = .ready
+        print("[SpatialAIManager] detectWalls: stub (0 paredes)")
     }
 
     // MARK: - detectFurniture
 
     /// Detecta y localiza muebles en el espacio 3D.
+    /// TODO: conectar SpatialInferencePipeline cuando AI/LoRA se reintegre.
     func detectFurniture(frame: ARFrame,
                          completion: (([DetectedObject3D]) -> Void)? = nil) {
-
         state = .processing
-
-        SpatialInferencePipeline.shared.detectFurniture(frame: frame) { [weak self] objects in
-            guard let self = self else { return }
-            self.lastResult.furniture = objects
-            self.onFurnitureFound?(objects)
-            completion?(objects)
-            self.state = .ready
-            print("[SpatialAIManager] detectFurniture: \(objects.count) objetos")
-        }
+        // Stub: SpatialInferencePipeline excluido del target iOS
+        let objects: [DetectedObject3D] = []
+        lastResult.furniture = objects
+        onFurnitureFound?(objects)
+        completion?(objects)
+        state = .ready
+        print("[SpatialAIManager] detectFurniture: stub (0 objetos)")
     }
 
     // MARK: - detectMaterials
 
     /// Clasifica materiales en las regiones detectadas del frame.
-    /// Si no se pasan regiones, usa los bounding boxes de muebles del último resultado.
+    /// TODO: conectar SpatialInferencePipeline cuando AI/LoRA se reintegre.
     func detectMaterials(frame: ARFrame,
                          regions: [CGRect]? = nil,
                          completion: (([MaterialPrediction]) -> Void)? = nil) {
-
         state = .processing
-
-        let targetRegions = regions
-            ?? lastResult.furniture.map { $0.boundingBox2D }
-
-        SpatialInferencePipeline.shared.detectMaterials(
-            frame: frame,
-            regions: targetRegions.isEmpty ? [CGRect(x: 0, y: 0, width: 1, height: 1)]
-                                           : targetRegions
-        ) { [weak self] predictions in
-            guard let self = self else { return }
-            self.lastResult.materials = predictions
-            self.onMaterialsMapped?(predictions)
-            completion?(predictions)
-            self.state = .ready
-            print("[SpatialAIManager] detectMaterials: \(predictions.count) regiones")
-        }
+        // Stub: SpatialInferencePipeline excluido del target iOS
+        let predictions: [MaterialPrediction] = []
+        lastResult.materials = predictions
+        onMaterialsMapped?(predictions)
+        completion?(predictions)
+        state = .ready
+        print("[SpatialAIManager] detectMaterials: stub (0 predicciones)")
     }
 
     // MARK: - generateFloorplan
@@ -142,23 +161,18 @@ class SpatialAIManager {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            // Obtener imagen del plano desde RoomPlanManager (iOS 16+)
-            // o como PNG del plano generado con FloorPlan2DGenerator
             let image: UIImage
             if #available(iOS 16.0, *),
                RoomPlanManager.shared.lastCapturedRoom != nil {
                 image = RoomPlanManager.shared.renderFloorPlan()
+            } else if #available(iOS 16.0, *),
+                      let footprint = RoomPlanManager.shared.floorFootprint {
+                image = PlanRenderer.shared.renderFloorFootprint(footprint,
+                                                                 size: CGSize(width: 800, height: 800))
             } else {
-                // Renderizar footprint del suelo como UIImage 800×800
-                if let footprint = RoomPlanManager.shared.floorFootprint {
-                    image = PlanRenderer.shared.renderFloorFootprint(footprint,
-                                                                     size: CGSize(width: 800, height: 800))
-                } else {
-                    image = UIImage()
-                }
+                image = UIImage()
             }
 
-            // Guardar PNG en el proyecto si hay projectId
             var savedURL: URL? = nil
             if let pid = projectId {
                 let docs = FileManager.default.urls(for: .documentDirectory,
@@ -166,7 +180,7 @@ class SpatialAIManager {
                 let dir  = docs.appendingPathComponent("projects/\(pid.uuidString)")
                 try? FileManager.default.createDirectory(
                     at: dir, withIntermediateDirectories: true)
-                let url  = dir.appendingPathComponent("floorplan.png")
+                let url = dir.appendingPathComponent("floorplan.png")
                 if let data = image.pngData() {
                     try? data.write(to: url, options: .atomic)
                     savedURL = url
@@ -185,74 +199,46 @@ class SpatialAIManager {
 
     // MARK: - refineMesh
 
-    /// Aplica el pipeline de IA para mejorar las clasificaciones semánticas del mesh.
+    /// Aplica mejoras semánticas al mesh usando ARKit.
+    /// TODO: conectar SpatialInferencePipeline cuando AI/LoRA se reintegre.
     func refineMesh(frame: ARFrame,
                     completion: ((Bool) -> Void)? = nil) {
-
         state = .processing
-
+        // Stub: SpatialInferencePipeline excluido del target iOS
+        // Reconstruye el SceneGraph directamente desde los anchors actuales
         let anchors = MeshManager.shared.meshAnchors
-
-        SpatialInferencePipeline.shared.enhanceMesh(
-            frame: frame,
-            anchors: anchors
-        ) { [weak self] refinedAnchors in
-            guard let self = self else { return }
-
-            // Actualizar SceneGraph con el mesh refinado
-            SceneGraphManager.shared.buildGraph(from: refinedAnchors)
-            SceneGraphManager.shared.saveGraph()
-
-            self.lastResult.meshRefined = true
-            self.onMeshRefined?(true)
-            completion?(true)
-            self.state = .ready
-            print("[SpatialAIManager] refineMesh: \(refinedAnchors.count) anchors procesados")
-        }
+        SceneGraphManager.shared.buildGraph(from: anchors)
+        SceneGraphManager.shared.saveGraph()
+        lastResult.meshRefined = true
+        onMeshRefined?(true)
+        completion?(true)
+        state = .ready
+        print("[SpatialAIManager] refineMesh: stub (\(anchors.count) anchors directos)")
     }
 
     // MARK: - Pipeline completo
 
     /// Ejecuta toda la cadena de IA sobre el frame actual.
+    /// TODO: conectar SpatialInferencePipeline cuando AI/LoRA se reintegre.
     func runFullAnalysis(frame: ARFrame,
                          projectId: UUID? = nil,
                          completion: ((SpatialAIResult) -> Void)? = nil) {
-
         state = .processing
+        // Stub: pipeline LoRA no disponible — resultado vacío
+        lastResult = SpatialAIResult()
 
-        SpatialInferencePipeline.shared.runFullPipeline(frame: frame) { [weak self] result in
-            guard let self = self else { return }
-
-            self.lastResult = SpatialAIResult(
-                walls:     result.walls,
-                furniture: result.furniture,
-                materials: result.materials,
-                roomType:  result.roomType,
-                style:     result.style
-            )
-
-            // Actualizar SceneGraph con tipo de habitación detectado
-            if let roomType = result.roomType {
-                SceneGraphManager.shared.updateNode(id: SceneGraphManager.shared.graph.rootId ?? UUID()) {
-                    $0.metadata["roomType"]   = roomType.roomType.rawValue
-                    $0.metadata["roomStyle"]  = result.style?.topStyle.rawValue ?? ""
-                    $0.metadata["confidence"] = String(format: "%.2f", roomType.confidence)
-                }
-            }
-
-            // Generar floorplan si hay proyecto
-            if let pid = projectId {
-                self.generateFloorplan(projectId: pid) { url in
-                    self.lastResult.floorplanURL = url
-                    self.onResultReady?(self.lastResult)
-                    completion?(self.lastResult)
-                    self.state = .ready
-                }
-            } else {
+        if let pid = projectId {
+            generateFloorplan(projectId: pid) { [weak self] url in
+                guard let self = self else { return }
+                self.lastResult.floorplanURL = url
                 self.onResultReady?(self.lastResult)
                 completion?(self.lastResult)
                 self.state = .ready
             }
+        } else {
+            onResultReady?(lastResult)
+            completion?(lastResult)
+            state = .ready
         }
     }
 
@@ -261,14 +247,8 @@ class SpatialAIManager {
     /// Refina la geometría de paredes detectadas.
     /// TODO: conectar inferencia CoreML (LoRA wall segmentation) cuando esté listo.
     func refineWallGeometry(completion: ((Bool) -> Void)? = nil) {
-        // Hook para futura inferencia CoreML:
-        // let model = try? WallRefinementModel(configuration: MLModelConfiguration())
-        // model?.prediction(meshFeatures: ...) → refined wall geometry
-
         let anchors = MeshManager.shared.meshAnchors
         let wallAnchors = anchors.filter { anchor in
-            // Placeholder: filtra anchors clasificados como pared
-            // Cuando CoreML esté listo, reemplazar con predicción semántica
             if #available(iOS 13.4, *) {
                 return anchor.geometry.faces.count > 0
             }
@@ -281,10 +261,6 @@ class SpatialAIManager {
     /// Refina la geometría del suelo detectado.
     /// TODO: conectar inferencia CoreML (LoRA floor segmentation) cuando esté listo.
     func refineFloorGeometry(completion: ((Bool) -> Void)? = nil) {
-        // Hook para futura inferencia CoreML:
-        // let model = try? FloorRefinementModel(configuration: MLModelConfiguration())
-        // model?.prediction(meshFeatures: ...) → refined floor plane
-
         let anchors = MeshManager.shared.meshAnchors
         print("[SpatialAIManager] refineFloorGeometry: \(anchors.count) anchors totales (placeholder)")
         completion?(true)
@@ -294,23 +270,15 @@ class SpatialAIManager {
     /// TODO: umbral de ruido configurable vía CoreML cuando esté listo.
     func removeNoiseFragments(minTriangles: Int = 10,
                               completion: ((Int) -> Void)? = nil) {
-        // Hook para futura inferencia CoreML:
-        // let model = try? NoiseClassifierModel(configuration: MLModelConfiguration())
-        // model?.prediction(faceFeatures: ...) → noise probability per face
-
         let anchors = MeshManager.shared.meshAnchors
         var removedCount = 0
-
         for anchor in anchors {
             let faceCount = anchor.geometry.faces.count
             if faceCount < minTriangles {
-                // Placeholder: en producción, marcar anchor para eliminación del SceneGraph
                 removedCount += faceCount
-                print("[SpatialAIManager] removeNoiseFragments: anchor con \(faceCount) caras marcado como ruido")
             }
         }
-
-        print("[SpatialAIManager] removeNoiseFragments: \(removedCount) caras de ruido identificadas (placeholder)")
+        print("[SpatialAIManager] removeNoiseFragments: \(removedCount) caras de ruido (placeholder)")
         completion?(removedCount)
     }
 
@@ -318,22 +286,14 @@ class SpatialAIManager {
     /// TODO: aplicar Laplacian smoothing o inferencia CoreML cuando esté listo.
     func smoothMeshEdges(iterations: Int = 2,
                          completion: ((Bool) -> Void)? = nil) {
-        // Hook para futura inferencia CoreML:
-        // let model = try? MeshSmoothingModel(configuration: MLModelConfiguration())
-        // model?.prediction(vertexNeighborhood: ...) → smoothed vertex positions
-
-        // Placeholder: en producción, aplicar Laplacian smoothing sobre vértices
-        // Por cada iteración: v_new = (sum(vecinos) / n_vecinos) * factor + v_old * (1 - factor)
         print("[SpatialAIManager] smoothMeshEdges: \(iterations) iteraciones (placeholder)")
         completion?(true)
     }
 
     /// Ejecuta el pipeline completo de refinamiento semántico del mesh.
-    /// Llama a refineWallGeometry → refineFloorGeometry → removeNoiseFragments → smoothMeshEdges.
     func runRefinementPipeline(completion: ((Bool) -> Void)? = nil) {
         state = .processing
-        print("[SpatialAIManager] runRefinementPipeline: iniciando pipeline de refinamiento")
-
+        print("[SpatialAIManager] runRefinementPipeline: iniciando")
         refineWallGeometry { [weak self] _ in
             self?.refineFloorGeometry { _ in
                 self?.removeNoiseFragments { _ in
