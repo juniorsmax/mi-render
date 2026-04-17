@@ -55,6 +55,9 @@ class ScanViewerView: UIView {
     /// AnchorEntity virtual que marca la posición de la cámara en primera persona.
     private(set) var cameraAnchor: AnchorEntity?
 
+    /// AnchorEntity con PerspectiveCamera activo — controla la vista en ambos modos.
+    private var perspCameraAnchor: AnchorEntity?
+
     // MARK: - Estado de cámara orbital
 
     private var azimuth:   Float = 0.30
@@ -156,6 +159,15 @@ class ScanViewerView: UIView {
     // MARK: - Cámara
 
     private func setupCamera() {
+        // RealityKit .nonAR: la cámara se controla via PerspectiveCamera entity.
+        // arView.cameraTransform es get-only; hay que mover el anchor.
+        let cam = PerspectiveCamera()
+        cam.camera.fieldOfViewInDegrees = 60
+        let anchor = AnchorEntity(world: .zero)
+        anchor.name = "perspCamera"
+        anchor.addChild(cam)
+        arView.scene.addAnchor(anchor)
+        perspCameraAnchor = anchor
         updateCameraTransform()
     }
 
@@ -187,7 +199,7 @@ class ScanViewerView: UIView {
         m.columns.2 = SIMD4(-forward.x, -forward.y, -forward.z, 0)
         m.columns.3 = SIMD4( camPos.x,   camPos.y,   camPos.z,  1)
 
-        arView.cameraTransform = Transform(matrix: m)
+        perspCameraAnchor?.move(to: Transform(matrix: m), relativeTo: nil)
     }
 
     // MARK: Cámara primera persona
@@ -208,9 +220,9 @@ class ScanViewerView: UIView {
         m.columns.2 = SIMD4(-forward.x, -forward.y, -forward.z, 0)
         m.columns.3 = SIMD4( fpPosition.x, fpPosition.y, fpPosition.z, 1)
 
-        arView.cameraTransform = Transform(matrix: m)
+        perspCameraAnchor?.move(to: Transform(matrix: m), relativeTo: nil)
 
-        // Actualizar anchor virtual de cámara
+        // Actualizar anchor virtual de cámara (marcador de posición FP)
         cameraAnchor?.move(to: Transform(matrix: m), relativeTo: nil)
     }
 
