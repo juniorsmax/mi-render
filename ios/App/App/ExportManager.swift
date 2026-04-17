@@ -726,6 +726,294 @@ class ExportManager {
         }
     }
 
+    // MARK: - Exportar GLB desde proyecto (mesh.usdz → mesh.glb)
+
+    /// Carga `Documents/projects/{projectId}/mesh.usdz`, lo convierte en un
+    /// glTF 2.0 binario válido (GLB) y lo guarda como `mesh.glb` en la misma carpeta.
+    ///
+    /// Estructura glTF generada:
+    ///   – Una escena con un nodo → un mesh con una sola primitiva
+    ///   – Buffer binario contiguo: POSITION | NORMAL | INDEX
+    ///   – Accessors con min/max para POSITION (requerido por Khronos validator)
+    ///   – Compatible con: Blender, three.js, Babylon.js, model-viewer, Reality Composer
+    func exportGLB(projectId: UUID,
+                   completion: @escaping (Result<URL, Error>) -> Void) {
+
+        let fm      = FileManager.default
+        let projDir = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("projects")
+            .appendingPathComponent(projectId.uuidString)
+        let usdzURL = projDir.appendingPathComponent("mesh.usdz")
+        let glbURL  = projDir.appendingPathComponent("mesh.glb")
+
+        guard fm.fileExists(atPath: usdzURL.path) else {
+            completion(.failure(GLBExportError.usdzNotFound(usdzURL.path)))
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 1. Cargar MDLAsset desde USDZ
+            let asset = MDLAsset(url: usdzURL)
+            asset.loadTextures()
+
+            // 2. Extraer geometría de todos los meshes y fusionarla
+            var mergedGeo = MeshGeometry()
+            var indexOffset: UInt32 = 0
+
+            for i in 0..<asset.count {
+                guard let mesh = asset[i] as? MDLMesh,
+                      let geo  = self.extractGeometry(from: mesh) else { continue }
+
+                mergedGeo.positions.append(contentsOf: geo.positions)
+                mergedGeo.normals.append(contentsOf: geo.normals)
+                // Desplazar índices por el número de vértices ya añadidos
+                mergedGeo.indices.append(contentsOf: geo.indices.map { $0 + indexOffset })
+                indexOffset += UInt32(geo.vertexCount)
+            }
+
+            // Fallback: intentar cargar desde PersistedMeshAnchor si el USDZ no tiene meshes
+            if mergedGeo.vertexCount == 0 {
+                if let anchors = MeshPersistenceManager.shared.load(
+                        from: usdzURL.deletingLastPathComponent()
+                               .appendingPathComponent("mesh.miremesh")) {
+                    for anchor in anchors {
+                        let t = anchor.transformMatrix
+                        var posIdx: UInt32 = 0
+                        var localPositions = [Float]()
+                        for i in stride(from: 0, to: anchor.vertices.count - 2, by: 3) {
+                            let lv  = SIMD4<Float>(anchor.vertices[i],
+                                                   anchor.vertices[i+1],
+                                                   anchor.vertices[i+2], 1)
+                            let wv  = t * lv
+                            localPositions.append(wv.x)
+                            localPositions.append(wv.y)
+                            localPositions.append(wv.z)
+                        }
+                        mergedGeo.positions.append(contentsOf: localPositions)
+                        mergedGeo.indices.append(contentsOf: anchor.faceIndices.map { $0 + indexOffset })
+                        indexOffset += UInt32(localPositions.count / 3)
+                    }
+                }
+            }
+
+            guard mergedGeo.vertexCount > 0, !mergedGeo.indices.isEmpty else {
+                DispatchQueue.main.async {
+                    completion(.failure(GLBExportError.emptyMesh))
+                }
+                return
+            }
+
+            // 3. Construir GLB
+            let glbData = self.buildValidGLB(geo: mergedGeo)
+
+            // 4. Guardar
+            do {
+                try fm.createDirectory(at: projDir, withIntermediateDirectories: true)
+                try glbData.write(to: glbURL, options: .atomic)
+                print("[ExportManager] mesh.glb → \(glbData.count / 1024) KB "
+                      + "(\(mergedGeo.vertexCount) verts, \(mergedGeo.triangleCount) tris)")
+                DispatchQueue.main.async { completion(.success(glbURL)) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error)) }
+            }
+        }
+    }
+
+    // MARK: - Helpers glTF 2.0 internos
+
+    /// Estructura de geometría fusionada lista para exportar.
+    private struct MeshGeometry {
+        var positions: [Float]  = []   // tripletes XYZ
+        var normals:   [Float]  = []   // tripletes XYZ (puede estar vacío)
+        var indices:   [UInt32] = []   // tripletes de triángulo
+        var vertexCount:   Int { positions.count / 3 }
+        var triangleCount: Int { indices.count / 3 }
+        var hasNormals: Bool { normals.count == positions.count }
+    }
+
+    /// Extrae posiciones, normales e índices de un MDLMesh.
+    private func extractGeometry(from mesh: MDLMesh) -> MeshGeometry? {
+        var geo    = MeshGeometry()
+        let desc   = mesh.vertexDescriptor
+        let vCount = mesh.vertexCount
+        guard vCount > 0 else { return nil }
+
+        // ── Posiciones ──────────────────────────────────────────────────────────
+        guard let posAttr  = desc.attributeNamed(MDLVertexAttributePosition),
+              posAttr.bufferIndex < mesh.vertexBuffers.count,
+              let posLayout = desc.layouts[posAttr.bufferIndex] as? MDLVertexBufferLayout
+        else { return nil }
+
+        let posStride = posLayout.stride
+        let posBuf    = mesh.vertexBuffers[posAttr.bufferIndex]
+        let posMap    = posBuf.map()
+        geo.positions.reserveCapacity(vCount * 3)
+        for i in 0..<vCount {
+            let base = i * posStride + posAttr.offset
+            geo.positions.append(posMap.bytes.load(fromByteOffset: base,     as: Float.self))
+            geo.positions.append(posMap.bytes.load(fromByteOffset: base + 4, as: Float.self))
+            geo.positions.append(posMap.bytes.load(fromByteOffset: base + 8, as: Float.self))
+        }
+
+        // ── Normales (opcionales) ───────────────────────────────────────────────
+        if let normAttr   = desc.attributeNamed(MDLVertexAttributeNormal),
+           normAttr.bufferIndex < mesh.vertexBuffers.count,
+           let normLayout = desc.layouts[normAttr.bufferIndex] as? MDLVertexBufferLayout {
+
+            let normStride = normLayout.stride
+            let normBuf    = mesh.vertexBuffers[normAttr.bufferIndex]
+            let normMap    = normBuf.map()
+            geo.normals.reserveCapacity(vCount * 3)
+            for i in 0..<vCount {
+                let base = i * normStride + normAttr.offset
+                geo.normals.append(normMap.bytes.load(fromByteOffset: base,     as: Float.self))
+                geo.normals.append(normMap.bytes.load(fromByteOffset: base + 4, as: Float.self))
+                geo.normals.append(normMap.bytes.load(fromByteOffset: base + 8, as: Float.self))
+            }
+        }
+
+        // ── Índices ─────────────────────────────────────────────────────────────
+        guard let submeshes = mesh.submeshes as? [MDLSubmesh], !submeshes.isEmpty else {
+            return nil
+        }
+        for sub in submeshes {
+            let iMap   = sub.indexBuffer.map()
+            let iCount = sub.indexCount
+            switch sub.indexType {
+            case .uInt32:
+                for j in 0..<iCount {
+                    geo.indices.append(iMap.bytes.load(fromByteOffset: j * 4, as: UInt32.self))
+                }
+            case .uInt16:
+                for j in 0..<iCount {
+                    geo.indices.append(UInt32(iMap.bytes.load(fromByteOffset: j * 2,
+                                                               as: UInt16.self)))
+                }
+            default:
+                break
+            }
+        }
+
+        guard !geo.indices.isEmpty else { return nil }
+        return geo
+    }
+
+    /// Construye un archivo GLB (glTF 2.0 binario) válido desde geometría en memoria.
+    private func buildValidGLB(geo: MeshGeometry) -> Data {
+        // ── 1. Empaquetar buffer binario ──────────────────────────────────────────
+        var bin = Data()
+
+        let posBytes  = geo.positions.withUnsafeBytes { Data($0) }
+        let posOffset = 0
+        let posLen    = posBytes.count
+        bin.append(posBytes)
+        pad4(&bin)
+
+        var normOffset = 0
+        var normLen    = 0
+        if geo.hasNormals {
+            normOffset = bin.count
+            let normBytes = geo.normals.withUnsafeBytes { Data($0) }
+            normLen = normBytes.count
+            bin.append(normBytes)
+            pad4(&bin)
+        }
+
+        let idxOffset = bin.count
+        let idxBytes  = geo.indices.withUnsafeBytes { Data($0) }
+        let idxLen    = idxBytes.count
+        bin.append(idxBytes)
+        pad4(&bin)
+
+        // ── 2. Min/max de posiciones (requerido por Khronos validator) ─────────
+        var minP = [Float](repeating:  Float.greatestFiniteMagnitude, count: 3)
+        var maxP = [Float](repeating: -Float.greatestFiniteMagnitude, count: 3)
+        let vc   = geo.vertexCount
+        for i in 0..<vc {
+            for k in 0..<3 {
+                let v = geo.positions[i * 3 + k]
+                if v < minP[k] { minP[k] = v }
+                if v > maxP[k] { maxP[k] = v }
+            }
+        }
+
+        // ── 3. JSON glTF 2.0 ──────────────────────────────────────────────────
+        var accessors  = [[String: Any]]()
+        var bufViews   = [[String: Any]]()
+        var attributes = [String: Int]()
+
+        // Accessor 0 — POSITION
+        bufViews.append(["buffer": 0, "byteOffset": posOffset,
+                          "byteLength": posLen, "target": 34962])  // ARRAY_BUFFER
+        accessors.append(["bufferView": 0, "byteOffset": 0,
+                           "componentType": 5126,   // FLOAT
+                           "count": vc, "type": "VEC3",
+                           "min": minP.map { Double($0) },
+                           "max": maxP.map { Double($0) }])
+        attributes["POSITION"] = 0
+
+        // Accessor 1 — NORMAL (si existe)
+        if geo.hasNormals {
+            bufViews.append(["buffer": 0, "byteOffset": normOffset,
+                              "byteLength": normLen, "target": 34962])
+            accessors.append(["bufferView": 1, "byteOffset": 0,
+                               "componentType": 5126,
+                               "count": vc, "type": "VEC3"])
+            attributes["NORMAL"] = 1
+        }
+
+        // Accessor índices — INDEX
+        let idxAccIdx = accessors.count
+        let idxBVIdx  = bufViews.count
+        bufViews.append(["buffer": 0, "byteOffset": idxOffset,
+                          "byteLength": idxLen, "target": 34963])  // ELEMENT_ARRAY_BUFFER
+        accessors.append(["bufferView": idxBVIdx, "byteOffset": 0,
+                           "componentType": 5125,   // UNSIGNED_INT
+                           "count": geo.indices.count, "type": "SCALAR"])
+
+        let primitive: [String: Any] = ["attributes": attributes, "indices": idxAccIdx]
+        let gltf: [String: Any] = [
+            "asset":       ["version": "2.0", "generator": "mi-render iOS"],
+            "scene":       0,
+            "scenes":      [["nodes": [0]]],
+            "nodes":       [["mesh": 0, "name": "scan_mesh"]],
+            "meshes":      [["name": "scan_mesh", "primitives": [primitive]]],
+            "accessors":   accessors,
+            "bufferViews": bufViews,
+            "buffers":     [["byteLength": bin.count]]
+        ]
+
+        // ── 4. Serializar JSON ─────────────────────────────────────────────────
+        var jsonData = (try? JSONSerialization.data(withJSONObject: gltf)) ?? Data()
+        // Padear a múltiplo de 4 con espacios (requisito GLB)
+        while jsonData.count % 4 != 0 { jsonData.append(0x20) }
+
+        // ── 5. Ensamblar GLB ───────────────────────────────────────────────────
+        let magic:   UInt32 = 0x46546C67  // "glTF"
+        let version: UInt32 = 2
+        let jsonLen: UInt32 = UInt32(jsonData.count)
+        let binLen:  UInt32 = UInt32(bin.count)
+        let total:   UInt32 = 12 + 8 + jsonLen + 8 + binLen
+
+        var out = Data()
+        func appendU32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { out.append(contentsOf: $0) } }
+
+        // Header
+        appendU32(magic); appendU32(version); appendU32(total)
+        // JSON chunk
+        appendU32(jsonLen); appendU32(0x4E4F534A)  // "JSON"
+        out.append(jsonData)
+        // BIN chunk
+        appendU32(binLen); appendU32(0x004E4942)   // "BIN\0"
+        out.append(bin)
+        return out
+    }
+
+    /// Padea `data` con ceros hasta alcanzar múltiplo de 4.
+    private func pad4(_ data: inout Data) {
+        while data.count % 4 != 0 { data.append(0x00) }
+    }
+
     // MARK: - Exportar todos los formatos de una vez
 
     @available(iOS 16.0, *)
@@ -790,6 +1078,20 @@ class ExportManager {
         binChunk.append(bin)
 
         return header + jsonChunk + binChunk
+    }
+}
+
+// MARK: - GLB Export errors
+
+enum GLBExportError: LocalizedError {
+    case usdzNotFound(String)
+    case emptyMesh
+
+    var errorDescription: String? {
+        switch self {
+        case .usdzNotFound(let path): return "mesh.usdz no encontrado en: \(path)"
+        case .emptyMesh:              return "El asset no contiene geometría exportable"
+        }
     }
 }
 
