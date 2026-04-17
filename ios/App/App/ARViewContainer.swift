@@ -45,9 +45,11 @@ struct ARViewContainer: UIViewRepresentable {
         // Iniciar escaneo
         ScanManager.shared.startFullScan(arView: arView)
 
-        // Conectar delegate de sesión ARKit para recibir mesh updates
+        // Conectar delegate de sesión ARKit para mesh LiDAR
         context.coordinator.arView = arView
         context.coordinator.startObservingMesh()
+        // Conectar RoomPlan para overlay en tiempo real durante sesión
+        context.coordinator.connectRoomPlan()
 
         return arView
     }
@@ -76,8 +78,11 @@ struct ARViewContainer: UIViewRepresentable {
 
         weak var arView: ARView?
 
-        /// Anclas vivas: anchor.identifier → AnchorEntity en escena
+        /// ARMeshAnchor → AnchorEntity en escena (mesh LiDAR)
         private var meshAnchors: [UUID: AnchorEntity] = [:]
+
+        /// RoomPlan surface → AnchorEntity en escena (overlay sesión RoomPlan)
+        private var roomPlanAnchors: [UUID: AnchorEntity] = [:]
 
         /// Entidad raíz del point cloud
         private var pointCloudAnchor: AnchorEntity?
@@ -91,14 +96,79 @@ struct ARViewContainer: UIViewRepresentable {
 
         func startObservingMesh() {
             arView?.session.delegate = self
+            // Mesh desde RoomPlan se genera en captureSession(_:didUpdate:) abajo.
+            // No hay generación de mesh en init/setup.
+        }
 
-            // Reconectar mesh cuando RoomPlan emite una sala actualizada (iOS 16+)
+        // MARK: - RoomPlan captureSession(_:didUpdate:) — mesh en tiempo real
+
+        /// Llamado desde RoomPlanManager.onRoomUpdated vía connectRoomPlan().
+        /// Genera un ModelEntity por cada superficie de la sala y lo adjunta a la escena.
+        @available(iOS 16.0, *)
+        func captureSessionDidUpdate(room: CapturedRoom) {
+            guard let arView = arView else { return }
+
+            // Limpiar overlays de sesión anterior
+            clearRoomPlanOverlays(in: arView)
+
+            var newAnchors: [UUID: AnchorEntity] = [:]
+
+            // Superficies: walls, doors, windows
+            let surfaces: [(surfaces: [CapturedRoom.Surface], color: UIColor)] = [
+                (room.walls,   UIColor(red: 0.8, green: 0.8, blue: 0.9, alpha: 0.5)),
+                (room.doors,   UIColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 0.7)),
+                (room.windows, UIColor(red: 0.5, green: 0.8, blue: 0.9, alpha: 0.4))
+            ]
+
+            for (surfaceList, color) in surfaces {
+                for surface in surfaceList {
+                    let id = surface.identifier
+                    let d  = surface.dimensions
+                    let mesh = MeshResource.generateBox(
+                        size: SIMD3<Float>(d.x, d.y, max(d.z, 0.05))
+                    )
+                    let modelEntity = ModelEntity(mesh: mesh)
+                    modelEntity.model?.materials = [
+                        SimpleMaterial(color: color, isMetallic: false)
+                    ]
+                    let anchor = AnchorEntity(world: surface.transform)
+                    anchor.name = "rp_\(id.uuidString.prefix(8))"
+                    anchor.addChild(modelEntity)
+                    arView.scene.addAnchor(anchor)
+                    newAnchors[id] = anchor
+                }
+            }
+
+            // Objetos / muebles
+            for object in room.objects {
+                let id = object.identifier
+                let d  = object.dimensions
+                let mesh = MeshResource.generateBox(size: d)
+                let modelEntity = ModelEntity(mesh: mesh)
+                modelEntity.model?.materials = [
+                    SimpleMaterial(color: UIColor(red: 0.3, green: 0.6, blue: 0.3, alpha: 0.6),
+                                   isMetallic: false)
+                ]
+                let anchor = AnchorEntity(world: object.transform)
+                anchor.name = "rp_obj_\(id.uuidString.prefix(8))"
+                anchor.addChild(modelEntity)
+                arView.scene.addAnchor(anchor)
+                newAnchors[id] = anchor
+            }
+
+            roomPlanAnchors = newAnchors
+        }
+
+        private func clearRoomPlanOverlays(in arView: ARView) {
+            roomPlanAnchors.values.forEach { $0.removeFromParent() }
+            roomPlanAnchors.removeAll()
+        }
+
+        func connectRoomPlan() {
             if #available(iOS 16.0, *) {
-                RoomPlanManager.shared.onRoomUpdated = { [weak self] _ in
-                    guard let self = self, let arView = self.arView else { return }
-                    let anchors = MeshManager.shared.meshAnchors
+                RoomPlanManager.shared.onRoomUpdated = { [weak self] room in
                     DispatchQueue.main.async {
-                        anchors.forEach { self.renderMeshAnchor($0, in: arView) }
+                        self?.captureSessionDidUpdate(room: room)
                     }
                 }
             }
