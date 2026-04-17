@@ -171,9 +171,7 @@ class FloorplanEditorSyncManager {
             DispatchQueue.main.async {
                 let newTransform = Transform(
                     scale:       SIMD3(edit.width, edit.height, 0.1),
-                    rotation:    simd_quatf(edit.type == .door
-                                            ? matrix_identity_float4x4
-                                            : matrix_identity_float4x4),
+                    rotation:    simd_quatf(matrix_identity_float4x4),
                     translation: edit.center
                 )
                 entity.move(to: newTransform, relativeTo: nil)

@@ -16,8 +16,8 @@ class WorldMapManager {
     /// Sesión ARKit activa — asignar antes de llamar saveCurrentWorldMap/loadWorldMap.
     weak var session: ARSession?
 
-    /// ARView activo — necesario para restoreSession(arView:).
-    weak var arView: (AnyObject & ARSessionProviding)?
+    /// ARView activo — referencia débil para restaurar sesión.
+    weak var arView: ARView?
 
     // MARK: - saveCurrentWorldMap (por projectId)
 

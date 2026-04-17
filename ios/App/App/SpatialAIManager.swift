@@ -142,13 +142,20 @@ class SpatialAIManager {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            // Obtener imagen del plano desde RoomPlanManager o FloorPlan2DGenerator
+            // Obtener imagen del plano desde RoomPlanManager (iOS 16+)
+            // o como PNG del plano generado con FloorPlan2DGenerator
             let image: UIImage
             if #available(iOS 16.0, *),
-               let room = RoomPlanManager.shared.lastCapturedRoom {
+               RoomPlanManager.shared.lastCapturedRoom != nil {
                 image = RoomPlanManager.shared.renderFloorPlan()
             } else {
-                image = FloorPlan2D.shared.render()
+                // Renderizar footprint del suelo como UIImage 800×800
+                if let footprint = RoomPlanManager.shared.floorFootprint {
+                    image = PlanRenderer.shared.renderFloorFootprint(footprint,
+                                                                     size: CGSize(width: 800, height: 800))
+                } else {
+                    image = UIImage()
+                }
             }
 
             // Guardar PNG en el proyecto si hay projectId

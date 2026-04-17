@@ -274,8 +274,8 @@ class SceneGraphManager {
                     "height":   String(format: "%.2f", object.dimensions.y),
                     "depth":    String(format: "%.2f", object.dimensions.z)
                 ],
-                boundingMin: SIMD3(-object.dimensions / 2),
-                boundingMax: SIMD3( object.dimensions / 2)
+                boundingMin: -(object.dimensions / 2),
+                boundingMax:   object.dimensions / 2
             )
             graph.nodes[node.id] = node
             childIds.append(node.id)
@@ -459,8 +459,3 @@ class SceneGraphManager {
     }
 }
 
-// MARK: - SIMD3 helper
-
-private extension SIMD3 where Scalar == Float {
-    init(_ v: SIMD3<Float>) { self = v }
-}
