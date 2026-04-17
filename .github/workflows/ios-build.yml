@@ -35,14 +35,30 @@ jobs:
       - name: Build web
         run: npm run build
 
+      - name: Capacitor sync iOS
+        run: npx cap sync ios
+
+      - name: Detect workspace or project
+        id: xc_target
+        run: |
+          if [ -d "ios/App/App.xcworkspace" ]; then
+            echo "flag=-workspace ios/App/App.xcworkspace" >> $GITHUB_OUTPUT
+            echo "flag_local=-workspace App.xcworkspace"   >> $GITHUB_OUTPUT
+            echo "type=workspace"                          >> $GITHUB_OUTPUT
+            echo "Detected: App.xcworkspace"
+          else
+            echo "flag=-project ios/App/App.xcodeproj"    >> $GITHUB_OUTPUT
+            echo "flag_local=-project App.xcodeproj"      >> $GITHUB_OUTPUT
+            echo "type=project"                            >> $GITHUB_OUTPUT
+            echo "Detected: App.xcodeproj (no xcworkspace found)"
+          fi
+
       - name: Show environment
         run: |
           xcodebuild -version
           swift --version
+          echo "Using: ${{ steps.xc_target.outputs.type }}"
           xcrun simctl list devices available | grep "iPhone 15" || true
-
-      - name: Capacitor sync iOS
-        run: npx cap sync ios
 
       - name: Install xcpretty
         run: gem install xcpretty --no-document
@@ -54,19 +70,26 @@ jobs:
         working-directory: ios/App
         run: |
           xcodebuild -resolvePackageDependencies \
-            -workspace App.xcworkspace \
+            ${{ steps.xc_target.outputs.flag_local }} \
             -scheme App \
             -clonedSourcePackagesDirPath ./SourcePackages
 
+      - name: List schemes (debug)
+        working-directory: ios/App
+        run: |
+          xcodebuild -list \
+            ${{ steps.xc_target.outputs.flag_local }} || true
+
       - name: Build iOS app
+        working-directory: ios/App
         run: |
           set -o pipefail && xcodebuild \
-            -workspace ios/App/App.xcworkspace \
+            ${{ steps.xc_target.outputs.flag_local }} \
             -scheme App \
             -sdk iphonesimulator \
             -destination 'platform=iOS Simulator,name=iPhone 15' \
             -configuration ${{ inputs.configuration || 'Debug' }} \
-            -clonedSourcePackagesDirPath ios/App/SourcePackages \
+            -clonedSourcePackagesDirPath ./SourcePackages \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
@@ -99,4 +122,5 @@ jobs:
           echo "- **Rama:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Config:** ${{ inputs.configuration || 'Debug' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tipo:** ${{ steps.xc_target.outputs.type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Artefacto:** mi-render-ios-build-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
