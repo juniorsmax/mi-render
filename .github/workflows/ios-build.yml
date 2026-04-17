@@ -7,9 +7,9 @@ on:
     inputs:
       configuration:
         description: 'Build configuration'
-        default: 'Debug'
+        default: 'Release'
         type: choice
-        options: [Debug, Release]
+        options: [Release, Debug]
 
 jobs:
   build-ios:
@@ -38,27 +38,10 @@ jobs:
       - name: Capacitor sync iOS
         run: npx cap sync ios
 
-      - name: Detect workspace or project
-        id: xc_target
-        run: |
-          if [ -d "ios/App/App.xcworkspace" ]; then
-            echo "flag=-workspace ios/App/App.xcworkspace" >> $GITHUB_OUTPUT
-            echo "flag_local=-workspace App.xcworkspace"   >> $GITHUB_OUTPUT
-            echo "type=workspace"                          >> $GITHUB_OUTPUT
-            echo "Detected: App.xcworkspace"
-          else
-            echo "flag=-project ios/App/App.xcodeproj"    >> $GITHUB_OUTPUT
-            echo "flag_local=-project App.xcodeproj"      >> $GITHUB_OUTPUT
-            echo "type=project"                            >> $GITHUB_OUTPUT
-            echo "Detected: App.xcodeproj (no xcworkspace found)"
-          fi
-
       - name: Show environment
         run: |
           xcodebuild -version
           swift --version
-          echo "Using: ${{ steps.xc_target.outputs.type }}"
-          xcrun simctl list devices available | grep "iPhone 15" || true
 
       - name: Clean DerivedData
         run: rm -rf ~/Library/Developer/Xcode/DerivedData
@@ -67,42 +50,48 @@ jobs:
         working-directory: ios/App
         run: |
           xcodebuild -resolvePackageDependencies \
-            ${{ steps.xc_target.outputs.flag_local }} \
+            -project App.xcodeproj \
             -scheme App \
             -clonedSourcePackagesDirPath ./SourcePackages
 
       - name: List schemes (debug)
         working-directory: ios/App
         run: |
-          xcodebuild -list \
-            ${{ steps.xc_target.outputs.flag_local }} || true
+          xcodebuild -list -project App.xcodeproj || true
 
-      - name: Build iOS app
+      - name: Archive iOS app
         working-directory: ios/App
         run: |
           xcodebuild \
-            ${{ steps.xc_target.outputs.flag_local }} \
+            -project App.xcodeproj \
             -scheme App \
-            -sdk iphonesimulator \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
-            -configuration ${{ inputs.configuration || 'Debug' }} \
+            -configuration Release \
+            -sdk iphoneos \
+            archive \
+            -archivePath build/App.xcarchive \
             -clonedSourcePackagesDirPath ./SourcePackages \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
-            clean build
+            IPHONEOS_DEPLOYMENT_TARGET=15.0
 
-      - name: Create .ipa
+      - name: Export IPA
         working-directory: ios/App
         run: |
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" \
-            -not -path "*/Test*.app" | head -1)
-          echo "Found .app: $APP_PATH"
-          mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
-          zip -r mi-render.ipa Payload/
-          rm -rf Payload
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Locate and rename IPA
+        working-directory: ios/App
+        run: |
+          IPA=$(find build -name "*.ipa" | head -1)
+          echo "Found IPA: $IPA"
+          cp "$IPA" mi-render.ipa
           ls -lh mi-render.ipa
 
       - name: Upload IPA artifact
@@ -118,6 +107,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Rama:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Config:** ${{ inputs.configuration || 'Debug' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tipo:** ${{ steps.xc_target.outputs.type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **SDK:** iphoneos (dispositivo físico)" >> $GITHUB_STEP_SUMMARY
           echo "- **Artefacto:** mi-render-ios-build-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
