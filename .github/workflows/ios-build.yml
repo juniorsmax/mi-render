@@ -80,8 +80,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath ios/App/build/App.xcarchive \
             -exportOptionsPlist ios/App/ExportOptions.plist \
-            -exportPath ios/App/build \
-            -allowProvisioningUpdates
+            -exportPath ios/App/build
 
       - name: Locate and rename IPA
         working-directory: ios/App
