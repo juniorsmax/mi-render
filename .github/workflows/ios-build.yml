@@ -75,12 +75,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             IPHONEOS_DEPLOYMENT_TARGET=15.0
 
-      - name: Export IPA
+      - name: Create unsigned IPA from xcarchive
         run: |
-          xcodebuild -exportArchive \
-            -archivePath ios/App/build/App.xcarchive \
-            -exportOptionsPlist ios/App/ExportOptions.plist \
-            -exportPath ios/App/build
+          mkdir Payload
+          cp -R ios/App/build/App.xcarchive/Products/Applications/App.app Payload/
+          zip -r mi-render.ipa Payload
+          mv mi-render.ipa ios/App/build/
 
       - name: Locate and rename IPA
         working-directory: ios/App
