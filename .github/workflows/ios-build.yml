@@ -76,15 +76,12 @@ jobs:
             IPHONEOS_DEPLOYMENT_TARGET=15.0
 
       - name: Export IPA
-        working-directory: ios/App
         run: |
           xcodebuild -exportArchive \
-            -archivePath build/App.xcarchive \
-            -exportOptionsPlist ExportOptions.plist \
-            -exportPath build \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            -archivePath ios/App/build/App.xcarchive \
+            -exportOptionsPlist ios/App/ExportOptions.plist \
+            -exportPath ios/App/build \
+            -allowProvisioningUpdates
 
       - name: Locate and rename IPA
         working-directory: ios/App
