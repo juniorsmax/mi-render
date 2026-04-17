@@ -62,6 +62,10 @@ struct CapturedFrame: Codable {
     let imageWidth:    Int
     let imageHeight:   Int
 
+    // Referencia de alineación de profundidad
+    let depthConfidence: Float?      // 0–1 promedio del depth map (nil si no disponible)
+    let hasDepthData:    Bool        // true si el frame tenía sceneDepth
+
     // Helpers computados (no persistidos)
     var position: SIMD3<Float> { SIMD3(px, py, pz) }
 
@@ -237,7 +241,7 @@ final class PanoramaCaptureManager: NSObject {
     private var activeProjectFolder: URL? {
         guard let id = SceneLayerManager.shared.currentProjectID else { return nil }
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent("Projects/\(id.uuidString)")
+        return docs.appendingPathComponent("projects/\(id.uuidString)")
     }
 
     private var panoramasFolder: URL? {
@@ -400,6 +404,33 @@ final class PanoramaCaptureManager: NSObject {
         let intr = frame.camera.intrinsics
         let imgSize = frame.camera.imageResolution
 
+        // Profundidad — disponible solo en dispositivos con LiDAR
+        let depthConf: Float?
+        let hasDepth: Bool
+#if !targetEnvironment(simulator)
+        if let depthMap = frame.sceneDepth?.confidenceMap {
+            let width  = CVPixelBufferGetWidth(depthMap)
+            let height = CVPixelBufferGetHeight(depthMap)
+            CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+            if let base = CVPixelBufferGetBaseAddress(depthMap) {
+                let ptr   = base.assumingMemoryBound(to: UInt8.self)
+                let count = width * height
+                var sum: Int = 0
+                for i in 0..<count { sum += Int(ptr[i]) }
+                let avg = Float(sum) / Float(count * 2)   // ARConfidenceLevel max = 2
+                depthConf = avg
+            } else { depthConf = nil }
+            CVPixelBufferUnlockBaseAddress(depthMap, .readOnly)
+            hasDepth = true
+        } else {
+            depthConf = nil
+            hasDepth  = false
+        }
+#else
+        depthConf = nil
+        hasDepth  = false
+#endif
+
         let cf = CapturedFrame(
             id:           UUID(),
             index:        nodeCounter,
@@ -412,8 +443,10 @@ final class PanoramaCaptureManager: NSObject {
             t30: t.columns.3.x, t31: t.columns.3.y, t32: t.columns.3.z, t33: t.columns.3.w,
             focalLengthX: intr[0][0], focalLengthY: intr[1][1],
             principalX:   intr[2][0], principalY:   intr[2][1],
-            imageWidth:  Int(imgSize.width),
-            imageHeight: Int(imgSize.height)
+            imageWidth:   Int(imgSize.width),
+            imageHeight:  Int(imgSize.height),
+            depthConfidence: depthConf,
+            hasDepthData:    hasDepth
         )
         capturedFrames.append(cf)
 
@@ -463,6 +496,140 @@ final class PanoramaCaptureManager: NSObject {
         guard nodes.count > 1 else { return 0 }
         return (1..<nodes.count).reduce(0) {
             $0 + simd_distance(nodes[$1].position, nodes[$1-1].position)
+        }
+    }
+
+    // MARK: ═══════════════════════════════════════════════════════════════
+    // MARK: capturePanoramaNode(from:projectId:)
+
+    /// Captura un nodo de panorama para un proyecto específico.
+    /// Guarda la imagen directamente en `Documents/projects/{projectId}/panoramas/`.
+    /// - Returns: PanoramaNode creado, o nil si no se cumplen los umbrales.
+    @discardableResult
+    func capturePanoramaNode(from frame: ARFrame, projectId: UUID) -> PanoramaNode? {
+        let now = Date()
+        guard now.timeIntervalSince(lastCaptureTime) >= minCaptureInterval else { return nil }
+
+        let t        = frame.camera.transform
+        let position = SIMD3<Float>(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+
+        if let last = nodes.last,
+           simd_distance(position, last.position) < minNodeDistance { return nil }
+
+        let docs        = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let projectDir  = docs.appendingPathComponent("projects/\(projectId.uuidString)")
+        let imagesDir   = projectDir.appendingPathComponent(Self.imagesFolderName)
+        try? fm.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+
+        let filename = String(format: "panorama_%03d.jpg", nodeCounter + 1)
+        let imageURL = imagesDir.appendingPathComponent(filename)
+        if let jpeg = jpegData(from: frame.capturedImage) {
+            try? jpeg.write(to: imageURL, options: .atomic)
+        }
+
+        let intr    = frame.camera.intrinsics
+        let imgSize = frame.camera.imageResolution
+
+        let node = PanoramaNode(
+            id:        UUID(),
+            position:  position,
+            transform: t,
+            imageURL:  imageURL,
+            timestamp: now,
+            index:     nodeCounter
+        )
+        nodes.append(node)
+        nodeCounter    += 1
+        lastCaptureTime = now
+
+        NotificationCenter.default.post(name: .panoramaNodeAdded, object: node)
+        return node
+    }
+
+    // MARK: savePanorama(projectId:completion:)
+
+    /// Guarda la sesión completa de panoramas para el proyecto indicado.
+    /// Escribe: session.json, panoramaNodes.json, capturedFrames.json.
+    func savePanorama(projectId: UUID, completion: ((Bool) -> Void)? = nil) {
+        let docs       = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let projectDir = docs.appendingPathComponent("projects/\(projectId.uuidString)")
+
+        let sessionCopy = currentSession
+        let nodesCopy   = nodes
+        let framesCopy  = capturedFrames
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { completion?(false); return }
+            do {
+                try self.fm.createDirectory(at: projectDir, withIntermediateDirectories: true)
+                let enc = JSONEncoder()
+                enc.dateEncodingStrategy = .iso8601
+
+                if let session = sessionCopy {
+                    let data = try enc.encode(session)
+                    try data.write(to: projectDir.appendingPathComponent(Self.sessionFileName),
+                                   options: .atomic)
+                }
+                let nodesData  = try enc.encode(nodesCopy)
+                let framesData = try enc.encode(framesCopy)
+                try nodesData.write(to: projectDir.appendingPathComponent(Self.metadataFileName),
+                                    options: .atomic)
+                try framesData.write(to: projectDir.appendingPathComponent(Self.framesFileName),
+                                     options: .atomic)
+
+                print("[PanoramaCapture] savePanorama → projects/\(projectId.uuidString) "
+                      + "(\(nodesCopy.count) nodos)")
+                DispatchQueue.main.async { completion?(true) }
+            } catch {
+                print("[PanoramaCapture] savePanorama error: \(error)")
+                DispatchQueue.main.async { completion?(false) }
+            }
+        }
+    }
+
+    // MARK: loadPanoramaNodes(projectId:completion:)
+
+    /// Carga nodos de panorama desde `Documents/projects/{projectId}/`.
+    /// Restaura `nodes`, `capturedFrames` y `currentSession`.
+    func loadPanoramaNodes(projectId: UUID, completion: ((Bool) -> Void)? = nil) {
+        let docs       = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let projectDir = docs.appendingPathComponent("projects/\(projectId.uuidString)")
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { completion?(false); return }
+            let dec = JSONDecoder()
+            dec.dateDecodingStrategy = .iso8601
+
+            var loadedNodes:  [PanoramaNode]  = []
+            var loadedFrames: [CapturedFrame] = []
+            var loadedSession: CaptureSession?
+
+            if let data = try? Data(contentsOf: projectDir.appendingPathComponent(Self.metadataFileName)),
+               let parsed = try? dec.decode([PanoramaNode].self, from: data) {
+                loadedNodes = parsed
+            }
+            if let data = try? Data(contentsOf: projectDir.appendingPathComponent(Self.framesFileName)),
+               let parsed = try? dec.decode([CapturedFrame].self, from: data) {
+                loadedFrames = parsed
+            }
+            if let data = try? Data(contentsOf: projectDir.appendingPathComponent(Self.sessionFileName)),
+               let parsed = try? dec.decode(CaptureSession.self, from: data) {
+                loadedSession = parsed
+            }
+
+            let success = !loadedNodes.isEmpty
+
+            DispatchQueue.main.async {
+                self.nodes          = loadedNodes
+                self.capturedFrames = loadedFrames
+                self.currentSession = loadedSession
+                self.nodeCounter    = (loadedNodes.last?.index ?? -1) + 1
+                self.lastCaptureTime = .distantPast
+                print("[PanoramaCapture] loadPanoramaNodes ← projects/\(projectId.uuidString) "
+                      + "(\(loadedNodes.count) nodos)")
+                NotificationCenter.default.post(name: .panoramaNodesLoaded, object: loadedNodes)
+                completion?(success)
+            }
         }
     }
 
