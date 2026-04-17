@@ -256,6 +256,97 @@ class SpatialAIManager {
         }
     }
 
+    // MARK: - Semantic Mesh Refinement Pipeline
+
+    /// Refina la geometría de paredes detectadas.
+    /// TODO: conectar inferencia CoreML (LoRA wall segmentation) cuando esté listo.
+    func refineWallGeometry(completion: ((Bool) -> Void)? = nil) {
+        // Hook para futura inferencia CoreML:
+        // let model = try? WallRefinementModel(configuration: MLModelConfiguration())
+        // model?.prediction(meshFeatures: ...) → refined wall geometry
+
+        let anchors = MeshManager.shared.meshAnchors
+        let wallAnchors = anchors.filter { anchor in
+            // Placeholder: filtra anchors clasificados como pared
+            // Cuando CoreML esté listo, reemplazar con predicción semántica
+            if #available(iOS 13.4, *) {
+                return anchor.geometry.faces.count > 0
+            }
+            return false
+        }
+        print("[SpatialAIManager] refineWallGeometry: \(wallAnchors.count) anchors de pared (placeholder)")
+        completion?(true)
+    }
+
+    /// Refina la geometría del suelo detectado.
+    /// TODO: conectar inferencia CoreML (LoRA floor segmentation) cuando esté listo.
+    func refineFloorGeometry(completion: ((Bool) -> Void)? = nil) {
+        // Hook para futura inferencia CoreML:
+        // let model = try? FloorRefinementModel(configuration: MLModelConfiguration())
+        // model?.prediction(meshFeatures: ...) → refined floor plane
+
+        let anchors = MeshManager.shared.meshAnchors
+        print("[SpatialAIManager] refineFloorGeometry: \(anchors.count) anchors totales (placeholder)")
+        completion?(true)
+    }
+
+    /// Elimina fragmentos de ruido del mesh (triángulos aislados, micro-clusters).
+    /// TODO: umbral de ruido configurable vía CoreML cuando esté listo.
+    func removeNoiseFragments(minTriangles: Int = 10,
+                              completion: ((Int) -> Void)? = nil) {
+        // Hook para futura inferencia CoreML:
+        // let model = try? NoiseClassifierModel(configuration: MLModelConfiguration())
+        // model?.prediction(faceFeatures: ...) → noise probability per face
+
+        let anchors = MeshManager.shared.meshAnchors
+        var removedCount = 0
+
+        for anchor in anchors {
+            let faceCount = anchor.geometry.faces.count
+            if faceCount < minTriangles {
+                // Placeholder: en producción, marcar anchor para eliminación del SceneGraph
+                removedCount += faceCount
+                print("[SpatialAIManager] removeNoiseFragments: anchor con \(faceCount) caras marcado como ruido")
+            }
+        }
+
+        print("[SpatialAIManager] removeNoiseFragments: \(removedCount) caras de ruido identificadas (placeholder)")
+        completion?(removedCount)
+    }
+
+    /// Suaviza los bordes del mesh para reducir artefactos de digitalización.
+    /// TODO: aplicar Laplacian smoothing o inferencia CoreML cuando esté listo.
+    func smoothMeshEdges(iterations: Int = 2,
+                         completion: ((Bool) -> Void)? = nil) {
+        // Hook para futura inferencia CoreML:
+        // let model = try? MeshSmoothingModel(configuration: MLModelConfiguration())
+        // model?.prediction(vertexNeighborhood: ...) → smoothed vertex positions
+
+        // Placeholder: en producción, aplicar Laplacian smoothing sobre vértices
+        // Por cada iteración: v_new = (sum(vecinos) / n_vecinos) * factor + v_old * (1 - factor)
+        print("[SpatialAIManager] smoothMeshEdges: \(iterations) iteraciones (placeholder)")
+        completion?(true)
+    }
+
+    /// Ejecuta el pipeline completo de refinamiento semántico del mesh.
+    /// Llama a refineWallGeometry → refineFloorGeometry → removeNoiseFragments → smoothMeshEdges.
+    func runRefinementPipeline(completion: ((Bool) -> Void)? = nil) {
+        state = .processing
+        print("[SpatialAIManager] runRefinementPipeline: iniciando pipeline de refinamiento")
+
+        refineWallGeometry { [weak self] _ in
+            self?.refineFloorGeometry { _ in
+                self?.removeNoiseFragments { _ in
+                    self?.smoothMeshEdges { success in
+                        self?.state = .ready
+                        print("[SpatialAIManager] runRefinementPipeline: completado")
+                        completion?(success ?? false)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Reset
 
     func reset() {
