@@ -1,8 +1,8 @@
 // AssetLibraryManager.swift
 // Gestiona la biblioteca de assets 3D para insertar en la escena LiDAR.
-// Escanea Bundle.main/Assets3D/<category>/ en busca de .usdz, .reality, .obj.
-// Coloca assets como AnchorEntity(world:) en la escena RealityKit.
-// Persiste los placements en Documents/Projects/<id>/assetPlacements.json.
+// Soporta: .usdz, .reality, .obj, .glb
+// Organiza por categoría, tipo de habitación y estilo de interior.
+// Persiste los placements en Documents/projects/<id>/assetPlacements.json.
 
 import UIKit
 import RealityKit
@@ -43,12 +43,76 @@ enum AssetCategory: String, CaseIterable, Codable {
     }
 }
 
+// MARK: - AssetRoomType
+
+enum AssetRoomType: String, CaseIterable, Codable {
+    case any         = "any"
+    case livingRoom  = "livingRoom"
+    case bedroom     = "bedroom"
+    case kitchen     = "kitchen"
+    case bathroom    = "bathroom"
+    case office      = "office"
+    case diningRoom  = "diningRoom"
+
+    var displayName: String {
+        switch self {
+        case .any:        return "Todos"
+        case .livingRoom: return "Salón"
+        case .bedroom:    return "Dormitorio"
+        case .kitchen:    return "Cocina"
+        case .bathroom:   return "Baño"
+        case .office:     return "Oficina"
+        case .diningRoom: return "Comedor"
+        }
+    }
+}
+
+// MARK: - AssetStyle
+
+enum AssetStyle: String, CaseIterable, Codable {
+    case any          = "any"
+    case modern       = "modern"
+    case minimalist   = "minimalist"
+    case industrial   = "industrial"
+    case scandinavian = "scandinavian"
+    case classic      = "classic"
+    case rustic       = "rustic"
+
+    var displayName: String {
+        switch self {
+        case .any:          return "Todos"
+        case .modern:       return "Moderno"
+        case .minimalist:   return "Minimalista"
+        case .industrial:   return "Industrial"
+        case .scandinavian: return "Escandinavo"
+        case .classic:      return "Clásico"
+        case .rustic:       return "Rústico"
+        }
+    }
+}
+
+// MARK: - Formato de archivo
+
+enum AssetFormat: String, Codable {
+    case usdz    = "usdz"
+    case reality = "reality"
+    case obj     = "obj"
+    case glb     = "glb"
+
+    var isNativeRealityKit: Bool {
+        self == .usdz || self == .reality
+    }
+}
+
 // MARK: - SceneAsset
 
 struct SceneAsset: Identifiable, Hashable {
     let id:       UUID
     let name:     String
     let category: AssetCategory
+    let roomType: AssetRoomType
+    let style:    AssetStyle
+    let format:   AssetFormat
     let fileURL:  URL
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -91,14 +155,16 @@ class AssetLibraryManager {
     /// Todos los assets descubiertos en el bundle.
     private(set) var assets: [SceneAsset] = []
 
-    private static let placementsFileName = "assetPlacements.json"
-    private static let supportedExtensions = ["usdz", "reality", "obj"]
+    private static let placementsFileName  = "assetPlacements.json"
+    private static let supportedExtensions = ["usdz", "reality", "obj", "glb"]
 
     private init() {}
 
-    // MARK: - Carga de assets del bundle
+    // MARK: - Carga del catálogo
 
     /// Escanea Bundle.main/Assets3D/<category>/ y puebla `assets`.
+    /// Infiere roomType y style desde el nombre del archivo:
+    ///   sofa_modern_livingRoom.usdz → style=modern, roomType=livingRoom
     func loadAssets() {
         var discovered: [SceneAsset] = []
         let fm = FileManager.default
@@ -118,18 +184,130 @@ class AssetLibraryManager {
 
             for url in contents {
                 let ext = url.pathExtension.lowercased()
-                guard Self.supportedExtensions.contains(ext) else { continue }
-                let assetName = url.deletingPathExtension().lastPathComponent
+                guard Self.supportedExtensions.contains(ext),
+                      let format = AssetFormat(rawValue: ext) else { continue }
+
+                let baseName  = url.deletingPathExtension().lastPathComponent
+                let (room, style) = inferTags(from: baseName)
+
                 discovered.append(SceneAsset(
                     id:       UUID(),
-                    name:     assetName,
+                    name:     baseName,
                     category: category,
+                    roomType: room,
+                    style:    style,
+                    format:   format,
                     fileURL:  url
                 ))
             }
         }
 
         assets = discovered
+        print("[AssetLibraryManager] \(assets.count) assets cargados "
+              + "(\(assets.filter { $0.format == .glb }.count) GLB, "
+              + "\(assets.filter { $0.format == .usdz }.count) USDZ, "
+              + "\(assets.filter { $0.format == .obj }.count) OBJ)")
+    }
+
+    // MARK: - loadAsset(name:)
+
+    /// Carga un asset por nombre y devuelve la Entity lista para usar.
+    func loadAsset(name: String,
+                   completion: @escaping (Entity?) -> Void) {
+
+        guard let asset = asset(named: name) else {
+            print("[AssetLibraryManager] asset '\(name)' no encontrado")
+            completion(nil)
+            return
+        }
+        loadAsset(asset, completion: completion)
+    }
+
+    /// Carga un SceneAsset y devuelve la Entity.
+    func loadAsset(_ asset: SceneAsset,
+                   completion: @escaping (Entity?) -> Void) {
+
+        let url = asset.fileURL
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let entity = try Entity.load(contentsOf: url)
+                DispatchQueue.main.async { completion(entity) }
+            } catch {
+                print("[AssetLibraryManager] error cargando \(url.lastPathComponent): \(error)")
+                DispatchQueue.main.async { completion(nil) }
+            }
+        }
+    }
+
+    // MARK: - insertAsset(into scene:)
+
+    /// Inserta un asset (por nombre) en la escena en la posición indicada.
+    @discardableResult
+    func insertAsset(name: String,
+                     at position: SIMD3<Float> = .zero,
+                     into scene: RealityKit.Scene,
+                     completion: ((AnchorEntity?) -> Void)? = nil) -> Bool {
+
+        guard let asset = asset(named: name) else {
+            completion?(nil)
+            return false
+        }
+        insertAsset(asset, at: position, into: scene, completion: completion)
+        return true
+    }
+
+    /// Inserta un SceneAsset en la escena en la posición indicada.
+    func insertAsset(_ asset: SceneAsset,
+                     at position: SIMD3<Float> = .zero,
+                     into scene: RealityKit.Scene,
+                     completion: ((AnchorEntity?) -> Void)? = nil) {
+
+        loadAsset(asset) { entity in
+            guard let entity = entity else {
+                completion?(nil)
+                return
+            }
+            let anchor = AnchorEntity(world: position)
+            anchor.name = "asset_\(asset.id.uuidString)"
+            anchor.addChild(entity)
+            scene.addAnchor(anchor)
+            completion?(anchor)
+
+            NotificationCenter.default.post(
+                name: .assetPlacedInScene,
+                object: AssetPlacementInfo(asset: asset, anchor: anchor)
+            )
+            print("[AssetLibraryManager] insertado '\(asset.name)' en \(position)")
+        }
+    }
+
+    // MARK: - Filtros
+
+    /// Assets filtrados por categoría.
+    func assets(in category: AssetCategory) -> [SceneAsset] {
+        assets.filter { $0.category == category }
+    }
+
+    /// Assets filtrados por tipo de habitación (incluye .any).
+    func assets(for roomType: AssetRoomType) -> [SceneAsset] {
+        assets.filter { $0.roomType == roomType || $0.roomType == .any }
+    }
+
+    /// Assets filtrados por estilo (incluye .any).
+    func assets(style: AssetStyle) -> [SceneAsset] {
+        assets.filter { $0.style == style || $0.style == .any }
+    }
+
+    /// Filtro combinado: categoría + roomType + style.
+    func assets(category: AssetCategory? = nil,
+                roomType: AssetRoomType? = nil,
+                style:    AssetStyle?    = nil) -> [SceneAsset] {
+        assets.filter { asset in
+            (category == nil || asset.category == category!) &&
+            (roomType == nil || asset.roomType == roomType! || asset.roomType == .any) &&
+            (style    == nil || asset.style    == style!    || asset.style    == .any)
+        }
     }
 
     /// Devuelve el primer asset cuyo nombre coincide exactamente.
@@ -137,41 +315,29 @@ class AssetLibraryManager {
         assets.first { $0.name == name }
     }
 
-    // MARK: - Colocación en escena
+    // MARK: - Colocación en escena (alias legacy)
 
-    /// Carga el asset en background y lo añade a la escena en main thread.
-    /// - Parameters:
-    ///   - asset:    asset a colocar
-    ///   - position: coordenadas mundo 3D
-    ///   - scene:    escena RealityKit destino
-    ///   - completion: devuelve el AnchorEntity colocado (o nil si falla)
-    func placeAsset(
-        asset:      SceneAsset,
-        at position: SIMD3<Float>,
-        in scene:   RealityKit.Scene,
-        completion: ((AnchorEntity?) -> Void)? = nil
-    ) {
-        let fileURL = asset.fileURL
+    func placeAsset(asset: SceneAsset,
+                    at position: SIMD3<Float>,
+                    in scene: RealityKit.Scene,
+                    completion: ((AnchorEntity?) -> Void)? = nil) {
+        insertAsset(asset, at: position, into: scene, completion: completion)
+    }
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let entity = try Entity.load(contentsOf: fileURL)
-                DispatchQueue.main.async {
-                    let anchor = AnchorEntity(world: position)
-                    anchor.name = "asset_\(asset.name)"
-                    anchor.addChild(entity)
-                    scene.addAnchor(anchor)
-                    completion?(anchor)
+    // MARK: - Inferencia de tags desde nombre de archivo
 
-                    NotificationCenter.default.post(
-                        name: .assetPlacedInScene,
-                        object: AssetPlacementInfo(asset: asset, anchor: anchor)
-                    )
-                }
-            } catch {
-                DispatchQueue.main.async { completion?(nil) }
-            }
-        }
+    private func inferTags(from name: String) -> (AssetRoomType, AssetStyle) {
+        let lower = name.lowercased()
+
+        let room: AssetRoomType = AssetRoomType.allCases.first {
+            lower.contains($0.rawValue.lowercased()) && $0 != .any
+        } ?? .any
+
+        let style: AssetStyle = AssetStyle.allCases.first {
+            lower.contains($0.rawValue.lowercased()) && $0 != .any
+        } ?? .any
+
+        return (room, style)
     }
 
     // MARK: - Persistencia de placements
