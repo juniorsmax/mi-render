@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useHitTest } from '../hooks/useHitTest'
 import { shoelace } from '../lib/shoelace'
+import { startLiDARScan, stopScan } from '../lib/lidar'
 import './ARCanvas.css'
 
 /**
@@ -19,7 +20,7 @@ export function ARCanvas({ xrSession, onScanComplete }) {
   useEffect(() => {
     if (!window.Capacitor?.isNativePlatform()) return
 
-    window.Capacitor.Plugins.LiDARPlugin.startScan({ mode: 'room' })
+    startLiDARScan()
       .then(() => console.log('LiDAR scan started'))
       .catch(console.error)
   }, [])
@@ -109,7 +110,7 @@ export function ARCanvas({ xrSession, onScanComplete }) {
     xrSession?.end()
 
     if (window.Capacitor?.isNativePlatform()) {
-      window.Capacitor.Plugins.LiDARPlugin.stopScan()
+      stopScan()
         .then(result => {
           console.log('LiDAR scan result:', result)
           onScanComplete({

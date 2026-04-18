@@ -119,7 +119,13 @@ export default function App() {
       {/* Active tab content */}
       {tab === 'projects' && projects.length === 0
         ? <HomeView onStart={() => setFlow('scan')} />
-        : tab === 'projects' && <ProjectsView projects={projects} onOpen={handleOpenProject} />
+        : tab === 'projects' && (
+          <ProjectsView
+            projects={projects}
+            onOpen={handleOpenProject}
+            onProjectsChanged={(id) => setProjects(prev => prev.filter(p => String(p.id) !== String(id)))}
+          />
+        )
       }
       {tab === 'explore'  && <ExploreView />}
       {tab === 'team'     && <TeamView />}

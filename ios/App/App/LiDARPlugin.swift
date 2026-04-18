@@ -28,6 +28,12 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     private var locationManager: CLLocationManager?
     private var lastLocation: CLLocation?
 
+    private static let projectDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "dd/MM/yyyy HH:mm"
+        return f
+    }()
+
     // ── isAvailable ──────────────────────────────────────────────────────────
     @objc func isAvailable(_ call: CAPPluginCall) {
         let hasARKit = ARWorldTrackingConfiguration.isSupported
@@ -188,6 +194,46 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
                 call.resolve(["opened": true])
             }
         }
+    }
+
+    // ── listProjects ─────────────────────────────────────────────────────────
+    @objc func listProjects(_ call: CAPPluginCall) {
+        ProjectPersistenceManager.shared.loadAllProjects()
+        let projects: [[String: Any]] = ProjectPersistenceManager.shared.loadedProjects.map { meta in
+            var dict: [String: Any] = [
+                "id":          meta.id.uuidString,
+                "name":        meta.name,
+                "floorArea":   meta.floorArea,
+                "volume":      meta.volume,
+                "anchorCount": meta.anchorCount,
+                "hasMesh":     meta.hasMesh,
+                "hasThumbnail": meta.hasThumbnail,
+                "createdAt":   ISO8601DateFormatter().string(from: meta.createdAt),
+            ]
+            // Incluir ruta del USDZ si existe
+            if let url = ProjectPersistenceManager.shared.usdzURL(for: meta.id) {
+                dict["usdzPath"] = url.path
+            }
+            // Incluir thumbnail como base64 si existe
+            if meta.hasThumbnail,
+               let img  = ProjectPersistenceManager.shared.loadThumbnail(for: meta.id),
+               let data = img.jpegData(compressionQuality: 0.7) {
+                dict["thumbnailBase64"] = "data:image/jpeg;base64,\(data.base64EncodedString())"
+            }
+            return dict
+        }
+        call.resolve(["projects": projects, "count": projects.count])
+    }
+
+    // ── deleteProject ─────────────────────────────────────────────────────────
+    @objc func deleteProject(_ call: CAPPluginCall) {
+        guard let idStr = call.getString("projectId"),
+              let id    = UUID(uuidString: idStr) else {
+            call.reject("projectId requerido")
+            return
+        }
+        ProjectPersistenceManager.shared.deleteProject(id: id)
+        call.resolve(["deleted": true])
     }
 
     // ── stopScan ─────────────────────────────────────────────────────────────
@@ -1194,22 +1240,61 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             MeshManager.shared.setMeshAnchors(arAnchors)
         }
 
-        Task {
+        Task { [weak self] in
+            guard let self = self else { return }
             do {
                 let room = try await RoomBuilder(options: []).capturedRoom(from: data)
                 RoomPlanManager.shared.lastCapturedRoom = room
 
+                // ── Guardar en /tmp/ para exportación inmediata ──────────────
                 let _ = ExportManager.shared.exportUSDZ(room: room, named: "mi-render-scan")
-
                 let tmpUrl = FileManager.default.temporaryDirectory
                     .appendingPathComponent("mi-render-scan.usdz")
                 try? room.export(to: tmpUrl, exportOptions: .parametric)
 
-                var result = self.buildResult(from: room)
-                if let usdzUrl = ExportManager.shared.lastUsdzUrl {
-                    result["usdzPath"] = usdzUrl.path
+                // ── Persistir proyecto en Documents/projects/{uuid}/ ─────────
+                let projectName = "Escaneo \(Self.projectDateFormatter.string(from: Date()))"
+                var meta = ProjectPersistenceManager.shared.createProject(name: projectName)
+
+                // Guardar USDZ parametric (RoomPlan, más preciso que mesh raw)
+                let projDir  = ProjectPersistenceManager.shared.projectFolder(for: meta.id)
+                let projUSDZ = projDir.appendingPathComponent("mesh.usdz")
+                try? room.export(to: projUSDZ, exportOptions: .parametric)
+                ProjectPersistenceManager.shared.updateMeta(id: meta.id) {
+                    $0.hasMesh     = true
+                    $0.floorArea   = Double(MeshManager.shared.surfaces.floor)
+                    $0.volume      = Double(VolumeCalculator.shared.totalVolume())
+                    $0.anchorCount = arAnchors.count
                 }
+
+                // Guardar WorldMap en background (no bloquea resultado)
+                ProjectPersistenceManager.shared.saveWorldMap(
+                    id: meta.id,
+                    session: self.captureSession.arSession
+                ) { _ in }
+
+                // Guardar SceneGraph
+                SceneGraphManager.shared.configure(projectId: meta.id)
+                SceneGraphManager.shared.buildGraph(from: room)
+                SceneGraphManager.shared.saveGraph()
+
+                // Thumbnail desde último frame ARKit
+                if let frame = self.captureSession.arSession.currentFrame {
+                    let thumb = UIImage(ciImage: CIImage(cvPixelBuffer: frame.capturedImage))
+                    ProjectPersistenceManager.shared.saveThumbnail(
+                        id: meta.id, image: thumb) { _ in }
+                }
+
+                // ── Construir resultado final ────────────────────────────────
+                var result = self.buildResult(from: room)
+                result["projectId"]       = meta.id.uuidString
+                result["projectName"]     = meta.name
+                result["usdzPath"]        = projUSDZ.path
                 result["meshAnchorsCount"] = arAnchors.count
+                if let usdzUrl = ExportManager.shared.lastUsdzUrl {
+                    result["exportedUsdzPath"] = usdzUrl.path
+                }
+
                 await MainActor.run {
                     self.dismiss(animated: true) { [weak self] in
                         self?.onResult?(result)

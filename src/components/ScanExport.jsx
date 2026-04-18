@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { FloorPlan } from './FloorPlan'
 import { Icon } from './Icon'
 import { Capacitor } from '@capacitor/core'
-import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative, startWalkthrough, getWallMetrics, getSurfaceAreas, getRoomSegmentation, getAutoVolume, exportIFC, exportOptimizedUSDZ } from '../lib/lidar'
+import { exportOBJ, exportPLY, exportSTL, exportDAE, exportSVG, exportDXF, exportPDF as exportPDFNative, exportGLTF, exportGLB, exportAllFormats, saveWorldMap, exportUSDZ as exportUSDZNative, startWalkthrough, getWallMetrics, getSurfaceAreas, getRoomSegmentation, getAutoVolume, exportIFC, exportOptimizedUSDZ, openViewer } from '../lib/lidar'
 import './ScanExport.css'
 
 async function shareOrSavePDF(blob, filename) {
@@ -72,6 +72,7 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
     usdzExported = false,
     usdzPath     = null,
     photoCount   = 0,
+    projectId    = null,
   } = result
 
   const isPhotogrammetry = scanMode === 'photogrammetry'
@@ -437,6 +438,20 @@ export function ScanExport({ result, projectName = 'Mi habitación', address = '
               onClick={handleExportUSDZ}
               accent
             />
+          )}
+
+          {/* Ver modelo 3D guardado — solo si hay projectId nativo */}
+          {projectId && Capacitor.isNativePlatform() && (
+            <button
+              className="export-btn accent"
+              onClick={() => openViewer(projectId)}
+            >
+              <div className="export-btn-icon" style={{ background: 'rgba(45,212,191,0.15)', color: '#2dd4bf' }}>🧊</div>
+              <div>
+                <div className="export-btn-label">Ver modelo 3D</div>
+                <div className="export-btn-sub">Visor nativo · modelo guardado en la app</div>
+              </div>
+            </button>
           )}
 
           {/* Exportación de malla 3D — solo nativo */}

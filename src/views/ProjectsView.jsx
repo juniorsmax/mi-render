@@ -1,16 +1,60 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { useLang } from '../i18n/index.jsx'
+import { listProjects, openViewer, deleteProject } from '../lib/lidar.js'
 import './ProjectsView.css'
 
 const RECENT_COUNT = 5
 
-export function ProjectsView({ projects, onOpen }) {
+export function ProjectsView({ projects, onOpen, onProjectsChanged }) {
   const { t } = useLang()
-  const [filter, setFilter]   = useState('recent')
-  const [search, setSearch]   = useState('')
+  const [filter, setFilter]       = useState('recent')
+  const [search, setSearch]       = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [nativeProjects, setNativeProjects] = useState([])
+  const [loadingNative, setLoadingNative]   = useState(false)
 
-  const sorted = [...projects].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))
+  // Cargar proyectos guardados en disco (solo en iOS nativo)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    loadNativeProjects()
+  }, [])
+
+  async function loadNativeProjects() {
+    setLoadingNative(true)
+    try {
+      const res = await listProjects()
+      setNativeProjects(res?.projects ?? [])
+    } catch {
+      // Sin conexión nativa o error — ignorar silenciosamente
+    } finally {
+      setLoadingNative(false)
+    }
+  }
+
+  // Combina proyectos de localStorage + proyectos nativos (por id, sin duplicar)
+  const localIds = new Set(projects.map(p => String(p.id)))
+  const merged = [
+    ...projects,
+    ...nativeProjects
+      .filter(np => !localIds.has(np.id))
+      .map(np => ({
+        id:          np.id,
+        type:        'scan',
+        name:        np.name,
+        areaSqM:     np.floorArea ? np.floorArea.toFixed(1) : null,
+        date:        np.createdAt ? new Date(np.createdAt).toLocaleDateString('es-ES') : '',
+        thumbnail:   np.thumbnailBase64 ?? null,
+        usdzPath:    np.usdzPath ?? null,
+        _native:     true,
+      }))
+  ]
+
+  const sorted = [...merged].sort((a, b) => {
+    const ta = a._native ? new Date(nativeProjects.find(n=>n.id===a.id)?.createdAt||0).getTime() : (a.id ?? 0)
+    const tb = b._native ? new Date(nativeProjects.find(n=>n.id===b.id)?.createdAt||0).getTime() : (b.id ?? 0)
+    return tb - ta
+  })
 
   const filtered = search.trim()
     ? sorted.filter(p =>
@@ -23,6 +67,23 @@ export function ProjectsView({ projects, onOpen }) {
   function toggleSearch() {
     setShowSearch(v => !v)
     setSearch('')
+  }
+
+  async function handleOpenViewer(projectId, e) {
+    e.stopPropagation()
+    try { await openViewer(projectId) } catch (err) {
+      console.warn('openViewer error:', err)
+    }
+  }
+
+  async function handleDelete(projectId, isNative, e) {
+    e.stopPropagation()
+    if (!confirm('¿Eliminar este proyecto?')) return
+    if (isNative) {
+      try { await deleteProject(projectId) } catch {}
+      setNativeProjects(prev => prev.filter(p => p.id !== projectId))
+    }
+    onProjectsChanged?.(projectId)
   }
 
   return (
@@ -52,7 +113,6 @@ export function ProjectsView({ projects, onOpen }) {
         </div>
       )}
 
-      {/* Filter pills — se ocultan durante búsqueda activa */}
       {!search && (
         <div className="projects-filters">
           {['recent', 'all'].map((f) => (
@@ -62,15 +122,20 @@ export function ProjectsView({ projects, onOpen }) {
               onClick={() => setFilter(f)}
             >
               {f === 'recent'
-                ? `${t.home.recent} (${Math.min(projects.length, RECENT_COUNT)})`
-                : `${t.home.all} (${projects.length})`}
+                ? `${t.home.recent} (${Math.min(merged.length, RECENT_COUNT)})`
+                : `${t.home.all} (${merged.length})`}
             </button>
           ))}
+          {Capacitor.isNativePlatform() && (
+            <button className="pill" onClick={loadNativeProjects} title="Actualizar">
+              {loadingNative ? '⏳' : '↻'}
+            </button>
+          )}
         </div>
       )}
 
       <div className="page-content">
-        {projects.length === 0 ? (
+        {merged.length === 0 ? (
           <div className="projects-empty">
             <div className="projects-empty-icon">📁</div>
             <p className="projects-empty-title">{t.home.empty}</p>
@@ -84,7 +149,15 @@ export function ProjectsView({ projects, onOpen }) {
           </div>
         ) : (
           filtered.map((p) => (
-            <ProjectCard key={p.id} project={p} onClick={() => onOpen(p)} />
+            <ProjectCard
+              key={p.id}
+              project={p}
+              onClick={() => onOpen(p)}
+              onView={p.usdzPath || p._native
+                ? (e) => handleOpenViewer(p.id, e)
+                : null}
+              onDelete={(e) => handleDelete(p.id, !!p._native, e)}
+            />
           ))
         )}
       </div>
@@ -92,7 +165,7 @@ export function ProjectsView({ projects, onOpen }) {
   )
 }
 
-function ProjectCard({ project, onClick }) {
+function ProjectCard({ project, onClick, onView, onDelete }) {
   return (
     <div className="project-card" onClick={onClick}>
       <div className="project-card-thumb">
@@ -113,6 +186,16 @@ function ProjectCard({ project, onClick }) {
             {project.type === 'scan' ? '📐 Medición' : project.type === 'manual' ? '✏️ Manual' : '🧊 3D'}
           </span>
         )}
+        <div className="project-card-actions" onClick={e => e.stopPropagation()}>
+          {onView && (
+            <button className="btn btn-xs btn-outline" onClick={onView} title="Ver modelo 3D">
+              🧊 3D
+            </button>
+          )}
+          <button className="btn btn-xs btn-danger-ghost" onClick={onDelete} title="Eliminar">
+            🗑
+          </button>
+        </div>
       </div>
       <span className="muted" style={{ fontSize: 20 }}>›</span>
     </div>

@@ -189,7 +189,7 @@ function parseObjectResult(raw) {
 
 export async function stopScan() {
   if (Capacitor.isNativePlatform()) {
-    try { await callNative('stopScan', {}) } catch {}
+    try { return await callNative('stopScan', {}) } catch {}
   }
 }
 
@@ -392,6 +392,32 @@ export async function exportIFC(name = 'mi-render-bim', opts = {}) {
  */
 export async function exportOptimizedUSDZ(name = 'mi-render-mesh') {
   return callNative('exportOptimizedUSDZ', { name })
+}
+
+// ── Proyectos persistentes ────────────────────────────────────────────────────
+
+/**
+ * Lista todos los proyectos guardados en Documents/projects/
+ * @returns {{ projects: Array, count: number }}
+ */
+export async function listProjects() {
+  return callNative('listProjects', {})
+}
+
+/**
+ * Abre el visor 3D nativo para un proyecto guardado
+ * @param {string|null} projectId — UUID del proyecto (opcional)
+ */
+export async function openViewer(projectId = null) {
+  return callNative('openViewer', projectId ? { projectId } : {})
+}
+
+/**
+ * Elimina un proyecto guardado del disco
+ * @param {string} projectId
+ */
+export async function deleteProject(projectId) {
+  return callNative('deleteProject', { projectId })
 }
 
 // ── Etiquetas para UI ─────────────────────────────────────────────────────────

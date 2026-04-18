@@ -296,11 +296,21 @@ class ProjectPersistenceManager {
         return UIImage(data: data)
     }
 
+    func loadThumbnail(for id: UUID) -> UIImage? { loadThumbnail(id: id) }
+
     // MARK: - Exportar USDZ para compartir
 
     func usdzURL(for id: UUID) -> URL? {
         let url = folder(for: id).appendingPathComponent("mesh.usdz")
         return fm.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// URL pública del directorio de un proyecto — usada en LiDARPlugin para guardar USDZ.
+    func projectFolder(for id: UUID) -> URL { folder(for: id) }
+
+    /// Actualiza campos de metadata de un proyecto — versión pública para LiDARPlugin.
+    func updateMeta(id: UUID, update: (inout ProjectMetadata) -> Void) {
+        updateMetadata(id: id, update: update)
     }
 
     // MARK: - Eliminar
