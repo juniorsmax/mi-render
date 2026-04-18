@@ -19,6 +19,7 @@
 import RealityKit
 import ARKit
 import UIKit
+import ModelIO
 import Combine
 import simd
 
@@ -570,6 +571,57 @@ class ScanViewerView: UIView {
         updateCameraTransform()
     }
 
+    // MARK: - Exportar
+
+    /// Exporta el mesh actual en USDZ, OBJ y GLB y muestra UIActivityViewController.
+    func export(from viewController: UIViewController) {
+        var urls: [URL] = []
+
+        // 1. USDZ desde RoomPlan (más preciso, incluye clasificación semántica)
+        if #available(iOS 16.0, *),
+           let room = RoomPlanManager.shared.lastCapturedRoom,
+           let url  = ExportManager.shared.exportUSDZ(room: room, named: "scan-export") {
+            urls.append(url)
+        }
+
+        // 2. OBJ + GLB desde mesh ARKit raw usando ScanManager.mergedMDLAsset
+        let anchors = MeshManager.shared.meshAnchors
+        if !anchors.isEmpty {
+            let asset = ScanManager.shared.mergedMDLAsset(from: anchors)
+            if let mesh = asset.object(at: 0) as? MDLMesh,
+               let obj  = ExportManager.shared.exportOBJ(mesh: mesh, named: "scan-export") {
+                urls.append(obj)
+            }
+            if let glb = ExportManager.shared.exportGLB(asset: asset, named: "scan-export") {
+                urls.append(glb)
+            }
+        }
+
+        // 3. Fallback: USDZ temporal guardado tras el último escaneo
+        if urls.isEmpty {
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("mi-render-scan.usdz")
+            if FileManager.default.fileExists(atPath: tmp.path) { urls.append(tmp) }
+        }
+
+        guard !urls.isEmpty else {
+            let alert = UIAlertController(title: "Sin datos",
+                                          message: "No hay escaneo disponible para exportar.",
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            viewController.present(alert, animated: true)
+            return
+        }
+
+        let activity = UIActivityViewController(activityItems: urls,
+                                                applicationActivities: nil)
+        if let pop = activity.popoverPresentationController {
+            pop.sourceView = self
+            pop.sourceRect = CGRect(x: bounds.midX, y: bounds.midY, width: 0, height: 0)
+        }
+        viewController.present(activity, animated: true)
+    }
+
     // MARK: - Limpiar escena
 
     func clearScene() {
@@ -589,6 +641,94 @@ class ScanViewerView: UIView {
             if let found = findModelEntity(in: child, maxDepth: maxDepth - 1) { return found }
         }
         return nil
+    }
+}
+
+// MARK: - ScanViewerViewController
+
+/// ViewController que envuelve ScanViewerView con barra de navegación y botón de exportar.
+/// Se abre desde LiDARPlugin.openViewer() vía Capacitor.
+class ScanViewerViewController: UIViewController {
+
+    var projectId: UUID?
+
+    private var scanViewer: ScanViewerView!
+    private var activityIndicator: UIActivityIndicatorView!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor(white: 0.08, alpha: 1)
+
+        // Barra de navegación
+        title = "Visor 3D"
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(close)
+        )
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "Exportar",
+            style: .plain,
+            target: self,
+            action: #selector(exportTapped)
+        )
+
+        // Visor 3D
+        scanViewer = ScanViewerView(frame: view.bounds)
+        scanViewer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(scanViewer)
+
+        // Indicador de carga
+        activityIndicator = UIActivityIndicatorView(style: .large)
+        activityIndicator.color = .white
+        activityIndicator.center = view.center
+        activityIndicator.autoresizingMask = [.flexibleTopMargin, .flexibleLeftMargin,
+                                               .flexibleBottomMargin, .flexibleRightMargin]
+        view.addSubview(activityIndicator)
+        activityIndicator.startAnimating()
+
+        loadMesh()
+    }
+
+    private func loadMesh() {
+        if let pid = projectId {
+            scanViewer.loadMesh(projectId: pid) { [weak self] success in
+                self?.activityIndicator.stopAnimating()
+                if !success {
+                    self?.showLoadError()
+                }
+            }
+        } else {
+            // Sin projectId: intentar cargar el USDZ temporal del último escaneo
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("mi-render-scan.usdz")
+            if FileManager.default.fileExists(atPath: tmp.path) {
+                scanViewer.loadMesh(from: tmp) { [weak self] _ in
+                    self?.activityIndicator.stopAnimating()
+                }
+            } else {
+                activityIndicator.stopAnimating()
+                showLoadError()
+            }
+        }
+    }
+
+    private func showLoadError() {
+        let alert = UIAlertController(title: "Sin escaneo",
+                                      message: "No se encontró ningún escaneo guardado.",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+            self?.dismiss(animated: true)
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func exportTapped() {
+        scanViewer.export(from: self)
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
     }
 }
 

@@ -171,6 +171,25 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
     }
 
+    // ── openViewer (visor 3D nativo con exportación) ────────────────────────
+    @objc func openViewer(_ call: CAPPluginCall) {
+        let projectIdStr = call.getString("projectId")
+        let projectId    = projectIdStr.flatMap { UUID(uuidString: $0) }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let viewerVC = ScanViewerViewController()
+            viewerVC.projectId = projectId
+            let nav = UINavigationController(rootViewController: viewerVC)
+            nav.modalPresentationStyle = .fullScreen
+            nav.navigationBar.barStyle = .black
+            nav.navigationBar.tintColor = .white
+            self.bridge?.viewController?.present(nav, animated: true) {
+                call.resolve(["opened": true])
+            }
+        }
+    }
+
     // ── stopScan ─────────────────────────────────────────────────────────────
     @objc func stopScan(_ call: CAPPluginCall) {
         ScanManager.shared.stopScan()
