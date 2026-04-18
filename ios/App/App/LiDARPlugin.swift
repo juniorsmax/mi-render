@@ -862,17 +862,20 @@ class RoomPlanViewController: UIViewController {
         meshView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         meshView.isUserInteractionEnabled = false
 
-        // Fondo totalmente transparente para no duplicar la cámara de RoomCaptureView
-        meshView.environment.background = .color(.clear)
+        // Transparencia correcta: tanto UIView como RealityKit deben ser transparentes
+        meshView.backgroundColor              = .clear
+        meshView.isOpaque                     = false
+        meshView.layer.backgroundColor        = UIColor.clear.cgColor
+        meshView.environment.background       = .color(.clear)
 
-        // Reducir carga gráfica — no necesitamos efectos de postprocesado
+        // Reducir carga gráfica innecesaria
         meshView.renderOptions = [
             .disableMotionBlur,
             .disableDepthOfField,
             .disableCameraGrain,
         ]
 
-        // API correcta de Apple para visualizar la malla LiDAR (wireframe coloreado por clasificación)
+        // Wireframe debug de la malla LiDAR — visible inmediatamente (sin esperar entidades)
         meshView.debugOptions.insert(.showSceneUnderstanding)
 
         meshView.session = captureSession.arSession        // compartir sesión de RoomPlan

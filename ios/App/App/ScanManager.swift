@@ -336,36 +336,41 @@ extension ScanManager: ARSessionDelegate {
 extension ScanManager {
 
     /// Construye un ModelEntity desde ARMeshAnchor y lo añade/actualiza en ARView.scene.
-    /// Usa AnchorEntity(anchor:) para que el mesh siga el tracking de ARKit automáticamente.
+    /// MeshDescriptor se construye en background; MeshResource.generate y addAnchor
+    /// se ejecutan en main thread (requieren contexto Metal del hilo principal).
     func renderMesh(_ anchor: ARMeshAnchor) {
         guard let arView = arView else { return }
 
-        // Clasificación dominante del anchor para colorear el mesh semánticamente
         let classification = dominantClassification(of: anchor)
+        let anchorId       = anchor.identifier
 
+        // Construir el descriptor (solo datos, sin Metal) en background
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let meshResource = Self.buildMeshResource(from: anchor) else {
-                print("[ScanManager] renderMesh: no se pudo generar MeshResource para \(anchor.identifier)")
-                return
-            }
+            guard let desc = Self.buildDescriptor(from: anchor) else { return }
 
-            let material    = MeshRenderer.shared.material(for: classification)
-            let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
+            // MeshResource.generate y toda la escena RealityKit → MAIN THREAD
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, let arView = self.arView else { return }
 
-            DispatchQueue.main.async {
-                if let existing = self.meshEntities[anchor.identifier] {
+                guard let meshResource = try? MeshResource.generate(from: [desc]) else {
+                    print("[ScanManager] renderMesh: MeshResource.generate falló para \(anchorId)")
+                    return
+                }
+
+                let material    = MeshRenderer.shared.material(for: classification)
+                let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
+
+                if let existing = self.meshEntities[anchorId] {
                     existing.children.forEach { $0.removeFromParent() }
                     existing.addChild(modelEntity)
                 } else {
-                    #if targetEnvironment(simulator)
-                    let anchorEntity = AnchorEntity(world: .zero)
-                    #else
-                    let anchorEntity = AnchorEntity(anchor: anchor)
-                    #endif
-                    anchorEntity.name = "mesh_\(anchor.identifier.uuidString.prefix(8))"
+                    // AnchorEntity(world:) con la transform actual del anchor —
+                    // más compatible que AnchorEntity(anchor:) en sesiones compartidas
+                    let anchorEntity = AnchorEntity(world: anchor.transform)
+                    anchorEntity.name = "mesh_\(anchorId.uuidString.prefix(8))"
                     anchorEntity.addChild(modelEntity)
                     arView.scene.addAnchor(anchorEntity)
-                    self.meshEntities[anchor.identifier] = anchorEntity
+                    self.meshEntities[anchorId] = anchorEntity
                 }
             }
         }
