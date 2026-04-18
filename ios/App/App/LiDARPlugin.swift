@@ -836,8 +836,8 @@ class RoomPlanViewController: UIViewController {
         captureSession.delegate = self
 
         // ARView transparente sobre RoomCaptureView — muestra la malla LiDAR semántica.
-        // Usa sceneUnderstanding.options = .showAll (método estándar Apple) +
-        // debugOptions.showSceneUnderstanding como fallback visual inmediato.
+        // debugOptions.showSceneUnderstanding es la API oficial de Apple para mostrar
+        // el wireframe de reconstrucción de escena sin gestionar entidades manualmente.
         let meshView = ARView(frame: view.bounds)
         meshView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         meshView.isUserInteractionEnabled = false
@@ -845,19 +845,14 @@ class RoomPlanViewController: UIViewController {
         // Fondo totalmente transparente para no duplicar la cámara de RoomCaptureView
         meshView.environment.background = .color(.clear)
 
-        // Deshabilitar efectos pesados que interfieren con la transparencia
+        // Reducir carga gráfica — no necesitamos efectos de postprocesado
         meshView.renderOptions = [
             .disableMotionBlur,
             .disableDepthOfField,
             .disableCameraGrain,
-            .disableHDR,
-            .disableGroundingShadows,
         ]
 
-        // Método estándar Apple para mostrar malla 3D con clasificación semántica
-        meshView.environment.sceneUnderstanding.options = [.showAll]
-
-        // Fallback: wireframe debug siempre visible (no depende de entidades RealityKit)
+        // API correcta de Apple para visualizar la malla LiDAR (wireframe coloreado por clasificación)
         meshView.debugOptions.insert(.showSceneUnderstanding)
 
         meshView.session = captureSession.arSession        // compartir sesión de RoomPlan
