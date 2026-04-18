@@ -1362,14 +1362,27 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         var totalVolume = Float(0)
         var perimeter   = Float(0)
 
+        // 1ª fuente: room.floors (iOS 17+ — más preciso, geometría real del suelo)
         if #available(iOS 17.0, *) {
             floorArea = room.floors.reduce(Float(0)) { $0 + $1.dimensions.x * $1.dimensions.z }
         }
-        if floorArea == 0, !room.walls.isEmpty {
-            let widths = room.walls.map { $0.dimensions.x }
-            let maxW   = widths.max() ?? 0
-            let maxL   = widths.sorted().dropLast().last ?? maxW
-            floorArea  = maxW * maxL
+
+        // 2ª fuente: superficie de suelo clasificada por ARKit LiDAR
+        // (disponible en todos los iPhone con LiDAR, iOS 16+)
+        if floorArea < 0.5 {
+            let lidarFloor = MeshManager.shared.surfaces.floor
+            if lidarFloor > 0.5 {
+                floorArea = lidarFloor
+            }
+        }
+
+        // 3ª fuente: aproximación geométrica desde las paredes (W × L)
+        if floorArea < 0.5, room.walls.count >= 2 {
+            let widths = room.walls.map { $0.dimensions.x }.sorted(by: >)
+            floorArea  = widths[0] * widths[1]
+        } else if floorArea < 0.5, room.walls.count == 1 {
+            let w = room.walls[0].dimensions.x
+            floorArea = w * w   // estimación cuadrada
         }
 
         let walls: [[String: Any]] = room.walls.map { wall in
@@ -1388,9 +1401,15 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             ]
         }
 
-        let avgHeight = room.walls.isEmpty ? Float(2.5) :
-            room.walls.map { $0.dimensions.y }.reduce(0, +) / Float(room.walls.count)
-        totalVolume = floorArea * avgHeight
+        // Altura: media de alturas de paredes RoomPlan, fallback 2.5 m
+        let avgHeight: Float = {
+            let hs = room.walls.map { $0.dimensions.y }.filter { $0 > 1.0 }
+            return hs.isEmpty ? 2.5 : hs.reduce(0, +) / Float(hs.count)
+        }()
+
+        // Volumen: usar cálculo LiDAR real si está disponible
+        let lidarVolume = VolumeCalculator.shared.totalVolume()
+        totalVolume = lidarVolume > 0.1 ? lidarVolume : floorArea * avgHeight
 
         let windows: [[String: Any]] = room.windows.map { w in
             let t = w.transform
