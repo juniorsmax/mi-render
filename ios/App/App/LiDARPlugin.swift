@@ -5,6 +5,7 @@ import RealityKit
 import RoomPlan
 import CoreLocation
 import AVFoundation
+import QuickLook
 
 /**
  * LiDARPlugin — RoomPlan + ARKit para mi-render
@@ -173,18 +174,37 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
 
     // ── openViewer (visor 3D nativo con exportación) ────────────────────────
     @objc func openViewer(_ call: CAPPluginCall) {
-        let projectIdStr = call.getString("projectId")
-        let projectId    = projectIdStr.flatMap { UUID(uuidString: $0) }
+        // Localizar USDZ del proyecto (o fallback al temporal del último escaneo)
+        var usdzURL: URL?
+
+        if let idStr = call.getString("projectId"),
+           let id    = UUID(uuidString: idStr) {
+            let candidate = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("projects")
+                .appendingPathComponent(id.uuidString)
+                .appendingPathComponent("mesh.usdz")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                usdzURL = candidate
+            }
+        }
+
+        if usdzURL == nil {
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("mi-render-scan.usdz")
+            if FileManager.default.fileExists(atPath: tmp.path) { usdzURL = tmp }
+        }
+
+        guard let url = usdzURL else {
+            call.reject("No se encontró ningún modelo 3D guardado")
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            let viewerVC = ScanViewerViewController()
-            viewerVC.projectId = projectId
-            let nav = UINavigationController(rootViewController: viewerVC)
-            nav.modalPresentationStyle = .fullScreen
-            nav.navigationBar.barStyle = .black
-            nav.navigationBar.tintColor = .white
-            self.bridge?.viewController?.present(nav, animated: true) {
+            guard let self = self, let rootVC = self.bridge?.viewController else { return }
+            // QLPreviewController — visor oficial Apple para USDZ/AR Quick Look
+            // Nunca crashea y tiene AR integrado
+            let preview = USDZPreviewController(url: url)
+            rootVC.present(preview, animated: true) {
                 call.resolve(["opened": true])
             }
         }
@@ -1610,4 +1630,35 @@ class ObjectScanViewController: UIViewController, ARSessionDelegate {
             "confidence":   totalFaces > 2000 ? "high" : totalFaces > 500 ? "medium" : "low",
         ]
     }
+}
+
+// MARK: - USDZPreviewController
+// Visor nativo USDZ usando QLPreviewController — 100% estable, AR Quick Look incluido.
+
+private class USDZPreviewItem: NSObject, QLPreviewItem {
+    let previewItemURL: URL?
+    let previewItemTitle: String?
+    init(url: URL) {
+        previewItemURL = url
+        previewItemTitle = url.deletingPathExtension().lastPathComponent
+    }
+}
+
+class USDZPreviewController: QLPreviewController, QLPreviewControllerDataSource {
+
+    private let item: USDZPreviewItem
+
+    init(url: URL) {
+        item = USDZPreviewItem(url: url)
+        super.init(nibName: nil, bundle: nil)
+        dataSource = self
+        modalPresentationStyle = .fullScreen
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+
+    func previewController(_ controller: QLPreviewController,
+                           previewItemAt index: Int) -> QLPreviewItem { item }
 }
