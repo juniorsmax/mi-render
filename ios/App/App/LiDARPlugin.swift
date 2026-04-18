@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import ARKit
+import RealityKit
 import RoomPlan
 import CoreLocation
 import AVFoundation
@@ -730,6 +731,7 @@ class RoomPlanViewController: UIViewController {
     private var captureView:    RoomCaptureView!
     private var captureSession: RoomCaptureSession!
     private var overlay:        ScanGuidanceOverlay!
+    private var meshOverlayView: ARView?
     private var isPaused        = false
     private var torchOn         = false
     private var uiReady         = false
@@ -760,6 +762,21 @@ class RoomPlanViewController: UIViewController {
 
         captureSession          = captureView.captureSession
         captureSession.delegate = self
+
+        // ARView transparente sobre RoomCaptureView para renderizar la malla LiDAR con colores
+        // semánticos. Comparte el ARSession de RoomPlan — ScanManager actúa como delegate.
+        let meshView = ARView(frame: view.bounds)
+        meshView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        meshView.isUserInteractionEnabled = false
+        meshView.environment.background = .color(.clear)   // sin camera feed propio
+        meshView.session = captureSession.arSession        // compartir sesión
+        view.insertSubview(meshView, aboveSubview: captureView)
+        meshOverlayView = meshView
+
+        // ScanManager recibe callbacks de ARSession y renderiza la malla en meshView
+        ScanManager.shared.arView   = meshView
+        ScanManager.shared.session  = captureSession.arSession
+        captureSession.arSession.delegate = ScanManager.shared
 
         MeshManager.shared.onSurfacesUpdated = { [weak self] surfaces in
             guard let self = self else { return }
@@ -805,6 +822,12 @@ class RoomPlanViewController: UIViewController {
         ScanQualityManager.shared.reset()
         removeLifecycleNotifications()
         UIStateManager.shared.reset()
+        // Limpiar entidades del overlay y desconectar ScanManager
+        ScanManager.shared.clearMeshEntities()
+        ScanManager.shared.arView   = nil
+        ScanManager.shared.session  = nil
+        meshOverlayView?.removeFromSuperview()
+        meshOverlayView = nil
     }
 
     override func didReceiveMemoryWarning() {
