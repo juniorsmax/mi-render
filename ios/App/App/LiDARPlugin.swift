@@ -28,12 +28,6 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     private var locationManager: CLLocationManager?
     private var lastLocation: CLLocation?
 
-    private static let projectDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "dd/MM/yyyy HH:mm"
-        return f
-    }()
-
     // ── isAvailable ──────────────────────────────────────────────────────────
     @objc func isAvailable(_ call: CAPPluginCall) {
         let hasARKit = ARWorldTrackingConfiguration.isSupported
@@ -1253,7 +1247,8 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
                 try? room.export(to: tmpUrl, exportOptions: .parametric)
 
                 // ── Persistir proyecto en Documents/projects/{uuid}/ ─────────
-                let projectName = "Escaneo \(Self.projectDateFormatter.string(from: Date()))"
+                let _df = DateFormatter(); _df.dateFormat = "dd/MM/yyyy HH:mm"
+                let projectName = "Escaneo \(_df.string(from: Date()))"
                 var meta = ProjectPersistenceManager.shared.createProject(name: projectName)
 
                 // Guardar USDZ parametric (RoomPlan, más preciso que mesh raw)
