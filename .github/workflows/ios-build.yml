@@ -48,6 +48,7 @@ jobs:
         run: |
           rm -rf ~/Library/Developer/Xcode/DerivedData
           rm -rf ./SourcePackages
+          rm -rf ~/Library/Caches/org.swift.swiftpm/artifacts
 
       - name: Resolve Swift packages
         working-directory: ios/App
