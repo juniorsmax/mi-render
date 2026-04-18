@@ -30,4 +30,7 @@ CAP_PLUGIN(LiDARPlugin, "LiDARPlugin",
     CAP_PLUGIN_METHOD(getAutoVolume, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(exportIFC, CAPPluginReturnPromise);
     CAP_PLUGIN_METHOD(exportOptimizedUSDZ, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(listProjects, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(openViewer, CAPPluginReturnPromise);
+    CAP_PLUGIN_METHOD(deleteProject, CAPPluginReturnPromise);
 )

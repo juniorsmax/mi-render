@@ -274,19 +274,32 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     @objc func saveWorldMap(_ call: CAPPluginCall) {
         let name = call.getString("name") ?? "worldmap-\(Int(Date().timeIntervalSince1970))"
 
-        guard let session = ScanManager.shared.session else {
-            call.reject("No hay sesión AR activa para guardar")
+        // Si hay sesión AR activa (durante o justo tras el escaneo), guardar desde ella
+        if let session = ScanManager.shared.session {
+            WorldMapManager.shared.saveWorldMap(session: session, named: name) { result in
+                switch result {
+                case .success(let url):
+                    call.resolve(["saved": true, "path": url.path, "name": name])
+                case .failure(let error):
+                    call.reject("Error guardando mapa: \(error.localizedDescription)")
+                }
+            }
             return
         }
 
-        WorldMapManager.shared.saveWorldMap(session: session, named: name) { result in
-            switch result {
-            case .success(let url):
-                call.resolve(["saved": true, "path": url.path, "name": name])
-            case .failure(let error):
-                call.reject("Error guardando mapa: \(error.localizedDescription)")
+        // Si no hay sesión activa, intentar guardar el WorldMap del último proyecto persistido
+        if let lastProject = ProjectPersistenceManager.shared.loadedProjects.first,
+           lastProject.hasWorldMap {
+            let url = ProjectPersistenceManager.shared.projectFolder(for: lastProject.id)
+                .appendingPathComponent("worldMap.arexperience")
+            if FileManager.default.fileExists(atPath: url.path) {
+                call.resolve(["saved": true, "path": url.path, "name": name,
+                              "note": "WorldMap del último escaneo guardado"])
+                return
             }
         }
+
+        call.reject("No hay sesión AR ni WorldMap guardado disponible. Realiza un escaneo primero.")
     }
 
     // ── measureDistance ──────────────────────────────────────────────────────
@@ -822,17 +835,36 @@ class RoomPlanViewController: UIViewController {
         captureSession          = captureView.captureSession
         captureSession.delegate = self
 
-        // ARView transparente sobre RoomCaptureView para renderizar la malla LiDAR con colores
-        // semánticos. Comparte el ARSession de RoomPlan — ScanManager actúa como delegate.
+        // ARView transparente sobre RoomCaptureView — muestra la malla LiDAR semántica.
+        // Usa sceneUnderstanding.options = .showAll (método estándar Apple) +
+        // debugOptions.showSceneUnderstanding como fallback visual inmediato.
         let meshView = ARView(frame: view.bounds)
         meshView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         meshView.isUserInteractionEnabled = false
-        meshView.environment.background = .color(.clear)   // sin camera feed propio
-        meshView.session = captureSession.arSession        // compartir sesión
+
+        // Fondo totalmente transparente para no duplicar la cámara de RoomCaptureView
+        meshView.environment.background = .color(.clear)
+
+        // Deshabilitar efectos pesados que interfieren con la transparencia
+        meshView.renderOptions = [
+            .disableMotionBlur,
+            .disableDepthOfField,
+            .disableCameraGrain,
+            .disableHDR,
+            .disableGroundingShadows,
+        ]
+
+        // Método estándar Apple para mostrar malla 3D con clasificación semántica
+        meshView.environment.sceneUnderstanding.options = [.showAll]
+
+        // Fallback: wireframe debug siempre visible (no depende de entidades RealityKit)
+        meshView.debugOptions.insert(.showSceneUnderstanding)
+
+        meshView.session = captureSession.arSession        // compartir sesión de RoomPlan
         view.insertSubview(meshView, aboveSubview: captureView)
         meshOverlayView = meshView
 
-        // ScanManager recibe callbacks de ARSession y renderiza la malla en meshView
+        // ScanManager actúa como delegate y también gestiona entidades de malla propias
         ScanManager.shared.arView   = meshView
         ScanManager.shared.session  = captureSession.arSession
         captureSession.arSession.delegate = ScanManager.shared
