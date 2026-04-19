@@ -13,28 +13,31 @@ class MeshRenderer {
     // MARK: - Material por clasificación
 
     func material(for classification: ARMeshClassification) -> UnlitMaterial {
-        // UnlitMaterial: no depende de luz, el color siempre es visible.
-        // Alpha 0.40 = cámara visible + color identificable por superficie.
-        // Colores estilo Polycam/Canvas: cada superficie tiene color único y vibrante.
+        // Color tint con alpha=1.0, transparencia via blending = .transparent
+        // blending .transparent desactiva depth write → la cámara se ve detrás
         var mat = UnlitMaterial()
+        let opacity: Float
+        let tint: UIColor
         switch classification {
         case .wall:
-            mat.color = .init(tint: UIColor(red: 0.25, green: 0.55, blue: 1.00, alpha: 0.22))
+            tint = UIColor(red: 0.25, green: 0.55, blue: 1.00, alpha: 1.0); opacity = 0.25
         case .floor:
-            mat.color = .init(tint: UIColor(red: 0.10, green: 0.88, blue: 0.45, alpha: 0.20))
+            tint = UIColor(red: 0.10, green: 0.88, blue: 0.45, alpha: 1.0); opacity = 0.22
         case .ceiling:
-            mat.color = .init(tint: UIColor(red: 0.55, green: 0.75, blue: 1.00, alpha: 0.18))
+            tint = UIColor(red: 0.55, green: 0.75, blue: 1.00, alpha: 1.0); opacity = 0.18
         case .table:
-            mat.color = .init(tint: UIColor(red: 1.00, green: 0.55, blue: 0.10, alpha: 0.25))
+            tint = UIColor(red: 1.00, green: 0.55, blue: 0.10, alpha: 1.0); opacity = 0.28
         case .seat:
-            mat.color = .init(tint: UIColor(red: 0.65, green: 0.35, blue: 1.00, alpha: 0.25))
+            tint = UIColor(red: 0.65, green: 0.35, blue: 1.00, alpha: 1.0); opacity = 0.28
         case .window:
-            mat.color = .init(tint: UIColor(red: 0.15, green: 0.90, blue: 1.00, alpha: 0.22))
+            tint = UIColor(red: 0.15, green: 0.90, blue: 1.00, alpha: 1.0); opacity = 0.25
         case .door:
-            mat.color = .init(tint: UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 0.25))
+            tint = UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 1.0); opacity = 0.28
         default:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.18))
+            tint = UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 1.0); opacity = 0.18
         }
+        mat.color    = .init(tint: tint)
+        mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
         return mat
     }
 

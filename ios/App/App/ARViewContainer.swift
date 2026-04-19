@@ -24,7 +24,9 @@ struct ARViewContainer: UIViewRepresentable {
     var showPointCloud:  Bool = false
 
     func makeUIView(context: Context) -> ARView {
-        let arView = ARView(frame: .zero)
+        let arView = ARView(frame: .zero,
+                            cameraMode: .ar,
+                            automaticallyConfigureSession: false)
 
         arView.environment.sceneUnderstanding.options = [
             .occlusion, .physics, .receivesLighting, .collision
@@ -109,20 +111,23 @@ struct ARViewContainer: UIViewRepresentable {
             clearRoomPlanOverlays(in: arView)
             var newAnchors: [UUID: AnchorEntity] = [:]
 
-            let surfaceGroups: [(surfaces: [CapturedRoom.Surface], color: UIColor)] = [
-                (room.walls,   UIColor(red: 0.8, green: 0.8, blue: 0.9, alpha: 0.5)),
-                (room.doors,   UIColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 0.7)),
-                (room.windows, UIColor(red: 0.5, green: 0.8, blue: 0.9, alpha: 0.4))
+            // Colores con alpha=1 en el tint — la transparencia la controla blending
+            // blending = .transparent desactiva depth write (equivalente a depthWriteEnabled=false)
+            let surfaceGroups: [(surfaces: [CapturedRoom.Surface], opacity: Float, color: UIColor)] = [
+                (room.walls,   0.25, UIColor(red: 0.80, green: 0.80, blue: 0.95, alpha: 1.0)),
+                (room.doors,   0.30, UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 1.0)),
+                (room.windows, 0.22, UIColor(red: 0.40, green: 0.90, blue: 1.00, alpha: 1.0))
             ]
 
-            for (surfaceList, color) in surfaceGroups {
+            for (surfaceList, opacity, color) in surfaceGroups {
                 for surface in surfaceList {
                     let d    = surface.dimensions
                     let mesh = MeshResource.generateBox(
                         size: SIMD3<Float>(d.x, d.y, max(d.z, 0.05))
                     )
                     var mat  = UnlitMaterial()
-                    mat.color = .init(tint: color)
+                    mat.color    = .init(tint: color)
+                    mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
                     let entity = ModelEntity(mesh: mesh, materials: [mat])
                     let anchor = AnchorEntity(world: surface.transform)
                     anchor.name = "rp_\(surface.identifier.uuidString.prefix(8))"
@@ -135,7 +140,8 @@ struct ARViewContainer: UIViewRepresentable {
             for object in room.objects {
                 let mesh = MeshResource.generateBox(size: object.dimensions)
                 var mat  = UnlitMaterial()
-                mat.color = .init(tint: UIColor(red: 0.3, green: 0.7, blue: 0.3, alpha: 0.55))
+                mat.color    = .init(tint: UIColor(red: 0.30, green: 0.85, blue: 0.30, alpha: 1.0))
+                mat.blending = .transparent(opacity: .init(floatLiteral: 0.22))
                 let entity = ModelEntity(mesh: mesh, materials: [mat])
                 let anchor = AnchorEntity(world: object.transform)
                 anchor.name = "rp_obj_\(object.identifier.uuidString.prefix(8))"
