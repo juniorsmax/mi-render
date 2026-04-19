@@ -14,25 +14,23 @@ class MeshRenderer {
 
     func material(for classification: ARMeshClassification) -> UnlitMaterial {
         var mat = UnlitMaterial()
-        // Alpha 1.0 — completamente opaco para confirmar que el mesh se renderiza.
-        // Una vez confirmado, bajar a 0.5–0.7 para efecto semitransparente.
         switch classification {
         case .wall:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: 0.55))
         case .floor:
-            mat.color = .init(tint: UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: 0.50))
         case .ceiling:
-            mat.color = .init(tint: UIColor(red: 0.70, green: 0.70, blue: 1.00, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.70, green: 0.70, blue: 1.00, alpha: 0.45))
         case .table:
-            mat.color = .init(tint: UIColor(red: 0.95, green: 0.65, blue: 0.10, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.95, green: 0.65, blue: 0.10, alpha: 0.60))
         case .seat:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.40, blue: 0.90, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.40, blue: 0.90, alpha: 0.60))
         case .window:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: 0.55))
         case .door:
-            mat.color = .init(tint: UIColor(red: 0.85, green: 0.45, blue: 0.10, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.85, green: 0.45, blue: 0.10, alpha: 0.60))
         default:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 1.0))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.50))
         }
         return mat
     }
