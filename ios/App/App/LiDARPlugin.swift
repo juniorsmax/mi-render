@@ -881,8 +881,6 @@ class RoomPlanViewController: UIViewController {
             let arView = ARView(frame: view.bounds, cameraMode: .ar, automaticallyConfigureSession: false)
             arView.autoresizingMask      = [.flexibleWidth, .flexibleHeight]
             arView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
-            // showSceneUnderstanding dibuja el wireframe del mesh (líneas de triangulación)
-            arView.debugOptions.insert(.showSceneUnderstanding)
             view.addSubview(arView)
 
             captureSession = RoomCaptureSession(arSession: arView.session)

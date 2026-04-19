@@ -19,29 +19,21 @@ class MeshRenderer {
         var mat = UnlitMaterial()
         switch classification {
         case .wall:
-            // Azul claro — la superficie más común, fácil de identificar
-            mat.color = .init(tint: UIColor(red: 0.25, green: 0.55, blue: 1.00, alpha: 0.40))
+            mat.color = .init(tint: UIColor(red: 0.25, green: 0.55, blue: 1.00, alpha: 0.22))
         case .floor:
-            // Verde — suelo
-            mat.color = .init(tint: UIColor(red: 0.10, green: 0.88, blue: 0.45, alpha: 0.38))
+            mat.color = .init(tint: UIColor(red: 0.10, green: 0.88, blue: 0.45, alpha: 0.20))
         case .ceiling:
-            // Azul muy claro — techo
-            mat.color = .init(tint: UIColor(red: 0.55, green: 0.75, blue: 1.00, alpha: 0.32))
+            mat.color = .init(tint: UIColor(red: 0.55, green: 0.75, blue: 1.00, alpha: 0.18))
         case .table:
-            // Naranja — mobiliario horizontal
-            mat.color = .init(tint: UIColor(red: 1.00, green: 0.55, blue: 0.10, alpha: 0.45))
+            mat.color = .init(tint: UIColor(red: 1.00, green: 0.55, blue: 0.10, alpha: 0.25))
         case .seat:
-            // Morado — sillas/sofás
-            mat.color = .init(tint: UIColor(red: 0.65, green: 0.35, blue: 1.00, alpha: 0.45))
+            mat.color = .init(tint: UIColor(red: 0.65, green: 0.35, blue: 1.00, alpha: 0.25))
         case .window:
-            // Cian — ventanas
-            mat.color = .init(tint: UIColor(red: 0.15, green: 0.90, blue: 1.00, alpha: 0.40))
+            mat.color = .init(tint: UIColor(red: 0.15, green: 0.90, blue: 1.00, alpha: 0.22))
         case .door:
-            // Amarillo-naranja — puertas
-            mat.color = .init(tint: UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 0.45))
+            mat.color = .init(tint: UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 0.25))
         default:
-            // Cian neutro — objetos no clasificados
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.30))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.18))
         }
         return mat
     }
