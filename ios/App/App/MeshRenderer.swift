@@ -1,12 +1,7 @@
 // MeshRenderer.swift
 // Renderizado del mesh LiDAR como overlay semi-transparente coloreado por clasificación.
-//
-// REGLAS DE RENDERIZADO (equivalente a la recomendación de RoomPlan overlays):
-//   • blending = .transparent  → NO escribe al depth buffer (depthWriteEnabled = false)
-//     Esto evita que la malla "bloquee" el feed de cámara que hay debajo.
-//   • Alpha 0.55–0.75           → visible con claridad sobre ARView transparente
-//   • renderingOrder en entidad → se aplica en ScanManager.renderMesh()
-//     La entidad usa renderingOrder = 100 (encima del fondo AR, debajo de la UI)
+// UnlitMaterial respeta el alpha del color tint por defecto — NO añadir blending explícito:
+// blending = .transparent hace que RealityKit ignore el color.alpha y deje el material invisible.
 
 import RealityKit
 import ARKit
@@ -18,30 +13,25 @@ class MeshRenderer {
     // MARK: - Material Unlit por clasificación (overlay semitransparente)
 
     func material(for classification: ARMeshClassification) -> UnlitMaterial {
-        let tint: UIColor
+        var mat = UnlitMaterial()
         switch classification {
         case .wall:
-            tint = UIColor(red: 0.40, green: 0.60, blue: 1.00, alpha: 0.70)
+            mat.color = .init(tint: UIColor(red: 0.40, green: 0.60, blue: 1.00, alpha: 0.75))
         case .floor:
-            tint = UIColor(red: 0.25, green: 0.90, blue: 0.55, alpha: 0.65)
+            mat.color = .init(tint: UIColor(red: 0.25, green: 0.90, blue: 0.55, alpha: 0.70))
         case .ceiling:
-            tint = UIColor(red: 0.80, green: 0.80, blue: 1.00, alpha: 0.55)
+            mat.color = .init(tint: UIColor(red: 0.80, green: 0.80, blue: 1.00, alpha: 0.60))
         case .table:
-            tint = UIColor(red: 0.95, green: 0.70, blue: 0.20, alpha: 0.75)
+            mat.color = .init(tint: UIColor(red: 0.95, green: 0.70, blue: 0.20, alpha: 0.80))
         case .seat:
-            tint = UIColor(red: 0.30, green: 0.50, blue: 0.95, alpha: 0.75)
+            mat.color = .init(tint: UIColor(red: 0.30, green: 0.50, blue: 0.95, alpha: 0.80))
         case .window:
-            tint = UIColor(red: 0.40, green: 0.90, blue: 1.00, alpha: 0.60)
+            mat.color = .init(tint: UIColor(red: 0.40, green: 0.90, blue: 1.00, alpha: 0.65))
         case .door:
-            tint = UIColor(red: 0.85, green: 0.55, blue: 0.20, alpha: 0.75)
+            mat.color = .init(tint: UIColor(red: 0.85, green: 0.55, blue: 0.20, alpha: 0.80))
         default:
-            tint = UIColor(red: 0.35, green: 0.85, blue: 1.00, alpha: 0.60)
+            mat.color = .init(tint: UIColor(red: 0.35, green: 0.85, blue: 1.00, alpha: 0.65))
         }
-        // blending .transparent → RealityKit no escribe al depth buffer,
-        // la malla se superpone sin "tapar" la cámara AR.
-        var mat = UnlitMaterial()
-        mat.color = .init(tint: tint)
-        mat.blending = .transparent(opacity: .init(floatLiteral: Float(tint.cgColor.alpha)))
         return mat
     }
 
