@@ -845,7 +845,6 @@ class RoomPlanViewController: UIViewController {
     private var captureSession: RoomCaptureSession!
     private var overlay:        ScanGuidanceOverlay!
     private var meshOverlayView: ARView?
-    private var roomSurfaceAnchors: [String: AnchorEntity] = [:]
     private var isPaused        = false
     private var torchOn         = false
     private var uiReady         = false
@@ -1308,16 +1307,9 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
 
         let surfaces = MeshManager.shared.surfaces
-        let capturedRoom = room
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-
-            // ── Contornos blancos de superficies detectadas (línea blanca) ──
-            // Reemplaza la visualización nativa de RoomCaptureView dibujando
-            // cajas 3D blancas finas para cada pared, suelo, puerta y ventana.
-            self.updateRoomOutlines(capturedRoom)
-
             self.overlay?.updateSurfaces(surfaces, doors: room.doors.count, windows: room.windows.count)
             let wallArea = room.walls.reduce(Float(0)) { $0 + $1.dimensions.x * $1.dimensions.y }
             if room.walls.count > 0 {
@@ -1325,50 +1317,6 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
                 self.overlay?.updateProgress(pct,
                     guidance: "Paredes: \(room.walls.count) · \(String(format:"%.1f",wallArea)) m²")
             }
-        }
-    }
-
-    /// Dibuja contornos blancos de superficies detectadas por RoomPlan.
-    /// Usa UnlitMaterial (no necesita luz) para garantizar visibilidad.
-    private func updateRoomOutlines(_ room: CapturedRoom) {
-        guard let arView = meshOverlayView else { return }
-
-        roomSurfaceAnchors.values.forEach { $0.removeFromParent() }
-        roomSurfaceAnchors.removeAll()
-
-        // UnlitMaterial: siempre visible independientemente de la iluminación
-        var wallMat = UnlitMaterial()
-        wallMat.color = .init(tint: UIColor.white.withAlphaComponent(0.85))
-
-        var openingMat = UnlitMaterial()
-        openingMat.color = .init(tint: UIColor(red: 0.4, green: 1.0, blue: 0.8, alpha: 0.85))
-
-        for (i, wall) in room.walls.enumerated() {
-            let mesh = MeshResource.generateBox(size: SIMD3<Float>(
-                wall.dimensions.x, wall.dimensions.y, 0.018))
-            let entity = ModelEntity(mesh: mesh, materials: [wallMat])
-            let anchor = AnchorEntity(world: wall.transform)
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            roomSurfaceAnchors["wall_\(i)"] = anchor
-        }
-        for (i, door) in room.doors.enumerated() {
-            let mesh = MeshResource.generateBox(size: SIMD3<Float>(
-                door.dimensions.x, door.dimensions.y, 0.012))
-            let entity = ModelEntity(mesh: mesh, materials: [openingMat])
-            let anchor = AnchorEntity(world: door.transform)
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            roomSurfaceAnchors["door_\(i)"] = anchor
-        }
-        for (i, win) in room.windows.enumerated() {
-            let mesh = MeshResource.generateBox(size: SIMD3<Float>(
-                win.dimensions.x, win.dimensions.y, 0.012))
-            let entity = ModelEntity(mesh: mesh, materials: [openingMat])
-            let anchor = AnchorEntity(world: win.transform)
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            roomSurfaceAnchors["win_\(i)"] = anchor
         }
     }
 
