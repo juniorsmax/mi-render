@@ -855,34 +855,34 @@ class RoomPlanViewController: UIViewController {
         captureSession          = captureView.captureSession
         captureSession.delegate = self
 
-        // ARView transparente sobre RoomCaptureView — muestra la malla LiDAR semántica.
-        // debugOptions.showSceneUnderstanding es la API oficial de Apple para mostrar
-        // el wireframe de reconstrucción de escena sin gestionar entidades manualmente.
-        let meshView = ARView(frame: view.bounds)
-        meshView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // ARView para malla LiDAR semántica sobre RoomCaptureView.
+        // CLAVE: automaticallyConfigureSession: false le dice a RealityKit que NO inicie
+        // ni configure la sesión — es el patrón correcto para sesiones compartidas externas.
+        // Sin esto, ARView intenta gestionar la sesión y entra en conflicto con RoomPlan.
+        let meshView = ARView(frame: view.bounds,
+                              cameraMode: .ar,
+                              automaticallyConfigureSession: false)
+        meshView.autoresizingMask     = [.flexibleWidth, .flexibleHeight]
         meshView.isUserInteractionEnabled = false
 
-        // Transparencia correcta: tanto UIView como RealityKit deben ser transparentes
-        meshView.backgroundColor              = .clear
-        meshView.isOpaque                     = false
-        meshView.layer.backgroundColor        = UIColor.clear.cgColor
-        meshView.environment.background       = .color(.clear)
+        // Transparencia: UIView + Metal layer
+        meshView.backgroundColor      = .clear
+        meshView.isOpaque             = false
+        meshView.layer.backgroundColor = UIColor.clear.cgColor
+        meshView.environment.background = .color(.clear)
 
-        // Reducir carga gráfica innecesaria
-        meshView.renderOptions = [
-            .disableMotionBlur,
-            .disableDepthOfField,
-            .disableCameraGrain,
-        ]
+        // Reducir carga gráfica
+        meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
 
-        // Wireframe debug de la malla LiDAR — visible inmediatamente (sin esperar entidades)
+        // Asignar sesión ANTES de activar debugOptions — así ARView ya conoce la configuración
+        meshView.session = captureSession.arSession
+
+        // Wireframe de malla LiDAR (funciona porque ARView ya conoce la sesión con sceneReconstruction)
         meshView.debugOptions.insert(.showSceneUnderstanding)
 
-        meshView.session = captureSession.arSession        // compartir sesión de RoomPlan
         view.insertSubview(meshView, aboveSubview: captureView)
         meshOverlayView = meshView
 
-        // ScanManager actúa como delegate y también gestiona entidades de malla propias
         ScanManager.shared.arView   = meshView
         ScanManager.shared.session  = captureSession.arSession
         captureSession.arSession.delegate = ScanManager.shared
