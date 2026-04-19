@@ -15,7 +15,7 @@ class MeshRenderer {
     func material(for classification: ARMeshClassification) -> SimpleMaterial {
         // Alpha 0.30–0.35: la cámara se ve claramente detrás, el color identifica la superficie.
         // roughness=1 + metallic=0 = apariencia mate sin reflejos especulares.
-        let alpha: CGFloat = 0.32
+        let alpha: CGFloat = 0.42
         let tint: UIColor
         switch classification {
         case .wall:    tint = UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: alpha)
