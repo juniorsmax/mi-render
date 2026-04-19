@@ -28,6 +28,22 @@ struct ProjectMetadata: Codable {
     var hasWorldMap:     Bool
     var hasSceneGraph:   Bool
     var hasThumbnail:    Bool
+    var scanMode:        String     // "roomScan" | "photogrammetry" | "walkthrough"
+    var usdzPath:        String?    // ruta al modelo USDZ exportado
+
+    // init manual para compatibilidad con proyectos existentes sin estos campos
+    init(id: UUID, name: String, createdAt: Date, updatedAt: Date,
+         floorArea: Double = 0, volume: Double = 0, anchorCount: Int = 0,
+         hasMesh: Bool = false, hasWorldMap: Bool = false,
+         hasSceneGraph: Bool = false, hasThumbnail: Bool = false,
+         scanMode: String = "roomScan", usdzPath: String? = nil) {
+        self.id = id; self.name = name; self.createdAt = createdAt
+        self.updatedAt = updatedAt; self.floorArea = floorArea
+        self.volume = volume; self.anchorCount = anchorCount
+        self.hasMesh = hasMesh; self.hasWorldMap = hasWorldMap
+        self.hasSceneGraph = hasSceneGraph; self.hasThumbnail = hasThumbnail
+        self.scanMode = scanMode; self.usdzPath = usdzPath
+    }
 }
 
 // MARK: - ProjectPersistenceManager

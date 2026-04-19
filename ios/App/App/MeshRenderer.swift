@@ -12,25 +12,37 @@ class MeshRenderer {
 
     // MARK: - Material por clasificación
 
-    func material(for classification: ARMeshClassification) -> SimpleMaterial {
-        // Alpha 0.30–0.35: la cámara se ve claramente detrás, el color identifica la superficie.
-        // roughness=1 + metallic=0 = apariencia mate sin reflejos especulares.
-        let alpha: CGFloat = 0.42
-        let tint: UIColor
+    func material(for classification: ARMeshClassification) -> UnlitMaterial {
+        // UnlitMaterial: no depende de luz, el color siempre es visible.
+        // Alpha 0.40 = cámara visible + color identificable por superficie.
+        // Colores estilo Polycam/Canvas: cada superficie tiene color único y vibrante.
+        var mat = UnlitMaterial()
         switch classification {
-        case .wall:    tint = UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: alpha)
-        case .floor:   tint = UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: alpha)
-        case .ceiling: tint = UIColor(red: 0.65, green: 0.65, blue: 1.00, alpha: alpha * 0.8)
-        case .table:   tint = UIColor(red: 0.95, green: 0.60, blue: 0.10, alpha: alpha)
-        case .seat:    tint = UIColor(red: 0.25, green: 0.45, blue: 0.95, alpha: alpha)
-        case .window:  tint = UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: alpha)
-        case .door:    tint = UIColor(red: 0.85, green: 0.40, blue: 0.10, alpha: alpha)
-        default:       tint = UIColor(red: 0.20, green: 0.75, blue: 1.00, alpha: alpha * 0.8)
+        case .wall:
+            // Azul claro — la superficie más común, fácil de identificar
+            mat.color = .init(tint: UIColor(red: 0.25, green: 0.55, blue: 1.00, alpha: 0.40))
+        case .floor:
+            // Verde — suelo
+            mat.color = .init(tint: UIColor(red: 0.10, green: 0.88, blue: 0.45, alpha: 0.38))
+        case .ceiling:
+            // Azul muy claro — techo
+            mat.color = .init(tint: UIColor(red: 0.55, green: 0.75, blue: 1.00, alpha: 0.32))
+        case .table:
+            // Naranja — mobiliario horizontal
+            mat.color = .init(tint: UIColor(red: 1.00, green: 0.55, blue: 0.10, alpha: 0.45))
+        case .seat:
+            // Morado — sillas/sofás
+            mat.color = .init(tint: UIColor(red: 0.65, green: 0.35, blue: 1.00, alpha: 0.45))
+        case .window:
+            // Cian — ventanas
+            mat.color = .init(tint: UIColor(red: 0.15, green: 0.90, blue: 1.00, alpha: 0.40))
+        case .door:
+            // Amarillo-naranja — puertas
+            mat.color = .init(tint: UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 0.45))
+        default:
+            // Cian neutro — objetos no clasificados
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.30))
         }
-        var mat = SimpleMaterial()
-        mat.color     = .init(tint: tint, texture: nil)
-        mat.roughness = .init(floatLiteral: 1.0)
-        mat.metallic  = .init(floatLiteral: 0.0)
         return mat
     }
 

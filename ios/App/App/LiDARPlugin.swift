@@ -138,13 +138,34 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
                 let vc = PhotogrammetryViewController()
                 vc.onResult = { [weak self] result in
                     guard let self = self else { return }
-                    if let result = result, result["error"] == nil {
-                        self.pendingCall?.resolve(result)
-                    } else if let err = result?["error"] as? String {
-                        self.pendingCall?.reject(err)
-                    } else {
-                        self.pendingCall?.reject("Fotogrametría cancelada")
+                    guard let result = result, result["error"] == nil else {
+                        if let err = result?["error"] as? String { self.pendingCall?.reject(err) }
+                        else { self.pendingCall?.reject("Fotogrametría cancelada") }
+                        self.pendingCall = nil
+                        return
                     }
+
+                    // Guardar como proyecto para que aparezca en la lista
+                    let df = DateFormatter()
+                    df.dateFormat = "dd/MM/yyyy HH:mm"
+                    let projectName = "Fotogrametría \(df.string(from: Date()))"
+                    var meta = ProjectPersistenceManager.shared.createProject(name: projectName)
+                    meta.scanMode = "photogrammetry"
+
+                    if let usdzPath = result["usdzPath"] as? String {
+                        let src = URL(fileURLWithPath: usdzPath)
+                        let dst = ProjectPersistenceManager.shared.projectFolder(for: meta.id)
+                            .appendingPathComponent("model.usdz")
+                        try? FileManager.default.copyItem(at: src, to: dst)
+                        ProjectPersistenceManager.shared.updateMeta(id: meta.id) { m in
+                            m.usdzPath = dst.path
+                            m.scanMode = "photogrammetry"
+                        }
+                    }
+
+                    var out = result
+                    out["projectId"] = meta.id.uuidString
+                    self.pendingCall?.resolve(out)
                     self.pendingCall = nil
                 }
                 vc.modalPresentationStyle = .fullScreen
@@ -1309,41 +1330,34 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
     }
 
-    /// Dibuja contornos blancos semitransparentes para cada superficie detectada por RoomPlan.
-    /// Se llama en main thread. Elimina los anteriores y recrea los nuevos cada update.
+    /// Dibuja contornos blancos de superficies detectadas por RoomPlan.
+    /// Usa UnlitMaterial (no necesita luz) para garantizar visibilidad.
     private func updateRoomOutlines(_ room: CapturedRoom) {
         guard let arView = meshOverlayView else { return }
 
-        // Eliminar entidades anteriores
         roomSurfaceAnchors.values.forEach { $0.removeFromParent() }
         roomSurfaceAnchors.removeAll()
 
-        var mat = SimpleMaterial()
-        mat.color     = .init(tint: UIColor.white.withAlphaComponent(0.70), texture: nil)
-        mat.roughness = .init(floatLiteral: 1.0)
-        mat.metallic  = .init(floatLiteral: 0.0)
+        // UnlitMaterial: siempre visible independientemente de la iluminación
+        var wallMat = UnlitMaterial()
+        wallMat.color = .init(tint: UIColor.white.withAlphaComponent(0.85))
 
-        // Paredes: caja fina (grosor 0.02 m)
+        var openingMat = UnlitMaterial()
+        openingMat.color = .init(tint: UIColor(red: 0.4, green: 1.0, blue: 0.8, alpha: 0.85))
+
         for (i, wall) in room.walls.enumerated() {
             let mesh = MeshResource.generateBox(size: SIMD3<Float>(
-                wall.dimensions.x, wall.dimensions.y, 0.02))
-            let entity = ModelEntity(mesh: mesh, materials: [mat])
+                wall.dimensions.x, wall.dimensions.y, 0.018))
+            let entity = ModelEntity(mesh: mesh, materials: [wallMat])
             let anchor = AnchorEntity(world: wall.transform)
             anchor.addChild(entity)
             arView.scene.addAnchor(anchor)
             roomSurfaceAnchors["wall_\(i)"] = anchor
         }
-
-        // Puertas y ventanas: caja un poco más fina (0.015 m)
-        var thinMat = SimpleMaterial()
-        thinMat.color = .init(tint: UIColor.white.withAlphaComponent(0.55), texture: nil)
-        thinMat.roughness = .init(floatLiteral: 1.0)
-        thinMat.metallic  = .init(floatLiteral: 0.0)
-
         for (i, door) in room.doors.enumerated() {
             let mesh = MeshResource.generateBox(size: SIMD3<Float>(
-                door.dimensions.x, door.dimensions.y, 0.015))
-            let entity = ModelEntity(mesh: mesh, materials: [thinMat])
+                door.dimensions.x, door.dimensions.y, 0.012))
+            let entity = ModelEntity(mesh: mesh, materials: [openingMat])
             let anchor = AnchorEntity(world: door.transform)
             anchor.addChild(entity)
             arView.scene.addAnchor(anchor)
@@ -1351,8 +1365,8 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
         for (i, win) in room.windows.enumerated() {
             let mesh = MeshResource.generateBox(size: SIMD3<Float>(
-                win.dimensions.x, win.dimensions.y, 0.015))
-            let entity = ModelEntity(mesh: mesh, materials: [thinMat])
+                win.dimensions.x, win.dimensions.y, 0.012))
+            let entity = ModelEntity(mesh: mesh, materials: [openingMat])
             let anchor = AnchorEntity(world: win.transform)
             anchor.addChild(entity)
             arView.scene.addAnchor(anchor)
