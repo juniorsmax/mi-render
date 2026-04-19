@@ -848,42 +848,54 @@ class RoomPlanViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
 
-        // ── RoomCaptureView siempre presente ────────────────────────────────
-        // Proporciona la UI nativa de Apple: línea blanca de escaneo, resaltado
-        // de superficies en tiempo real, indicador de movimiento arriba/abajo.
-        // Sin esto, esos indicadores visuales desaparecen.
-        let cv = RoomCaptureView(frame: view.bounds)
-        cv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(cv)
-        captureView = cv
-        captureSession = cv.captureSession
-        captureSession.delegate = self
+        let lidarCapable = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
 
-        // ── ARView overlay transparente para malla LiDAR manual ─────────────
-        // NO usamos showSceneUnderstanding (no funciona en sesiones compartidas).
-        // El mesh se renderiza manualmente vía ScanManager.renderMesh() que añade
-        // ModelEntity directamente a arView.scene cuando llegan ARMeshAnchor.
-        let meshView = ARView(frame: view.bounds,
-                              cameraMode: .ar,
-                              automaticallyConfigureSession: false)
-        meshView.autoresizingMask         = [.flexibleWidth, .flexibleHeight]
-        meshView.isUserInteractionEnabled = false
-        meshView.backgroundColor          = .clear
-        meshView.isOpaque                 = false
-        meshView.layer.backgroundColor    = UIColor.clear.cgColor
-        meshView.environment.background   = .color(.clear)
-        meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
-        // Forzar CAMetalLayer no opaco — sin esto UIKit no compone el overlay
-        if let metal = meshView.layer as? CAMetalLayer {
-            metal.isOpaque = false
+        if #available(iOS 17.0, *), lidarCapable {
+            // ── iOS 17+ con LiDAR: ARView como vista principal ──────────────
+            // ARView muestra la cámara Y la malla directamente — sin overlay
+            // transparente. Esto evita el problema de premultiplicación de alpha
+            // que oscurecía/hacía invisible la malla en el overlay anterior.
+            // RoomCaptureSession(arSession:) inyecta el tracking de ARView en RoomPlan.
+            let arView = ARView(frame: view.bounds, cameraMode: .ar, automaticallyConfigureSession: false)
+            arView.autoresizingMask      = [.flexibleWidth, .flexibleHeight]
+            arView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
+            view.addSubview(arView)
+
+            captureSession = RoomCaptureSession(arSession: arView.session)
+            captureSession.delegate = self
+
+            meshOverlayView = arView
+            ScanManager.shared.arView  = arView
+            ScanManager.shared.session = arView.session
+            arView.session.delegate    = ScanManager.shared
+
+        } else {
+            // ── iOS 16 / sin LiDAR: RoomCaptureView + overlay ───────────────
+            let cv = RoomCaptureView(frame: view.bounds)
+            cv.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.addSubview(cv)
+            captureView   = cv
+            captureSession = cv.captureSession
+            captureSession.delegate = self
+
+            let meshView = ARView(frame: view.bounds,
+                                  cameraMode: .ar,
+                                  automaticallyConfigureSession: false)
+            meshView.autoresizingMask      = [.flexibleWidth, .flexibleHeight]
+            meshView.isUserInteractionEnabled = false
+            meshView.backgroundColor       = .clear
+            meshView.isOpaque              = false
+            meshView.layer.backgroundColor = UIColor.clear.cgColor
+            meshView.environment.background = .color(.clear)
+            meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
+            meshView.session = captureSession.arSession
+            view.insertSubview(meshView, aboveSubview: cv)
+            meshOverlayView = meshView
+
+            ScanManager.shared.arView   = meshView
+            ScanManager.shared.session  = captureSession.arSession
+            captureSession.arSession.delegate = ScanManager.shared
         }
-        meshView.session = captureSession.arSession
-        view.insertSubview(meshView, aboveSubview: cv)
-        meshOverlayView = meshView
-
-        ScanManager.shared.arView   = meshView
-        ScanManager.shared.session  = captureSession.arSession
-        captureSession.arSession.delegate = ScanManager.shared
 
         MeshManager.shared.onSurfacesUpdated = { [weak self] surfaces in
             guard let self = self else { return }
@@ -916,28 +928,32 @@ class RoomPlanViewController: UIViewController {
         super.viewDidAppear(animated)
         UIApplication.shared.isIdleTimerDisabled = true
 
-        // Paso 1: RoomPlan arranca y configura su arSession internamente.
-        // captureSession.run() llama a arSession.run(roomPlanConfig) → BORRA sceneReconstruction.
-        captureSession.run(configuration: RoomCaptureSession.Configuration())
+        let lidarCapable = ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification)
 
-        // Paso 2 (iOS 17+ con LiDAR): añadir sceneReconstruction SIN romper RoomPlan.
-        // Delay 0.15s: necesario para que RoomPlan termine de inicializar su sesión
-        // antes de que la parchemos. Sin delay, la config que leemos puede ser la anterior.
-        if #available(iOS 17.0, *),
-           ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                guard let self = self, !self.isPaused else { return }
-                // Tomamos la config que RoomPlan dejó y añadimos sceneReconstruction
-                let base = self.captureSession.arSession.configuration as? ARWorldTrackingConfiguration
-                    ?? ARWorldTrackingConfiguration()
-                base.sceneReconstruction = .meshWithClassification
-                if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
-                    base.frameSemantics.insert(.sceneDepth)
+        if #available(iOS 17.0, *), lidarCapable {
+            // iOS 17+: primero arrancar ARSession con sceneReconstruction,
+            // después captureSession añade RoomPlan encima SIN borrar la config.
+            let config = ARWorldTrackingConfiguration()
+            config.sceneReconstruction = .meshWithClassification
+            if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                config.frameSemantics = [.sceneDepth]
+            }
+            captureSession.arSession.run(config)
+            captureSession.run(configuration: RoomCaptureSession.Configuration())
+            // Restaurar delegate tras captureSession.run()
+            captureSession.arSession.delegate = ScanManager.shared
+        } else {
+            captureSession.run(configuration: RoomCaptureSession.Configuration())
+            // iOS 16: intentar parchar sceneReconstruction con delay
+            if ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    guard let self = self, !self.isPaused else { return }
+                    let base = self.captureSession.arSession.configuration as? ARWorldTrackingConfiguration
+                        ?? ARWorldTrackingConfiguration()
+                    base.sceneReconstruction = .meshWithClassification
+                    self.captureSession.arSession.run(base, options: [])
+                    self.captureSession.arSession.delegate = ScanManager.shared
                 }
-                // options: [] = sin resetTracking, sin removeAnchors → RoomPlan sigue intacto
-                self.captureSession.arSession.run(base, options: [])
-                // Re-asignar delegate: RoomPlan pudo haberlo sobreescrito
-                self.captureSession.arSession.delegate = ScanManager.shared
             }
         }
 

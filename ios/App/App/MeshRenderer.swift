@@ -16,21 +16,21 @@ class MeshRenderer {
         var mat = UnlitMaterial()
         switch classification {
         case .wall:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: 0.55))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: 0.50))
         case .floor:
-            mat.color = .init(tint: UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: 0.50))
+            mat.color = .init(tint: UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: 0.45))
         case .ceiling:
-            mat.color = .init(tint: UIColor(red: 0.70, green: 0.70, blue: 1.00, alpha: 0.45))
+            mat.color = .init(tint: UIColor(red: 0.65, green: 0.65, blue: 1.00, alpha: 0.40))
         case .table:
-            mat.color = .init(tint: UIColor(red: 0.95, green: 0.65, blue: 0.10, alpha: 0.60))
+            mat.color = .init(tint: UIColor(red: 0.95, green: 0.65, blue: 0.10, alpha: 0.55))
         case .seat:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.40, blue: 0.90, alpha: 0.60))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.40, blue: 0.90, alpha: 0.55))
         case .window:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: 0.55))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: 0.50))
         case .door:
-            mat.color = .init(tint: UIColor(red: 0.85, green: 0.45, blue: 0.10, alpha: 0.60))
+            mat.color = .init(tint: UIColor(red: 0.85, green: 0.45, blue: 0.10, alpha: 0.55))
         default:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.50))
+            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.45))
         }
         return mat
     }
