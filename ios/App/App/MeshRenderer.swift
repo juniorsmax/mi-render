@@ -1,7 +1,7 @@
 // MeshRenderer.swift
-// Renderizado del mesh LiDAR como overlay semi-transparente coloreado por clasificación.
-// UnlitMaterial respeta el alpha del color tint por defecto — NO añadir blending explícito:
-// blending = .transparent hace que RealityKit ignore el color.alpha y deje el material invisible.
+// Renderizado del mesh LiDAR como overlay semitransparente coloreado por clasificación.
+// Usa SimpleMaterial con alpha bajo (0.30–0.35) para que la cámara se vea claramente
+// detrás de los colores. Misma técnica que Polycam / Canvas / RoomPlan demo de Apple.
 
 import RealityKit
 import ARKit
@@ -10,28 +10,27 @@ class MeshRenderer {
 
     static let shared = MeshRenderer()
 
-    // MARK: - Material Unlit por clasificación (overlay semitransparente)
+    // MARK: - Material por clasificación
 
-    func material(for classification: ARMeshClassification) -> UnlitMaterial {
-        var mat = UnlitMaterial()
+    func material(for classification: ARMeshClassification) -> SimpleMaterial {
+        // Alpha 0.30–0.35: la cámara se ve claramente detrás, el color identifica la superficie.
+        // roughness=1 + metallic=0 = apariencia mate sin reflejos especulares.
+        let alpha: CGFloat = 0.32
+        let tint: UIColor
         switch classification {
-        case .wall:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: 0.50))
-        case .floor:
-            mat.color = .init(tint: UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: 0.45))
-        case .ceiling:
-            mat.color = .init(tint: UIColor(red: 0.65, green: 0.65, blue: 1.00, alpha: 0.40))
-        case .table:
-            mat.color = .init(tint: UIColor(red: 0.95, green: 0.65, blue: 0.10, alpha: 0.55))
-        case .seat:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.40, blue: 0.90, alpha: 0.55))
-        case .window:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: 0.50))
-        case .door:
-            mat.color = .init(tint: UIColor(red: 0.85, green: 0.45, blue: 0.10, alpha: 0.55))
-        default:
-            mat.color = .init(tint: UIColor(red: 0.20, green: 0.80, blue: 1.00, alpha: 0.45))
+        case .wall:    tint = UIColor(red: 0.20, green: 0.50, blue: 1.00, alpha: alpha)
+        case .floor:   tint = UIColor(red: 0.10, green: 0.85, blue: 0.40, alpha: alpha)
+        case .ceiling: tint = UIColor(red: 0.65, green: 0.65, blue: 1.00, alpha: alpha * 0.8)
+        case .table:   tint = UIColor(red: 0.95, green: 0.60, blue: 0.10, alpha: alpha)
+        case .seat:    tint = UIColor(red: 0.25, green: 0.45, blue: 0.95, alpha: alpha)
+        case .window:  tint = UIColor(red: 0.20, green: 0.85, blue: 1.00, alpha: alpha)
+        case .door:    tint = UIColor(red: 0.85, green: 0.40, blue: 0.10, alpha: alpha)
+        default:       tint = UIColor(red: 0.20, green: 0.75, blue: 1.00, alpha: alpha * 0.8)
         }
+        var mat = SimpleMaterial()
+        mat.color     = .init(tint: tint, texture: nil)
+        mat.roughness = .init(floatLiteral: 1.0)
+        mat.metallic  = .init(floatLiteral: 0.0)
         return mat
     }
 
