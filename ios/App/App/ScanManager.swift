@@ -359,6 +359,9 @@ extension ScanManager {
 
                 let material    = MeshRenderer.shared.material(for: classification)
                 let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
+                // renderingOrder 100 = encima del fondo AR (0) pero debajo de la UI (1000+)
+                // Equivalente a "higher than AR background but lower than UI overlay"
+                modelEntity.renderingOrder = 100
 
                 if let existing = self.meshEntities[anchorId] {
                     existing.children.forEach { $0.removeFromParent() }
