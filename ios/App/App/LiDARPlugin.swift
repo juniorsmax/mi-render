@@ -845,6 +845,7 @@ class RoomPlanViewController: UIViewController {
     private var captureSession: RoomCaptureSession!
     private var overlay:        ScanGuidanceOverlay!
     private var meshOverlayView: ARView?
+    private var guidanceAnchors: [String: AnchorEntity] = [:]
     private var isPaused        = false
     private var torchOn         = false
     private var uiReady         = false
@@ -1307,9 +1308,11 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
 
         let surfaces = MeshManager.shared.surfaces
+        let capturedRoom = room
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.updateGuidanceOutlines(capturedRoom)
             self.overlay?.updateSurfaces(surfaces, doors: room.doors.count, windows: room.windows.count)
             let wallArea = room.walls.reduce(Float(0)) { $0 + $1.dimensions.x * $1.dimensions.y }
             if room.walls.count > 0 {
@@ -1317,6 +1320,51 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
                 self.overlay?.updateProgress(pct,
                     guidance: "Paredes: \(room.walls.count) · \(String(format:"%.1f",wallArea)) m²")
             }
+        }
+    }
+
+    // MARK: – Guidance line: contorno fino de superficies confirmadas por RoomPlan
+    // Capa 2 del stack visual (encima del mesh LiDAR, debajo de la UI).
+    // blending .transparent = sin depth write, no tapa la cámara ni el mesh.
+    private func updateGuidanceOutlines(_ room: CapturedRoom) {
+        guard let arView = meshOverlayView else { return }
+
+        guidanceAnchors.values.forEach { $0.removeFromParent() }
+        guidanceAnchors.removeAll()
+
+        // Paredes: blanco semi-transparente, caja muy fina (0.012m)
+        var wallMat = UnlitMaterial()
+        wallMat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
+        wallMat.blending = .transparent(opacity: .init(floatLiteral: 0.22))
+
+        // Puertas/ventanas: cian semi-transparente
+        var openMat = UnlitMaterial()
+        openMat.color    = .init(tint: UIColor(red: 0.4, green: 1.0, blue: 0.9, alpha: 1.0))
+        openMat.blending = .transparent(opacity: .init(floatLiteral: 0.25))
+
+        for (i, wall) in room.walls.enumerated() {
+            let box    = MeshResource.generateBox(size: [wall.dimensions.x, wall.dimensions.y, 0.012])
+            let entity = ModelEntity(mesh: box, materials: [wallMat])
+            let anchor = AnchorEntity(world: wall.transform)
+            anchor.addChild(entity)
+            arView.scene.addAnchor(anchor)
+            guidanceAnchors["w\(i)"] = anchor
+        }
+        for (i, door) in room.doors.enumerated() {
+            let box    = MeshResource.generateBox(size: [door.dimensions.x, door.dimensions.y, 0.010])
+            let entity = ModelEntity(mesh: box, materials: [openMat])
+            let anchor = AnchorEntity(world: door.transform)
+            anchor.addChild(entity)
+            arView.scene.addAnchor(anchor)
+            guidanceAnchors["d\(i)"] = anchor
+        }
+        for (i, win) in room.windows.enumerated() {
+            let box    = MeshResource.generateBox(size: [win.dimensions.x, win.dimensions.y, 0.010])
+            let entity = ModelEntity(mesh: box, materials: [openMat])
+            let anchor = AnchorEntity(world: win.transform)
+            anchor.addChild(entity)
+            arView.scene.addAnchor(anchor)
+            guidanceAnchors["win\(i)"] = anchor
         }
     }
 
