@@ -898,6 +898,10 @@ class RoomPlanViewController: UIViewController {
         meshView.layer.backgroundColor    = UIColor.clear.cgColor
         meshView.environment.background   = .color(.clear)
         meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
+        // showSceneUnderstanding en ARView transparente = triangulación del mesh LiDAR visible
+        // Como el background es .clear, solo se renderizan las líneas del wireframe
+        // sobre la visualización de RoomCaptureView que está debajo.
+        meshView.debugOptions.insert(.showSceneUnderstanding)
         meshView.session = captureSession.arSession
         view.insertSubview(meshView, aboveSubview: cv)
         meshOverlayView = meshView
