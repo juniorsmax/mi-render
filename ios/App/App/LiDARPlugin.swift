@@ -866,13 +866,19 @@ class RoomPlanViewController: UIViewController {
         let meshView = ARView(frame: view.bounds,
                               cameraMode: .ar,
                               automaticallyConfigureSession: false)
-        meshView.autoresizingMask      = [.flexibleWidth, .flexibleHeight]
+        meshView.autoresizingMask         = [.flexibleWidth, .flexibleHeight]
         meshView.isUserInteractionEnabled = false
-        meshView.backgroundColor       = .clear
-        meshView.isOpaque              = false
-        meshView.layer.backgroundColor = UIColor.clear.cgColor
-        meshView.environment.background = .color(.clear)
+        meshView.backgroundColor          = .clear
+        meshView.isOpaque                 = false
+        meshView.layer.backgroundColor    = UIColor.clear.cgColor
+        meshView.environment.background   = .color(.clear)
         meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
+        // Forzar CAMetalLayer transparente — por defecto ARView crea la capa opaca
+        // aunque isOpaque = false esté en la UIView. Sin esto el mesh no se ve.
+        if let metal = meshView.layer as? CAMetalLayer {
+            metal.isOpaque    = false
+            metal.pixelFormat = .bgra8Unorm
+        }
         meshView.session = captureSession.arSession
         view.insertSubview(meshView, aboveSubview: cv)
         meshOverlayView = meshView
