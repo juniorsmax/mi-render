@@ -939,13 +939,9 @@ class RoomPlanViewController: UIViewController {
 
         // Configuración de RoomPlan con visualizationOptions
         // visualizationOptions controla qué renderiza RoomCaptureView nativamente
-        var roomConfig = RoomCaptureSession.Configuration()
-        if #available(iOS 17.0, *) {
-            // .sceneUnderstanding activa la visualización del mesh LiDAR en RoomCaptureView
-            // .basic (incluido por defecto) = línea blanca + rellenos semi-transparentes
-            roomConfig.visualizationOptions = [.sceneUnderstanding, .basic]
-        }
-        captureSession.run(configuration: roomConfig)
+        // RoomCaptureSession.Configuration no expone visualizationOptions públicamente.
+        // La visualización nativa (línea blanca + rellenos) la controla RoomCaptureView internamente.
+        captureSession.run(configuration: RoomCaptureSession.Configuration())
 
         // Patch: añadir sceneReconstruction DESPUÉS de que RoomPlan arranque
         // (captureSession.run borra cualquier config previa de ARSession)
