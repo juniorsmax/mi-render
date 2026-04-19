@@ -193,39 +193,31 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
         }
     }
 
-    // ── openViewer (visor 3D nativo con exportación) ────────────────────────
+    // ── openViewer (visor 3D navegable — órbita + primera persona) ──────────
     @objc func openViewer(_ call: CAPPluginCall) {
-        // Localizar USDZ del proyecto (o fallback al temporal del último escaneo)
-        var usdzURL: URL?
+        // Preferir projectId si viene; sino buscar el último proyecto guardado
+        var targetId: UUID?
 
-        if let idStr = call.getString("projectId"),
-           let id    = UUID(uuidString: idStr) {
-            let candidate = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("projects")
-                .appendingPathComponent(id.uuidString)
-                .appendingPathComponent("mesh.usdz")
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                usdzURL = candidate
-            }
+        if let idStr = call.getString("projectId"), let id = UUID(uuidString: idStr) {
+            targetId = id
+        } else {
+            // Fallback: primer proyecto de la lista (más reciente)
+            ProjectPersistenceManager.shared.loadAllProjects()
+            targetId = ProjectPersistenceManager.shared.loadedProjects.first?.id
         }
 
-        if usdzURL == nil {
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("mi-render-scan.usdz")
-            if FileManager.default.fileExists(atPath: tmp.path) { usdzURL = tmp }
-        }
-
-        guard let url = usdzURL else {
-            call.reject("No se encontró ningún modelo 3D guardado")
+        guard let projectId = targetId else {
+            call.reject("No se encontró ningún proyecto guardado")
             return
         }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let rootVC = self.bridge?.viewController else { return }
-            // QLPreviewController — visor oficial Apple para USDZ/AR Quick Look
-            // Nunca crashea y tiene AR integrado
-            let preview = USDZPreviewController(url: url)
-            rootVC.present(preview, animated: true) {
+            let viewerVC  = ScanViewerViewController()
+            viewerVC.projectId = projectId
+            let nav = UINavigationController(rootViewController: viewerVC)
+            nav.modalPresentationStyle = .fullScreen
+            rootVC.present(nav, animated: true) {
                 call.resolve(["opened": true])
             }
         }
