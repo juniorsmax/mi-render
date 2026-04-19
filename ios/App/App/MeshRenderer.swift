@@ -41,7 +41,7 @@ class MeshRenderer {
         // la malla se superpone sin "tapar" la cámara AR.
         var mat = UnlitMaterial()
         mat.color = .init(tint: tint)
-        mat.blending = .transparent(opacity: .init(floatLiteral: Float(tint.cgColor.alpha ?? 0.65)))
+        mat.blending = .transparent(opacity: .init(floatLiteral: Float(tint.cgColor.alpha)))
         return mat
     }
 
