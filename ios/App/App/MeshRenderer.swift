@@ -41,6 +41,17 @@ class MeshRenderer {
         return mat
     }
 
+    // MARK: - Material de cobertura de escaneo (estilo Polycam)
+    // Color azul único — opacidad decrece conforme el área se escanea bien.
+    // Zona nueva: opacity ~0.28 / zona parcial: ~0.18 / casi lista: ~0.08
+
+    func scanCoverageMaterial(opacity: Float) -> UnlitMaterial {
+        var mat = UnlitMaterial()
+        mat.color    = .init(tint: UIColor(red: 0.20, green: 0.55, blue: 1.00, alpha: 1.0))
+        mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
+        return mat
+    }
+
     // MARK: - Material PBR para exportación/visualización offline
 
     func pbr(roughness: Float = 0.8,

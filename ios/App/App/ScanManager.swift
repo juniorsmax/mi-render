@@ -31,6 +31,12 @@ class ScanManager: NSObject {
     /// Mapa UUID→AnchorEntity para actualizar entidades de mesh sin recrearlas.
     private(set) var meshEntities: [UUID: AnchorEntity] = [:]
 
+    /// Contador de actualizaciones por anchor — cuantas más, más escaneada la zona.
+    private var meshUpdateCounts: [UUID: Int] = [:]
+
+    /// Feedback háptico para sectores recién escaneados.
+    private let hapticLight = UIImpactFeedbackGenerator(style: .light)
+
     /// Callback adicional para que LiDARPlugin reciba los anchors directamente.
     var onMeshAnchorsUpdated: (([ARMeshAnchor]) -> Void)?
 
@@ -284,9 +290,12 @@ extension ScanManager: ARSessionDelegate {
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         guard !meshAnchors.isEmpty else { return }
         meshAnchors.forEach {
+            meshUpdateCounts[$0.identifier] = 1
             MeshManager.shared.update(anchor: $0)
             renderMesh($0)
         }
+        // Vibración háptica: nuevo sector detectado
+        DispatchQueue.main.async { self.hapticLight.impactOccurred() }
         onMeshAnchorsUpdated?(MeshManager.shared.meshAnchors)
     }
 
@@ -294,6 +303,7 @@ extension ScanManager: ARSessionDelegate {
         let meshAnchors = anchors.compactMap { $0 as? ARMeshAnchor }
         guard !meshAnchors.isEmpty else { return }
         meshAnchors.forEach {
+            meshUpdateCounts[$0.identifier, default: 1] += 1
             MeshManager.shared.update(anchor: $0)
             renderMesh($0)
         }
@@ -341,14 +351,22 @@ extension ScanManager {
     func renderMesh(_ anchor: ARMeshAnchor) {
         guard let arView = arView else { return }
 
-        let classification = dominantClassification(of: anchor)
-        let anchorId       = anchor.identifier
+        let anchorId   = anchor.identifier
+        let updateCount = meshUpdateCounts[anchorId] ?? 1
+
+        // Zonas bien escaneadas (≥8 actualizaciones) → no renderizar overlay
+        guard updateCount < 8 else {
+            DispatchQueue.main.async { [weak self] in
+                self?.meshEntities[anchorId]?.removeFromParent()
+                self?.meshEntities.removeValue(forKey: anchorId)
+            }
+            return
+        }
 
         // Construir el descriptor (solo datos, sin Metal) en background
         DispatchQueue.global(qos: .userInitiated).async {
             guard let desc = Self.buildDescriptor(from: anchor) else { return }
 
-            // MeshResource.generate y toda la escena RealityKit → MAIN THREAD
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let arView = self.arView else { return }
 
@@ -357,15 +375,22 @@ extension ScanManager {
                     return
                 }
 
-                let material    = MeshRenderer.shared.material(for: classification)
+                // Opacidad decrece según actualizaciones — simula "área escaneada"
+                // 1-2 updates: 0.28 (azul visible)   3-4: 0.18   5-7: 0.08
+                let updateNow = self.meshUpdateCounts[anchorId] ?? 1
+                let opacity: Float
+                switch updateNow {
+                case 1...2: opacity = 0.28
+                case 3...4: opacity = 0.18
+                default:    opacity = 0.08
+                }
+                let material    = MeshRenderer.shared.scanCoverageMaterial(opacity: opacity)
                 let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
 
                 if let existing = self.meshEntities[anchorId] {
                     existing.children.forEach { $0.removeFromParent() }
                     existing.addChild(modelEntity)
                 } else {
-                    // AnchorEntity(world:) con la transform actual del anchor —
-                    // más compatible que AnchorEntity(anchor:) en sesiones compartidas
                     let anchorEntity = AnchorEntity(world: anchor.transform)
                     anchorEntity.name = "mesh_\(anchorId.uuidString.prefix(8))"
                     anchorEntity.addChild(modelEntity)
@@ -389,9 +414,11 @@ extension ScanManager {
 
     /// Elimina la AnchorEntity de un anchor del diccionario y de la escena.
     func removeMeshEntity(for anchor: ARMeshAnchor) {
+        let id = anchor.identifier
         DispatchQueue.main.async {
-            self.meshEntities[anchor.identifier]?.removeFromParent()
-            self.meshEntities.removeValue(forKey: anchor.identifier)
+            self.meshEntities[id]?.removeFromParent()
+            self.meshEntities.removeValue(forKey: id)
+            self.meshUpdateCounts.removeValue(forKey: id)
         }
     }
 
@@ -400,6 +427,7 @@ extension ScanManager {
         DispatchQueue.main.async {
             self.meshEntities.values.forEach { $0.removeFromParent() }
             self.meshEntities.removeAll()
+            self.meshUpdateCounts.removeAll()
         }
     }
 
