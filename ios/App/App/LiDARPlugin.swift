@@ -929,16 +929,28 @@ class RoomPlanViewController: UIViewController {
         super.viewDidAppear(animated)
         UIApplication.shared.isIdleTimerDisabled = true
 
+        // Paso 1: arrancar RoomCaptureSession.
+        // Internamente llama a arSession.run(roomPlanConfig) — esto BORRA cualquier
+        // sceneReconstruction que hayamos puesto antes.
+        captureSession.run(configuration: RoomCaptureSession.Configuration())
+
+        // Paso 2 (iOS 17+ LiDAR): parchar sceneReconstruction DESPUÉS de que RoomPlan
+        // haya configurado la sesión. Tomamos la config actual de RoomPlan y le añadimos
+        // sceneReconstruction sin resetear tracking ni eliminar anchors.
         if #available(iOS 17.0, *),
            ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
-            // Paso 1: iniciar ARSession con sceneReconstruction (genera ARMeshAnchor)
-            let config = ARWorldTrackingConfiguration()
-            config.sceneReconstruction = .meshWithClassification
-            config.frameSemantics      = [.sceneDepth]
-            captureSession.arSession.run(config)
+            let patchConfig = (captureSession.arSession.configuration as? ARWorldTrackingConfiguration)
+                ?? ARWorldTrackingConfiguration()
+            patchConfig.sceneReconstruction = .meshWithClassification
+            if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                patchConfig.frameSemantics.insert(.sceneDepth)
+            }
+            // options: [] = sin resetTracking, sin removeAnchors — RoomPlan sigue intacto
+            captureSession.arSession.run(patchConfig, options: [])
+            // Re-asignar delegate: captureSession.run() puede haberlo sobreescrito
+            captureSession.arSession.delegate = ScanManager.shared
         }
-        // Paso 2: RoomCaptureSession añade sus capacidades encima
-        captureSession.run(configuration: RoomCaptureSession.Configuration())
+
         startMeshTimer()
     }
 
