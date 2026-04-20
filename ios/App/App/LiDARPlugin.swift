@@ -891,10 +891,8 @@ class RoomPlanViewController: UIViewController {
         meshView.environment.background   = .color(.clear)
         meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField,
                                   .disableCameraGrain, .disableHDR]
-        // sceneUnderstanding habilitado para que showSceneUnderstanding funcione
-        meshView.environment.sceneUnderstanding.options = [.occlusion]
-        // showSceneUnderstanding = wireframe blanco triangulado del LiDAR
-        meshView.debugOptions = [.showSceneUnderstanding]
+        // Sin debugOptions — el wireframe lo renderiza ScanManager con .lines primitives
+        meshView.debugOptions = []
         meshView.session = captureSession.arSession
         view.insertSubview(meshView, aboveSubview: cv)
         meshOverlayView = meshView

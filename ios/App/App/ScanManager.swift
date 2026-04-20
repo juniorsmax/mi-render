@@ -348,10 +348,77 @@ extension ScanManager {
     /// Construye un ModelEntity desde ARMeshAnchor y lo añade/actualiza en ARView.scene.
     /// MeshDescriptor se construye en background; MeshResource.generate y addAnchor
     /// se ejecutan en main thread (requieren contexto Metal del hilo principal).
+    /// Renderiza el mesh LiDAR como wireframe blanco usando primitivas .lines de RealityKit.
+    /// Extrae las 3 aristas de cada triángulo y las renderiza como segmentos blancos.
+    /// El ARView transparente muestra las líneas sobre la cámara limpia de RoomCaptureView.
     func renderMesh(_ anchor: ARMeshAnchor) {
-        // Visual del wireframe manejado por showSceneUnderstanding en el ARView transparente.
-        // Este método solo actualiza el contador para háptica — sin fills de color.
-        _ = meshUpdateCounts[anchor.identifier]
+        guard let arView = arView else { return }
+        let anchorId = anchor.identifier
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let desc = Self.buildWireframeDescriptor(from: anchor) else { return }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, let arView = self.arView else { return }
+                guard let mesh = try? MeshResource.generate(from: [desc]) else { return }
+
+                var mat = UnlitMaterial()
+                mat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
+                mat.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+                let model = ModelEntity(mesh: mesh, materials: [mat])
+
+                if let existing = self.meshEntities[anchorId] {
+                    existing.children.forEach { $0.removeFromParent() }
+                    existing.addChild(model)
+                } else {
+                    let anchorEntity = AnchorEntity(world: anchor.transform)
+                    anchorEntity.name = "wire_\(anchorId.uuidString.prefix(8))"
+                    anchorEntity.addChild(model)
+                    arView.scene.addAnchor(anchorEntity)
+                    self.meshEntities[anchorId] = anchorEntity
+                }
+            }
+        }
+    }
+
+    /// Construye un MeshDescriptor con primitivas .lines (aristas del mesh triangulado).
+    /// Cada triángulo (a, b, c) genera 3 aristas: a-b, b-c, c-a.
+    static func buildWireframeDescriptor(from anchor: ARMeshAnchor) -> MeshDescriptor? {
+        let geo = anchor.geometry
+        guard geo.vertices.count > 0, geo.faces.count > 0 else { return nil }
+
+        // Vértices
+        let vPtr    = geo.vertices.buffer.contents()
+            .advanced(by: geo.vertices.offset)
+            .assumingMemoryBound(to: Float.self)
+        let vStride = geo.vertices.stride / MemoryLayout<Float>.stride
+        var positions = [SIMD3<Float>]()
+        positions.reserveCapacity(geo.vertices.count)
+        for i in 0..<geo.vertices.count {
+            positions.append(SIMD3(vPtr[i*vStride], vPtr[i*vStride+1], vPtr[i*vStride+2]))
+        }
+
+        // Aristas: 3 por triángulo (sin deduplicar — suficiente para visualización)
+        let iCount = geo.faces.indexCountPerPrimitive   // 3 para triángulos
+        let iPtr   = geo.faces.buffer.contents()
+            .assumingMemoryBound(to: UInt32.self)
+        var lineIndices = [UInt32]()
+        lineIndices.reserveCapacity(geo.faces.count * 6)
+        for f in 0..<geo.faces.count {
+            let a = iPtr[f * iCount],
+                b = iPtr[f * iCount + 1],
+                c = iPtr[f * iCount + 2]
+            lineIndices.append(a); lineIndices.append(b)
+            lineIndices.append(b); lineIndices.append(c)
+            lineIndices.append(c); lineIndices.append(a)
+        }
+        guard !positions.isEmpty, !lineIndices.isEmpty else { return nil }
+
+        var desc = MeshDescriptor()
+        desc.name       = "wire_\(anchor.identifier.uuidString.prefix(8))"
+        desc.positions  = .init(positions)
+        desc.primitives = .lines(lineIndices)
+        return desc
     }
 
     /// Infiere la clasificación ARMeshClassification dominante de un anchor.
