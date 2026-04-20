@@ -41,8 +41,17 @@ class ScanManager: NSObject {
     /// Feedback háptico para sectores recién escaneados.
     private let hapticLight = UIImpactFeedbackGenerator(style: .light)
 
-    /// Entidades de superficies CapturedRoom (colores semánticos, reemplazadas en cada update).
+    /// Entidades de superficies CapturedRoom (un solo color, reemplazadas en cada update).
     private var surfaceEntities: [UUID: AnchorEntity] = [:]
+
+    /// IDs de superficies conocidas (para detectar nuevas y disparar pulso+haptic).
+    private var knownSurfaceIDs: Set<UUID> = []
+
+    /// Haptic más suave para pulsos de superficie.
+    private let hapticSoft = UIImpactFeedbackGenerator(style: .soft)
+
+    /// Contador de mesh anchors previo para detectar crecimiento.
+    private var prevMeshAnchorCount: Int = 0
 
     /// Callback adicional para que LiDARPlugin reciba los anchors directamente.
     var onMeshAnchorsUpdated: (([ARMeshAnchor]) -> Void)?
@@ -301,8 +310,15 @@ extension ScanManager: ARSessionDelegate {
             MeshManager.shared.update(anchor: $0)
             renderMesh($0)
         }
-        // Vibración háptica: nuevo sector detectado
-        DispatchQueue.main.async { self.hapticLight.impactOccurred() }
+        // Vibración al detectar nuevo sector de geometría
+        let newCount = MeshManager.shared.meshAnchors.count
+        if newCount > prevMeshAnchorCount {
+            prevMeshAnchorCount = newCount
+            DispatchQueue.main.async {
+                self.hapticLight.prepare()
+                self.hapticLight.impactOccurred(intensity: 0.6)
+            }
+        }
         onMeshAnchorsUpdated?(MeshManager.shared.meshAnchors)
     }
 
@@ -313,6 +329,14 @@ extension ScanManager: ARSessionDelegate {
             meshUpdateCounts[$0.identifier, default: 1] += 1
             MeshManager.shared.update(anchor: $0)
             renderMesh($0)
+        }
+        // Vibración suave cada vez que la geometría existente se densifica (cada 5 updates)
+        let totalUpdates = meshUpdateCounts.values.reduce(0, +)
+        if totalUpdates % 5 == 0 {
+            DispatchQueue.main.async {
+                self.hapticSoft.prepare()
+                self.hapticSoft.impactOccurred(intensity: 0.3)
+            }
         }
         onMeshAnchorsUpdated?(MeshManager.shared.meshAnchors)
     }
@@ -500,45 +524,87 @@ extension ScanManager {
         }
     }
 
-    // MARK: - Superficies CapturedRoom (colores semánticos, estilo Polycam)
+    // MARK: - Superficies CapturedRoom (color único + pulso azul en nuevas)
 
-    /// Renderiza las superficies de CapturedRoom con colores semánticos semi-transparentes.
-    /// Reemplaza anchors anteriores en lugar de duplicarlos.
-    /// Llamar desde el main thread.
+    /// Renderiza todas las superficies con un único color azul-hielo semi-transparente.
+    /// Las superficies nuevas generan un pulso de confirmación + haptic suave.
     @available(iOS 16.0, *)
     func renderCapturedRoomSurfaces(_ room: CapturedRoom, in arView: ARView) {
-        // Eliminar overlays previos
-        surfaceEntities.values.forEach { $0.removeFromParent() }
-        surfaceEntities.removeAll()
+        // Color único para todas las superficies — azul hielo translúcido
+        let surfMat  = surfaceMaterial(r: 0.15, g: 0.75, b: 1.00, opacity: 0.22)
+        let floorMat = surfaceMaterial(r: 0.15, g: 0.75, b: 1.00, opacity: 0.14)
 
-        // Colores semánticos por tipo de superficie
-        let wallMat  = surfaceMaterial(r: 0.25, g: 0.55, b: 1.00, opacity: 0.30)  // azul
-        let doorMat  = surfaceMaterial(r: 1.00, g: 0.65, b: 0.10, opacity: 0.32)  // naranja
-        let winMat   = surfaceMaterial(r: 0.20, g: 0.90, b: 1.00, opacity: 0.25)  // cian
-        let objMat   = surfaceMaterial(r: 0.30, g: 0.85, b: 0.30, opacity: 0.22)  // verde
+        // Colección plana de todas las superficies (id, dim, transform, isFloor)
+        typealias SurfInfo = (id: UUID, dim: SIMD3<Float>, transform: simd_float4x4, floor: Bool)
+        var all: [SurfInfo] = []
 
-        func addSurface(dim: SIMD3<Float>, transform: simd_float4x4,
-                        mat: UnlitMaterial, id: UUID) {
-            let d       = SIMD3<Float>(dim.x, dim.y, max(dim.z, 0.04))
-            let entity  = ModelEntity(mesh: MeshResource.generateBox(size: d),
-                                      materials: [mat])
-            let anchor  = AnchorEntity(world: transform)
-            anchor.name = "surf_\(id.uuidString.prefix(8))"
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            surfaceEntities[id] = anchor
+        all += room.walls.map    { (id: $0.identifier, dim: $0.dimensions, transform: $0.transform, floor: false) }
+        all += room.doors.map    { (id: $0.identifier, dim: $0.dimensions, transform: $0.transform, floor: false) }
+        all += room.windows.map  { (id: $0.identifier, dim: $0.dimensions, transform: $0.transform, floor: false) }
+        all += room.objects.map  { (id: $0.identifier, dim: $0.dimensions, transform: $0.transform, floor: false) }
+        if #available(iOS 17.0, *) {
+            all += room.floors.map { (id: $0.identifier,
+                                      dim: SIMD3($0.dimensions.x, 0.04, $0.dimensions.z),
+                                      transform: $0.transform, floor: true) }
         }
 
-        for s in room.walls   { addSurface(dim: s.dimensions, transform: s.transform, mat: wallMat, id: s.identifier) }
-        for s in room.doors   { addSurface(dim: s.dimensions, transform: s.transform, mat: doorMat, id: s.identifier) }
-        for s in room.windows { addSurface(dim: s.dimensions, transform: s.transform, mat: winMat,  id: s.identifier) }
-        for o in room.objects { addSurface(dim: o.dimensions, transform: o.transform, mat: objMat,  id: o.identifier) }
+        // Eliminar entidades que ya no existen
+        let currentIDs = Set(all.map { $0.id })
+        let removed    = Set(surfaceEntities.keys).subtracting(currentIDs)
+        removed.forEach { surfaceEntities[$0]?.removeFromParent(); surfaceEntities[$0] = nil }
+        knownSurfaceIDs.subtract(removed)
 
-        if #available(iOS 17.0, *) {
-            // room.floors existe en iOS 17+; room.ceilings NO existe en RoomPlan API
-            let floorMat = surfaceMaterial(r: 0.10, g: 0.88, b: 0.45, opacity: 0.18)
-            for s in room.floors { addSurface(dim: SIMD3(s.dimensions.x, 0.04, s.dimensions.z),
-                                               transform: s.transform, mat: floorMat, id: s.identifier) }
+        var hasNew = false
+
+        for surf in all {
+            let isNew = !knownSurfaceIDs.contains(surf.id)
+            let d     = SIMD3<Float>(surf.dim.x, surf.dim.y, max(surf.dim.z, 0.04))
+            let mat   = surf.floor ? floorMat : surfMat
+
+            if let existing = surfaceEntities[surf.id] {
+                // Solo actualizar transform si la superficie ya existía
+                existing.transform = Transform(matrix: surf.transform)
+            } else {
+                let entity = ModelEntity(mesh: MeshResource.generateBox(size: d),
+                                         materials: [mat])
+                let anchor = AnchorEntity(world: surf.transform)
+                anchor.name = "surf_\(surf.id.uuidString.prefix(8))"
+                anchor.addChild(entity)
+                arView.scene.addAnchor(anchor)
+                surfaceEntities[surf.id] = anchor
+            }
+
+            if isNew {
+                hasNew = true
+                knownSurfaceIDs.insert(surf.id)
+                // Pulso de confirmación: flash azul vivo que desaparece en 0.65s
+                spawnSurfacePulse(dim: d, transform: surf.transform, in: arView)
+            }
+        }
+
+        // Haptic suave por cada ronda con nuevas superficies
+        if hasNew {
+            hapticSoft.prepare()
+            hapticSoft.impactOccurred(intensity: 0.55)
+        }
+    }
+
+    /// Crea una entidad de "ping" azul brillante que se elimina tras 0.65s.
+    @available(iOS 16.0, *)
+    private func spawnSurfacePulse(dim: SIMD3<Float>, transform: simd_float4x4, in arView: ARView) {
+        var pulseMat = UnlitMaterial()
+        pulseMat.color    = .init(tint: UIColor(red: 0.25, green: 0.85, blue: 1.0, alpha: 1.0))
+        pulseMat.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+
+        let d      = SIMD3<Float>(dim.x * 1.06, dim.y * 1.06, max(dim.z * 1.06, 0.05))
+        let entity = ModelEntity(mesh: MeshResource.generateBox(size: d), materials: [pulseMat])
+        let anchor = AnchorEntity(world: transform)
+        anchor.name = "pulse_\(UUID().uuidString.prefix(6))"
+        anchor.addChild(entity)
+        arView.scene.addAnchor(anchor)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+            anchor.removeFromParent()
         }
     }
 

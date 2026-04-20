@@ -606,6 +606,130 @@
 }
 
 /* ══════════════════════════════════════════════════════
+   STEP: SCAN LIVE — Pantalla LiDAR activo
+   ══════════════════════════════════════════════════════ */
+
+@keyframes lidar-dot-pulse {
+  0%, 100% { opacity: 0.08; transform: scale(0.8); }
+  50%       { opacity: 0.55; transform: scale(1.2); }
+}
+@keyframes lidar-ring-expand {
+  0%   { transform: translate(-50%,-50%) scale(0.5); opacity: 0.7; }
+  100% { transform: translate(-50%,-50%) scale(2.2); opacity: 0; }
+}
+@keyframes lidar-core-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.5), 0 0 30px rgba(56,189,248,0.3); }
+  50%       { box-shadow: 0 0 0 12px rgba(56,189,248,0), 0 0 60px rgba(56,189,248,0.55); }
+}
+@keyframes lidar-bar-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+@keyframes lidar-label-flash {
+  0%, 90%, 100% { opacity: 1; }
+  95%            { opacity: 0.35; }
+}
+
+.scan-live-root {
+  position: fixed; inset: 0;
+  background: #050b12;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  z-index: 50;
+}
+
+/* ── Fondo de puntos LiDAR ── */
+.scan-live-particles {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.scan-live-dot {
+  position: absolute;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: #38bdf8;
+  animation: lidar-dot-pulse 2s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+/* ── Centro ── */
+.scan-live-center {
+  position: relative;
+  display: flex; flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  z-index: 10;
+  padding: 0 32px;
+  text-align: center;
+}
+
+/* ── Pulso expandible con 3 anillos ── */
+.scan-live-pulse {
+  position: relative;
+  width: 160px; height: 160px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.scan-live-ring {
+  position: absolute;
+  top: 50%; left: 50%;
+  border-radius: 50%;
+  border: 1.5px solid rgba(56,189,248,0.5);
+  animation: lidar-ring-expand 2.4s ease-out infinite;
+}
+.scan-live-ring-1 { width: 80px;  height: 80px;  animation-delay: 0s; }
+.scan-live-ring-2 { width: 80px;  height: 80px;  animation-delay: 0.8s; }
+.scan-live-ring-3 { width: 80px;  height: 80px;  animation-delay: 1.6s; }
+
+/* ── Núcleo central ── */
+.scan-live-core {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56,189,248,0.18) 0%, rgba(14,165,233,0.08) 60%, transparent 100%);
+  border: 1.5px solid rgba(56,189,248,0.45);
+  display: flex; align-items: center; justify-content: center;
+  animation: lidar-core-breathe 2s ease-in-out infinite;
+  position: relative;
+  z-index: 2;
+}
+
+/* ── Texto ESCANEANDO ── */
+.scan-live-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  color: #38bdf8;
+  font-family: -apple-system, 'SF Pro Display', sans-serif;
+  animation: lidar-label-flash 3s ease-in-out infinite;
+}
+
+/* ── Hint ── */
+.scan-live-hint {
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.6;
+  font-family: -apple-system, 'SF Pro Text', sans-serif;
+  max-width: 260px;
+}
+.scan-live-hint strong { color: rgba(255,255,255,0.8); font-weight: 600; }
+
+/* ── Barra de actividad ── */
+.scan-live-bar {
+  width: 180px; height: 2px;
+  border-radius: 2px;
+  background: rgba(56,189,248,0.12);
+  overflow: hidden;
+}
+.scan-live-bar-fill {
+  width: 60%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #38bdf8, #0ea5e9, transparent);
+  animation: lidar-bar-slide 1.6s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════════════════════
    Slide animations
    ══════════════════════════════════════════════════════ */
 @keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }

@@ -303,30 +303,45 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   // ════════════════════════════════════════════════════
   if (step === 'scanning') {
     return (
-      <div className="scan-scanning-root">
-        <div className="scan-scanning-content safe-top safe-bottom">
-          {/* Radar animado */}
-          <div className="scan-radar-wrap">
-            <div className="scan-radar-ring" />
-            <div className="scan-radar-ring" />
-            <div className="scan-radar-ring" />
-            <div className="scan-radar-axes" />
-            <div className="scan-radar-sweep" />
-            <div className="scan-radar-dot" />
+      <div className="scan-live-root">
+        {/* Fondo de partículas LiDAR */}
+        <div className="scan-live-particles">
+          {Array.from({ length: 28 }).map((_, i) => (
+            <div key={i} className="scan-live-dot" style={{
+              left: `${Math.random() * 100}%`,
+              top:  `${Math.random() * 100}%`,
+              animationDelay: `${(Math.random() * 2.5).toFixed(2)}s`,
+              animationDuration: `${(1.8 + Math.random() * 1.4).toFixed(2)}s`,
+            }} />
+          ))}
+        </div>
+
+        {/* Centro */}
+        <div className="scan-live-center safe-top safe-bottom">
+          {/* Logo / pulso LiDAR */}
+          <div className="scan-live-pulse">
+            <div className="scan-live-ring scan-live-ring-1" />
+            <div className="scan-live-ring scan-live-ring-2" />
+            <div className="scan-live-ring scan-live-ring-3" />
+            <div className="scan-live-core">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="5" fill="white" opacity="0.9"/>
+                <path d="M16 2v4M16 26v4M2 16h4M26 16h4M6.1 6.1l2.8 2.8M23.1 23.1l2.8 2.8M23.1 6.1l-2.8 2.8M9.1 23.1l-2.8 2.8" stroke="white" strokeWidth="1.5" strokeLinecap="round" opacity="0.55"/>
+              </svg>
+            </div>
           </div>
 
-          {/* Texto de estado */}
-          <div>
-            <p className="scan-status-text">Escaneando habitación…</p>
-          </div>
+          <div className="scan-live-label">ESCANEANDO</div>
 
-          <p className="scan-status-sub">
-            Mueve el iPhone lentamente por la estancia.<br />
-            Pulsa <strong style={{ color: 'var(--accent)' }}>Listo</strong> en la pantalla de escaneo cuando termines.
+          <p className="scan-live-hint">
+            Mueve el iPhone lentamente<br/>
+            Pulsa <strong>Listo</strong> cuando termines
           </p>
 
-          {/* Barra de progreso */}
-          <div className="scan-progress-bar" />
+          {/* Indicador de captura activa */}
+          <div className="scan-live-bar">
+            <div className="scan-live-bar-fill" />
+          </div>
         </div>
       </div>
     )
