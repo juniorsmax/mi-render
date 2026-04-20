@@ -343,7 +343,7 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
           result={scanResult}
           projectName="Habitación"
           onBack={() => setStep('result-classic')}
-          onAccept={() => onComplete({ ...scanResult })}
+          onAccept={(data) => onComplete({ ...scanResult, measurements: data?.measurements ?? [] })}
         />
       )
     }

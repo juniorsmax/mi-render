@@ -19,19 +19,21 @@
  *  onAccept     — función llamada al aceptar (continúa flujo presupuesto)
  */
 
-import { Suspense, useRef, useState, useEffect, useCallback } from 'react'
+import { Suspense, useRef, useState, useEffect, createContext, useContext } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
   OrbitControls,
   PerspectiveCamera,
   Html,
-  Environment,
   ContactShadows,
 } from '@react-three/drei'
 import * as THREE from 'three'
 import { exportUSDZ, openViewer } from '../lib/lidar'
 import { Capacitor } from '@capacitor/core'
 import './Room3DView.css'
+
+// Contexto para raycasting del modo Medir
+const MeasureCtx = createContext(null)
 
 // ─── Paleta de objetos detectados ────────────────────────────────────────────
 
@@ -73,15 +75,22 @@ function DollhouseScene({ result, layers, floorType }) {
   const windows = result?.windows ?? []
   const objects = result?.objects ?? []
   const height  = result?.avgHeight ?? WALL_H
+  const onPick  = useContext(MeasureCtx)
 
   // Calcular bbox del suelo para centrarlo en escena
   const floorW = result?.floorArea ? Math.sqrt(result.floorArea) * 1.2 : 4
   const floorD = floorW
 
+  function handleClick(e) {
+    if (!onPick) return
+    e.stopPropagation()
+    onPick(e.point.clone())
+  }
+
   return (
     <group>
-      {/* Suelo */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      {/* Suelo (también clickable en modo medir) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={handleClick}>
         <planeGeometry args={[floorW * 2, floorD * 2]} />
         <meshStandardMaterial
           color={floorType === 'tile' ? FLOOR_TILE : FLOOR_PARQUET}
@@ -137,16 +146,17 @@ function DollhouseScene({ result, layers, floorType }) {
 
 // Pared individual desde datos RoomPlan
 function WallMesh({ wall, height }) {
-  const transform = wall.transform  // simd_float4x4 → array 16 floats col-major
+  const onPick  = useContext(MeasureCtx)
+  const transform = wall.transform
   const dimX = wall.dimensions?.[0] ?? wall.width  ?? 3
   const dimY = wall.dimensions?.[1] ?? height
   const dimZ = wall.dimensions?.[2] ?? 0.2
-
   const matrix = transform ? buildMatrix(transform) : null
 
   return (
     <mesh castShadow receiveShadow matrixAutoUpdate={false}
-      ref={el => { if (el && matrix) el.matrix.copy(matrix) }}>
+      ref={el => { if (el && matrix) el.matrix.copy(matrix) }}
+      onClick={onPick ? (e) => { e.stopPropagation(); onPick(e.point.clone()) } : undefined}>
       <boxGeometry args={[dimX, dimY, Math.max(dimZ, 0.12)]} />
       <meshStandardMaterial color={WALL_COLOR} roughness={0.85} metalness={0} />
     </mesh>
@@ -155,6 +165,7 @@ function WallMesh({ wall, height }) {
 
 // Superficie genérica (puerta/ventana)
 function SurfaceMesh({ surface, color, opacity }) {
+  const onPick  = useContext(MeasureCtx)
   const transform = surface.transform
   const dimX = surface.dimensions?.[0] ?? surface.width  ?? 1
   const dimY = surface.dimensions?.[1] ?? surface.height ?? 2
@@ -163,7 +174,8 @@ function SurfaceMesh({ surface, color, opacity }) {
 
   return (
     <mesh matrixAutoUpdate={false}
-      ref={el => { if (el && matrix) el.matrix.copy(matrix) }}>
+      ref={el => { if (el && matrix) el.matrix.copy(matrix) }}
+      onClick={onPick ? (e) => { e.stopPropagation(); onPick(e.point.clone()) } : undefined}>
       <boxGeometry args={[dimX, dimY, Math.max(dimZ, 0.08)]} />
       <meshStandardMaterial color={color} transparent opacity={opacity}
         roughness={0.5} metalness={0.1} />
@@ -392,30 +404,130 @@ function VirtualJoystick({ joystickRef }) {
   )
 }
 
+// ─── Marcadores de medición (dentro del Canvas) ──────────────────────────────
+
+function MeasureMarkers({ pending, measurements }) {
+  return (
+    <group>
+      {/* Punto pendiente (primer clic) */}
+      {pending && (
+        <mesh position={pending}>
+          <sphereGeometry args={[0.06, 12, 12]} />
+          <meshBasicMaterial color="#ffcc00" />
+        </mesh>
+      )}
+
+      {/* Mediciones completadas */}
+      {measurements.map((m) => (
+        <group key={m.id}>
+          {/* Esfera A */}
+          <mesh position={m.a}>
+            <sphereGeometry args={[0.055, 12, 12]} />
+            <meshBasicMaterial color="#ffcc00" />
+          </mesh>
+          {/* Esfera B */}
+          <mesh position={m.b}>
+            <sphereGeometry args={[0.055, 12, 12]} />
+            <meshBasicMaterial color="#ffcc00" />
+          </mesh>
+          {/* Línea entre puntos */}
+          <MeasureLine a={m.a} b={m.b} />
+          {/* Etiqueta distancia */}
+          <Html
+            position={new THREE.Vector3().addVectors(m.a, m.b).multiplyScalar(0.5)}
+            center
+            distanceFactor={7}
+            style={{ pointerEvents: 'none' }}>
+            <div className="r3d-measure-tag">
+              {m.dist.toFixed(2)} m
+            </div>
+          </Html>
+        </group>
+      ))}
+    </group>
+  )
+}
+
+// Cilindro delgado alineado entre dos puntos
+function MeasureLine({ a, b }) {
+  const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5)
+  const dir = new THREE.Vector3().subVectors(b, a)
+  const len = dir.length()
+  const q   = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    dir.clone().normalize()
+  )
+  return (
+    <mesh position={mid} quaternion={q}>
+      <cylinderGeometry args={[0.012, 0.012, len, 6]} />
+      <meshBasicMaterial color="#ffcc00" transparent opacity={0.85} />
+    </mesh>
+  )
+}
+
 // ─── Componente principal ────────────────────────────────────────────────────
 
 export function Room3DView({ result, projectName = 'Habitación', onBack, onAccept }) {
   const orbitRef   = useRef()
   const joystick   = useRef({ x: 0, y: 0 })
 
-  const [walkMode,   setWalkMode]   = useState(false)
-  const [floorType,  setFloorType]  = useState('parquet')  // 'parquet' | 'tile'
-  const [showLayers, setShowLayers] = useState(false)
+  const [walkMode,      setWalkMode]      = useState(false)
+  const [floorType,     setFloorType]     = useState('parquet')
+  const [showLayers,    setShowLayers]    = useState(false)
   const [layers, setLayers] = useState({
-    furniture: true,
-    ceil:      false,
-    measures:  false,
-    textures:  false,
+    furniture: true, ceil: false, measures: false, textures: false,
   })
-  const [activeBar, setActiveBar] = useState(null)  // 'measure'|'plan'|'export'|'comment'|'video'
-  const [exporting,  setExporting] = useState(false)
+  const [activeBar,     setActiveBar]     = useState(null)
+  const [exporting,     setExporting]     = useState(false)
 
-  // Toggle individual de capa
+  // ── Estado de mediciones ──────────────────────────────────────────
+  const [measureMode,   setMeasureMode]   = useState(false)
+  const [pending,       setPending]       = useState(null)      // THREE.Vector3 primer punto
+  const [measurements,  setMeasurements]  = useState([])        // [{id,a,b,dist,label}]
+  const [showMPanel,    setShowMPanel]    = useState(false)
+  const [editingId,     setEditingId]     = useState(null)
+  const [editLabel,     setEditLabel]     = useState('')
+
+  // Activar/desactivar modo medir
+  function toggleMeasure() {
+    const next = !measureMode
+    setMeasureMode(next)
+    setPending(null)
+    if (next) { setActiveBar('measure'); setShowMPanel(true) }
+    else      { setActiveBar(null);      setShowMPanel(false) }
+  }
+
+  // Callback de clic en modelo 3D
+  function handlePick(point) {
+    if (!measureMode) return
+    if (!pending) {
+      setPending(point)
+    } else {
+      const dist = pending.distanceTo(point)
+      const id   = Date.now()
+      setMeasurements(prev => [
+        ...prev,
+        { id, a: pending, b: point, dist, label: `Medida ${prev.length + 1}` },
+      ])
+      setPending(null)
+    }
+  }
+
+  // Editar etiqueta
+  function startEdit(m) { setEditingId(m.id); setEditLabel(m.label) }
+  function saveEdit(id) {
+    setMeasurements(prev => prev.map(m => m.id === id ? { ...m, label: editLabel } : m))
+    setEditingId(null)
+  }
+  function deleteMeasure(id) {
+    setMeasurements(prev => prev.filter(m => m.id !== id))
+    if (pending) setPending(null)
+  }
+
   function toggleLayer(key) {
     setLayers(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  // Reset a vista top-down
   function resetCamera() {
     if (!orbitRef.current) return
     orbitRef.current.reset()
@@ -426,18 +538,15 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
     orbitRef.current.update()
   }
 
-  // Exportar USDZ
   async function handleExportUSDZ() {
     setExporting(true)
-    try {
-      await exportUSDZ({ name: projectName })
-    } catch { /* silencio */ }
+    try { await exportUSDZ({ name: projectName }) } catch { /* silencio */ }
     setExporting(false)
   }
 
-  // Abrir visor nativo
-  async function handleOpenNativeViewer() {
-    try { await openViewer({}) } catch { /* silencio */ }
+  // Exportar mediciones al presupuesto
+  function handleAccept() {
+    onAccept?.({ measurements })
   }
 
   return (
@@ -449,48 +558,117 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
         </button>
         <span className="r3d-title">{projectName}</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          {/* Toggle suelo */}
           <button className="r3d-btn-sm" onClick={() => setFloorType(f => f === 'parquet' ? 'tile' : 'parquet')}>
             {floorType === 'parquet' ? '🪵' : '⬜'}
           </button>
-          {/* Reset cámara top-down */}
           <button className="r3d-btn-sm" onClick={resetCamera}>⊙</button>
-          {/* Toggle layers */}
-          <button className="r3d-btn-sm r3d-btn-active" onClick={() => setShowLayers(v => !v)}>
-            ⊞
-          </button>
+          <button className="r3d-btn-sm r3d-btn-active" onClick={() => setShowLayers(v => !v)}>⊞</button>
         </div>
       </div>
 
       {/* ── Canvas 3D ── */}
-      <div className="r3d-canvas-wrap">
-        <Canvas shadows dpr={[1, 2]}
-          gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
-          <color attach="background" args={['#ddeeff']} />
-          <fog attach="fog" args={['#ddeeff', 15, 35]} />
+      <div className={`r3d-canvas-wrap ${measureMode ? 'r3d-cursor-cross' : ''}`}>
+        <MeasureCtx.Provider value={measureMode ? handlePick : null}>
+          <Canvas shadows dpr={[1, 2]}
+            gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
+            <color attach="background" args={['#ddeeff']} />
+            <fog attach="fog" args={['#ddeeff', 15, 35]} />
 
-          <StudioLights />
+            <StudioLights />
 
-          <Suspense fallback={null}>
-            <DollhouseScene result={result} layers={layers} floorType={floorType} />
-          </Suspense>
+            <Suspense fallback={null}>
+              <DollhouseScene result={result} layers={layers} floorType={floorType} />
+            </Suspense>
 
-          {walkMode
-            ? <FirstPersonCamera joystick={joystick} />
-            : <>
-                <PerspectiveCamera makeDefault position={[0, 8, 8]} fov={50} />
-                <OrbitControls
-                  ref={orbitRef}
-                  enableDamping
-                  dampingFactor={0.08}
-                  minDistance={1.5}
-                  maxDistance={25}
-                  maxPolarAngle={Math.PI / 2}
-                />
-              </>
-          }
-        </Canvas>
+            <MeasureMarkers pending={pending} measurements={measurements} />
+
+            {walkMode
+              ? <FirstPersonCamera joystick={joystick} />
+              : <>
+                  <PerspectiveCamera makeDefault position={[0, 8, 8]} fov={50} />
+                  <OrbitControls
+                    ref={orbitRef}
+                    enableDamping
+                    dampingFactor={0.08}
+                    minDistance={1.5}
+                    maxDistance={25}
+                    maxPolarAngle={Math.PI / 2}
+                    enabled={!measureMode}
+                  />
+                </>
+            }
+          </Canvas>
+        </MeasureCtx.Provider>
       </div>
+
+      {/* ── Overlay instrucciones de medición ── */}
+      {measureMode && (
+        <div className="r3d-measure-overlay">
+          <div className="r3d-measure-hint">
+            {pending
+              ? '📍 Toca el segundo punto'
+              : '📍 Toca el primer punto'}
+          </div>
+          {pending && (
+            <button className="r3d-measure-cancel-pt" onClick={() => setPending(null)}>
+              Cancelar punto
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Panel de mediciones (lateral) ── */}
+      {showMPanel && (
+        <div className="r3d-mpanel">
+          <div className="r3d-mpanel-header">
+            <span>📏 Mediciones</span>
+            <button className="r3d-mpanel-close" onClick={() => setShowMPanel(false)}>✕</button>
+          </div>
+
+          {measurements.length === 0 ? (
+            <p className="r3d-mpanel-empty">
+              {measureMode ? 'Toca dos puntos en el modelo' : 'Sin mediciones'}
+            </p>
+          ) : (
+            <div className="r3d-mpanel-list">
+              {measurements.map(m => (
+                <div key={m.id} className="r3d-mpanel-item">
+                  <div className="r3d-mpanel-dist">{m.dist.toFixed(2)} m</div>
+                  {editingId === m.id ? (
+                    <div className="r3d-mpanel-edit-row">
+                      <input
+                        className="r3d-mpanel-input"
+                        value={editLabel}
+                        onChange={e => setEditLabel(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveEdit(m.id)}
+                        autoFocus
+                      />
+                      <button className="r3d-mpanel-save" onClick={() => saveEdit(m.id)}>✓</button>
+                    </div>
+                  ) : (
+                    <div className="r3d-mpanel-label-row">
+                      <span className="r3d-mpanel-label" onClick={() => startEdit(m)}>{m.label}</span>
+                      <button className="r3d-mpanel-del" onClick={() => deleteMeasure(m.id)}>🗑</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {measurements.length > 0 && (
+            <div className="r3d-mpanel-footer">
+              <button className="r3d-mpanel-export" onClick={handleAccept}>
+                Añadir al presupuesto →
+              </button>
+              <button className="r3d-mpanel-clear"
+                onClick={() => { setMeasurements([]); setPending(null) }}>
+                Borrar todo
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Panel capas ── */}
       {showLayers && (
@@ -512,16 +690,15 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
         </div>
       )}
 
-      {/* ── Botón recorrido (primera persona) ── */}
+      {/* ── Botón recorrido ── */}
       <button className={`r3d-walk-btn ${walkMode ? 'active' : ''}`}
         onClick={() => setWalkMode(v => !v)}>
         {walkMode ? '⏹ Salir' : '🚶 Recorrido'}
       </button>
 
-      {/* Joystick en modo recorrido */}
       {walkMode && <VirtualJoystick joystickRef={joystick} />}
 
-      {/* ── Barra inferior estilo Polycam ── */}
+      {/* ── Barra inferior ── */}
       <div className="r3d-bar">
         {[
           { id: 'measure', icon: '📏', label: 'Medir'    },
@@ -533,21 +710,29 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
           <button key={id}
             className={`r3d-bar-btn ${activeBar === id ? 'active' : ''}`}
             onClick={() => {
+              if (id === 'measure') { toggleMeasure(); return }
               setActiveBar(v => v === id ? null : id)
               if (id === 'export') handleExportUSDZ()
             }}>
-            <span className="r3d-bar-icon">{icon}</span>
+            <span className="r3d-bar-icon">
+              {id === 'measure' && measurements.length > 0
+                ? <span style={{ position:'relative' }}>
+                    {icon}
+                    <span className="r3d-bar-badge">{measurements.length}</span>
+                  </span>
+                : icon}
+            </span>
             <span className="r3d-bar-label">{label}</span>
           </button>
         ))}
       </div>
 
-      {/* ── Botón aceptar / continuar ── */}
-      <button className="r3d-accept-btn" onClick={onAccept}>
+      {/* ── Botón aceptar ── */}
+      <button className="r3d-accept-btn" onClick={handleAccept}>
         Continuar →
       </button>
 
-      {/* ── Métricas flotantes (esquina superior derecha) ── */}
+      {/* ── Métricas ── */}
       <div className="r3d-metrics">
         <div className="r3d-metric">{(result?.floorArea ?? 0).toFixed(1)} m²</div>
         {result?.wallCount > 0 && (
@@ -555,9 +740,7 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
         )}
       </div>
 
-      {exporting && (
-        <div className="r3d-exporting">Exportando USDZ…</div>
-      )}
+      {exporting && <div className="r3d-exporting">Exportando USDZ…</div>}
     </div>
   )
 }

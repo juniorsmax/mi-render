@@ -270,6 +270,212 @@
   font-family: -apple-system, sans-serif;
 }
 
+/* ── Cursor crosshair en modo medir ── */
+.r3d-cursor-cross,
+.r3d-cursor-cross canvas {
+  cursor: crosshair !important;
+}
+
+/* ── Etiqueta de distancia en el modelo 3D ── */
+.r3d-measure-tag {
+  background: rgba(255, 204, 0, 0.92);
+  color: #1a1200;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: -apple-system, sans-serif;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.2);
+}
+
+/* ── Overlay de instrucciones ── */
+.r3d-measure-overlay {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+  pointer-events: none;
+}
+.r3d-measure-hint {
+  background: rgba(0,0,0,0.72);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.r3d-measure-cancel-pt {
+  pointer-events: auto;
+  background: rgba(255,59,48,0.85);
+  color: white;
+  border: none;
+  border-radius: 14px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ── Panel lateral de mediciones ── */
+.r3d-mpanel {
+  position: absolute;
+  top: 70px;
+  left: 12px;
+  width: 220px;
+  background: rgba(255,255,255,0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.14);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 55vh;
+}
+.r3d-mpanel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1c1c1e;
+  border-bottom: 1px solid rgba(0,0,0,0.07);
+}
+.r3d-mpanel-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #888;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.r3d-mpanel-empty {
+  font-size: 12px;
+  color: #888;
+  text-align: center;
+  padding: 18px 14px;
+  margin: 0;
+}
+.r3d-mpanel-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.r3d-mpanel-item {
+  background: rgba(0,0,0,0.04);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.r3d-mpanel-dist {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1c1c1e;
+  letter-spacing: -0.5px;
+}
+.r3d-mpanel-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.r3d-mpanel-label {
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+  flex: 1;
+}
+.r3d-mpanel-del {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+}
+.r3d-mpanel-edit-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.r3d-mpanel-input {
+  flex: 1;
+  border: 1px solid #d0d0d5;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 12px;
+  outline: none;
+}
+.r3d-mpanel-save {
+  background: #007aff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.r3d-mpanel-footer {
+  padding: 8px 10px;
+  border-top: 1px solid rgba(0,0,0,0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.r3d-mpanel-export {
+  background: #007aff;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.r3d-mpanel-clear {
+  background: none;
+  border: none;
+  color: #ff3b30;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  padding: 4px;
+}
+
+/* ── Badge contador en botón Medir ── */
+.r3d-bar-badge {
+  position: absolute;
+  top: -5px;
+  right: -8px;
+  background: #ff3b30;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  line-height: 1;
+}
+
 /* ── Spinner exportando ── */
 .r3d-exporting {
   position: absolute;
