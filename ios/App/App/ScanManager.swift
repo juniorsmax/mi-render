@@ -398,10 +398,11 @@ extension ScanManager {
             return SIMD3(vPtr[n*vStride], vPtr[n*vStride+1], vPtr[n*vStride+2])
         }
 
-        let iCount = geo.faces.indexCountPerPrimitive
-        let iPtr   = geo.faces.buffer.contents()
+        let iCount    = geo.faces.indexCountPerPrimitive
+        let iPtr      = geo.faces.buffer.contents()
             .assumingMemoryBound(to: UInt32.self)
-        let halfW:  Float = 0.0018   // 1.8mm mitad de ancho → línea de ~3.6mm
+        let halfW:    Float = 0.0016   // 1.6mm → línea de ~3.2mm
+        let maxEdge:  Float = 0.40    // descarta aristas > 40cm (líneas diagonales largas)
 
         var positions = [SIMD3<Float>]()
         var indices   = [UInt32]()
@@ -412,13 +413,18 @@ extension ScanManager {
             let ia = iPtr[f*iCount], ib = iPtr[f*iCount+1], ic = iPtr[f*iCount+2]
             let A = vert(ia), B = vert(ib), C = vert(ic)
 
-            // Normal de cara (cross product de dos aristas)
+            // Descartar caras con alguna arista muy larga (artefactos de borde)
+            guard simd_length(B-A) < maxEdge,
+                  simd_length(C-B) < maxEdge,
+                  simd_length(A-C) < maxEdge else { continue }
+
+            // Normal de cara
             let e1  = B - A, e2 = C - A
             let len = simd_length(simd_cross(e1, e2))
             guard len > 1e-8 else { continue }
             let N = simd_normalize(simd_cross(e1, e2))
 
-            // Genera ribbon para cada arista
+            // Ribbon por cada arista
             for (P0, P1) in [(A,B), (B,C), (C,A)] {
                 let dir   = P1 - P0
                 let dlen  = simd_length(dir)
@@ -429,7 +435,6 @@ extension ScanManager {
                 let base = UInt32(positions.count)
                 positions.append(P0 + perp); positions.append(P0 - perp)
                 positions.append(P1 + perp); positions.append(P1 - perp)
-                // Dos triángulos que forman el quad
                 indices.append(contentsOf: [base, base+1, base+2,
                                             base+1, base+3, base+2])
             }
