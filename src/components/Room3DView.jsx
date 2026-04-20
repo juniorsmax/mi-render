@@ -33,6 +33,28 @@ import { exportUSDZ, openViewer } from '../lib/lidar'
 import { Capacitor } from '@capacitor/core'
 import './Room3DView.css'
 
+// ─── Paleta de objetos detectados ────────────────────────────────────────────
+
+const OBJ_STYLES = {
+  bed:         { color: '#d4a574', emissive: '#b8864e', label: '🛏 Cama'      },
+  sofa:        { color: '#8b7355', emissive: '#6b5535', label: '🛋 Sofá'      },
+  chair:       { color: '#a0896b', emissive: '#806949', label: '🪑 Silla'     },
+  table:       { color: '#c4a882', emissive: '#a48862', label: '🪵 Mesa'      },
+  television:  { color: '#1a1a2e', emissive: '#000010', label: '📺 TV'        },
+  refrigerator:{ color: '#e8e8e8', emissive: '#c8c8c8', label: '🧊 Nevera'   },
+  washerDryer: { color: '#dde8f0', emissive: '#bdc8d0', label: '🫧 Lavadora' },
+  dishwasher:  { color: '#e0e8e0', emissive: '#c0c8c0', label: '🍽 Lavavaj.' },
+  oven:        { color: '#c8c0b0', emissive: '#a8a090', label: '🍳 Horno'    },
+  stove:       { color: '#b8b0a0', emissive: '#989080', label: '🔥 Cocina'   },
+  sink:        { color: '#d0dce8', emissive: '#b0bcc8', label: '🚿 Lavabo'   },
+  toilet:      { color: '#f0f0ee', emissive: '#d0d0ce', label: '🚽 WC'       },
+  bathtub:     { color: '#e8f0f8', emissive: '#c8d0d8', label: '🛁 Bañera'   },
+  fireplace:   { color: '#8b4513', emissive: '#6b2500', label: '🔥 Chimenea' },
+  stairs:      { color: '#c8c0b0', emissive: '#a8a090', label: '🪜 Escalera' },
+  storage:     { color: '#b8a898', emissive: '#988878', label: '📦 Armario'  },
+}
+const OBJ_DEFAULT = { color: '#aaaaaa', emissive: '#888888', label: '📦 Obj.' }
+
 // ─── Constantes de diseño ────────────────────────────────────────────────────
 
 const WALL_COLOR    = '#f5f5f0'   // blanco mate cálido
@@ -49,6 +71,7 @@ function DollhouseScene({ result, layers, floorType }) {
   const walls   = result?.walls   ?? []
   const doors   = result?.doors   ?? []
   const windows = result?.windows ?? []
+  const objects = result?.objects ?? []
   const height  = result?.avgHeight ?? WALL_H
 
   // Calcular bbox del suelo para centrarlo en escena
@@ -88,6 +111,11 @@ function DollhouseScene({ result, layers, floorType }) {
       {/* Ventanas */}
       {windows.map((win, i) => (
         <SurfaceMesh key={`win-${i}`} surface={win} color={WIN_COLOR} opacity={0.45} />
+      ))}
+
+      {/* Objetos detectados (muebles, electrodomésticos…) */}
+      {layers.furniture && objects.map((obj, i) => (
+        <ObjectMesh key={`obj-${i}`} object={obj} />
       ))}
 
       {/* Etiquetas de medidas */}
@@ -162,6 +190,98 @@ function WallLabel({ wall, height }) {
         {dimX.toFixed(2)} m
       </div>
     </Html>
+  )
+}
+
+// Objeto detectado por RoomPlan (cama, sofá, mesa, TV, etc.)
+function ObjectMesh({ object }) {
+  const style   = OBJ_STYLES[object.category] ?? OBJ_DEFAULT
+  const matrix  = object.transform ? buildMatrix(object.transform) : null
+
+  // Dimensiones (x=ancho, y=alto, z=prof)
+  const dimX = object.dimensions?.[0] ?? 1.0
+  const dimY = object.dimensions?.[1] ?? 0.8
+  const dimZ = object.dimensions?.[2] ?? 0.6
+
+  // Forma especial para TV: rectángulo muy delgado
+  const isTV    = object.category === 'television'
+  const isTable = object.category === 'table'
+
+  if (isTV) {
+    // TV: panel delgado montado en pared, plus pequeño pie/soporte
+    return (
+      <group matrixAutoUpdate={false}
+        ref={el => { if (el && matrix) el.matrix.copy(matrix) }}>
+        {/* Panel principal */}
+        <mesh castShadow position={[0, 0, 0]}>
+          <boxGeometry args={[dimX, dimY, 0.05]} />
+          <meshStandardMaterial color={style.color} emissive={style.emissive}
+            emissiveIntensity={0.2} roughness={0.3} metalness={0.6} />
+        </mesh>
+        {/* Marco exterior */}
+        <mesh>
+          <boxGeometry args={[dimX + 0.03, dimY + 0.03, 0.04]} />
+          <meshStandardMaterial color="#333333" roughness={0.4} metalness={0.5} />
+        </mesh>
+        {/* Pantalla (emisiva azul tenue) */}
+        <mesh position={[0, 0, 0.026]}>
+          <boxGeometry args={[dimX * 0.92, dimY * 0.88, 0.002]} />
+          <meshStandardMaterial color="#0a1628" emissive="#1a3a6a" emissiveIntensity={0.15} />
+        </mesh>
+      </group>
+    )
+  }
+
+  if (isTable) {
+    // Mesa: tablero + 4 patas
+    const legH   = dimY * 0.75
+    const legW   = 0.06
+    const topH   = dimY * 0.08
+    const ox     = (dimX / 2 - 0.12)
+    const oz     = (dimZ / 2 - 0.12)
+    const yTop   = -dimY / 2 + legH + topH / 2
+    const yLeg   = -dimY / 2 + legH / 2
+    return (
+      <group matrixAutoUpdate={false}
+        ref={el => { if (el && matrix) el.matrix.copy(matrix) }}>
+        {/* Tablero */}
+        <mesh castShadow position={[0, yTop, 0]}>
+          <boxGeometry args={[dimX, topH, dimZ]} />
+          <meshStandardMaterial color={style.color} emissive={style.emissive}
+            emissiveIntensity={0.05} roughness={0.7} metalness={0.0} />
+        </mesh>
+        {/* 4 patas */}
+        {[[-ox,-oz],[ox,-oz],[-ox,oz],[ox,oz]].map(([px, pz], i) => (
+          <mesh key={i} castShadow position={[px, yLeg, pz]}>
+            <boxGeometry args={[legW, legH, legW]} />
+            <meshStandardMaterial color={style.color} roughness={0.8} metalness={0.0} />
+          </mesh>
+        ))}
+      </group>
+    )
+  }
+
+  // Forma genérica: caja con bordes redondeados simulados (bevel)
+  return (
+    <group matrixAutoUpdate={false}
+      ref={el => { if (el && matrix) el.matrix.copy(matrix) }}>
+      {/* Cuerpo principal */}
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[dimX, dimY, dimZ]} />
+        <meshStandardMaterial
+          color={style.color}
+          emissive={style.emissive}
+          emissiveIntensity={0.05}
+          roughness={0.7}
+          metalness={0.05}
+        />
+      </mesh>
+      {/* Línea de borde superior (highlight) */}
+      <mesh position={[0, dimY / 2, 0]}>
+        <boxGeometry args={[dimX + 0.01, 0.015, dimZ + 0.01]} />
+        <meshStandardMaterial color="#ffffff" transparent opacity={0.35} roughness={0.3} />
+      </mesh>
+    </group>
   )
 }
 

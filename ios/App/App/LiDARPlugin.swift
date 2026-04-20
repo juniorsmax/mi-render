@@ -1426,65 +1426,80 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
 
         let walls: [[String: Any]] = room.walls.map { wall in
-            let t = wall.transform
             wallArea  += wall.dimensions.x * wall.dimensions.y
             perimeter += wall.dimensions.x
             return [
-                "width":      Double(wall.dimensions.x),
-                "height":     Double(wall.dimensions.y),
-                "depth":      Double(wall.dimensions.z),
+                "dimensions": [Double(wall.dimensions.x), Double(wall.dimensions.y), Double(wall.dimensions.z)],
+                "transform":  matrixArray(wall.transform),
                 "confidence": confidenceString(wall.confidence),
-                "posX":       Double(t.columns.3.x),
-                "posY":       Double(t.columns.3.y),
-                "posZ":       Double(t.columns.3.z),
-                "angle":      Double(atan2(t.columns.0.z, t.columns.0.x)),
+                // legacy (compatibilidad con código anterior)
+                "width":  Double(wall.dimensions.x),
+                "height": Double(wall.dimensions.y),
+                "depth":  Double(wall.dimensions.z),
+                "posX":   Double(wall.transform.columns.3.x),
+                "posY":   Double(wall.transform.columns.3.y),
+                "posZ":   Double(wall.transform.columns.3.z),
+                "angle":  Double(atan2(wall.transform.columns.0.z, wall.transform.columns.0.x)),
             ]
         }
 
-        // Altura: media de alturas de paredes RoomPlan, fallback 2.5 m
         let avgHeight: Float = {
             let hs = room.walls.map { $0.dimensions.y }.filter { $0 > 1.0 }
             return hs.isEmpty ? 2.5 : hs.reduce(0, +) / Float(hs.count)
         }()
 
-        // Volumen: usar cálculo LiDAR real si está disponible
         let lidarVolume = VolumeCalculator.shared.totalVolume()
         totalVolume = lidarVolume > 0.1 ? lidarVolume : floorArea * avgHeight
 
         let windows: [[String: Any]] = room.windows.map { w in
-            let t = w.transform
             return [
+                "dimensions": [Double(w.dimensions.x), Double(w.dimensions.y), Double(w.dimensions.z)],
+                "transform":  matrixArray(w.transform),
                 "width":  Double(w.dimensions.x),
                 "height": Double(w.dimensions.y),
-                "posX":   Double(t.columns.3.x),
-                "posY":   Double(t.columns.3.y),
-                "posZ":   Double(t.columns.3.z),
-                "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
+                "posX":   Double(w.transform.columns.3.x),
+                "posY":   Double(w.transform.columns.3.y),
+                "posZ":   Double(w.transform.columns.3.z),
+                "angle":  Double(atan2(w.transform.columns.0.z, w.transform.columns.0.x)),
             ]
         }
         let windowArea = room.windows.reduce(Float(0)) { $0 + Float($1.dimensions.x * $1.dimensions.y) }
 
         let doors: [[String: Any]] = room.doors.map { d in
-            let t = d.transform
             return [
+                "dimensions": [Double(d.dimensions.x), Double(d.dimensions.y), Double(d.dimensions.z)],
+                "transform":  matrixArray(d.transform),
                 "width":  Double(d.dimensions.x),
                 "height": Double(d.dimensions.y),
-                "posX":   Double(t.columns.3.x),
-                "posY":   Double(t.columns.3.y),
-                "posZ":   Double(t.columns.3.z),
-                "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
+                "posX":   Double(d.transform.columns.3.x),
+                "posY":   Double(d.transform.columns.3.y),
+                "posZ":   Double(d.transform.columns.3.z),
+                "angle":  Double(atan2(d.transform.columns.0.z, d.transform.columns.0.x)),
                 "isOpen": false,
             ]
         }
 
         let openings: [[String: Any]] = room.openings.map { o in
-            let t = o.transform
             return [
+                "dimensions": [Double(o.dimensions.x), Double(o.dimensions.y), Double(o.dimensions.z)],
+                "transform":  matrixArray(o.transform),
                 "width":  Double(o.dimensions.x),
                 "height": Double(o.dimensions.y),
-                "posX":   Double(t.columns.3.x),
-                "posZ":   Double(t.columns.3.z),
-                "angle":  Double(atan2(t.columns.0.z, t.columns.0.x)),
+                "posX":   Double(o.transform.columns.3.x),
+                "posZ":   Double(o.transform.columns.3.z),
+                "angle":  Double(atan2(o.transform.columns.0.z, o.transform.columns.0.x)),
+            ]
+        }
+
+        // ── Objetos detectados por RoomPlan ───────────────────────────────
+        let objects: [[String: Any]] = room.objects.map { obj in
+            return [
+                "category":   categoryString(obj.category),
+                "dimensions": [Double(obj.dimensions.x),
+                               Double(obj.dimensions.y),
+                               Double(obj.dimensions.z)],
+                "transform":  matrixArray(obj.transform),
+                "confidence": confidenceString(obj.confidence),
             ]
         }
 
@@ -1500,9 +1515,20 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
             "doors":        doors,
             "windows":      windows,
             "openings":     openings,
+            "objects":      objects,
             "scanMode":     "roomplan",
             "confidence":   "high",
             "usdzExported": true,
+        ]
+    }
+
+    // Serializa simd_float4x4 como array col-major de 16 doubles (THREE.Matrix4 compatible)
+    private func matrixArray(_ t: simd_float4x4) -> [Double] {
+        [
+            Double(t.columns.0.x), Double(t.columns.0.y), Double(t.columns.0.z), Double(t.columns.0.w),
+            Double(t.columns.1.x), Double(t.columns.1.y), Double(t.columns.1.z), Double(t.columns.1.w),
+            Double(t.columns.2.x), Double(t.columns.2.y), Double(t.columns.2.z), Double(t.columns.2.w),
+            Double(t.columns.3.x), Double(t.columns.3.y), Double(t.columns.3.z), Double(t.columns.3.w),
         ]
     }
 
@@ -1512,6 +1538,28 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         case .medium: return "medium"
         case .low:    return "low"
         @unknown default: return "unknown"
+        }
+    }
+
+    private func categoryString(_ cat: CapturedRoom.Object.Category) -> String {
+        switch cat {
+        case .bathtub:      return "bathtub"
+        case .bed:          return "bed"
+        case .chair:        return "chair"
+        case .dishwasher:   return "dishwasher"
+        case .fireplace:    return "fireplace"
+        case .oven:         return "oven"
+        case .refrigerator: return "refrigerator"
+        case .sink:         return "sink"
+        case .sofa:         return "sofa"
+        case .stairs:       return "stairs"
+        case .storage:      return "storage"
+        case .stove:        return "stove"
+        case .table:        return "table"
+        case .television:   return "television"
+        case .toilet:       return "toilet"
+        case .washerDryer:  return "washerDryer"
+        @unknown default:   return "unknown"
         }
     }
 }

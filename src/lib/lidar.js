@@ -116,6 +116,7 @@ function parseLiDARResult(raw) {
     windows:      raw.windows       ?? [],
     openings:     raw.openings      ?? [],
     wallCount:    raw.wallCount     ?? raw.walls?.length ?? 0,
+    objects:      raw.objects       ?? [],
     confidence:   raw.confidence    ?? 'high',
     scanMode:     'lidar-native',
     usdzPath:     raw.usdzPath      ?? null,
