@@ -364,7 +364,7 @@ extension ScanManager {
 
                 var mat = UnlitMaterial()
                 mat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
-                mat.blending = .transparent(opacity: .init(floatLiteral: 0.60))
+                mat.blending = .transparent(opacity: .init(floatLiteral: 0.28))
                 let model = ModelEntity(mesh: mesh, materials: [mat])
 
                 if let existing = self.meshEntities[anchorId] {
@@ -398,43 +398,50 @@ extension ScanManager {
             return SIMD3(vPtr[n*vStride], vPtr[n*vStride+1], vPtr[n*vStride+2])
         }
 
-        let iCount    = geo.faces.indexCountPerPrimitive
-        let iPtr      = geo.faces.buffer.contents()
+        let iCount   = geo.faces.indexCountPerPrimitive
+        let iPtr     = geo.faces.buffer.contents()
             .assumingMemoryBound(to: UInt32.self)
-        let halfW:    Float = 0.0016   // 1.6mm → línea de ~3.2mm
-        let maxEdge:  Float = 0.40    // descarta aristas > 40cm (líneas diagonales largas)
+        let halfW:   Float = 0.0014   // 1.4mm → línea de ~2.8mm
+        let maxEdge: Float = 0.35     // descarta aristas > 35cm
 
-        var positions = [SIMD3<Float>]()
-        var indices   = [UInt32]()
-        positions.reserveCapacity(geo.faces.count * 12)
-        indices.reserveCapacity(geo.faces.count * 18)
+        // Recolectar triángulos originales y subdividirlos 1 nivel (→ 4x más pequeños)
+        typealias Tri = (SIMD3<Float>, SIMD3<Float>, SIMD3<Float>)
+        var triangles = [Tri]()
+        triangles.reserveCapacity(geo.faces.count * 4)
 
         for f in 0..<geo.faces.count {
-            let ia = iPtr[f*iCount], ib = iPtr[f*iCount+1], ic = iPtr[f*iCount+2]
-            let A = vert(ia), B = vert(ib), C = vert(ic)
-
-            // Descartar caras con alguna arista muy larga (artefactos de borde)
+            let A = vert(iPtr[f*iCount]), B = vert(iPtr[f*iCount+1]), C = vert(iPtr[f*iCount+2])
             guard simd_length(B-A) < maxEdge,
                   simd_length(C-B) < maxEdge,
                   simd_length(A-C) < maxEdge else { continue }
+            // Subdivisión midpoint: 1 triángulo → 4
+            let mAB = (A+B)*0.5, mBC = (B+C)*0.5, mCA = (C+A)*0.5
+            triangles.append((A, mAB, mCA))
+            triangles.append((mAB, B, mBC))
+            triangles.append((mCA, mBC, C))
+            triangles.append((mAB, mBC, mCA))
+        }
 
-            // Normal de cara
+        var positions = [SIMD3<Float>]()
+        var indices   = [UInt32]()
+        positions.reserveCapacity(triangles.count * 12)
+        indices.reserveCapacity(triangles.count * 18)
+
+        for (A, B, C) in triangles {
             let e1  = B - A, e2 = C - A
             let len = simd_length(simd_cross(e1, e2))
             guard len > 1e-8 else { continue }
             let N = simd_normalize(simd_cross(e1, e2))
 
-            // Ribbon por cada arista
             for (P0, P1) in [(A,B), (B,C), (C,A)] {
-                let dir   = P1 - P0
-                let dlen  = simd_length(dir)
+                let dir  = P1 - P0
+                let dlen = simd_length(dir)
                 guard dlen > 1e-6 else { continue }
-                let dNorm = dir / dlen
-                let perp  = simd_normalize(simd_cross(dNorm, N)) * halfW
+                let perp = simd_normalize(simd_cross(dir/dlen, N)) * halfW
 
                 let base = UInt32(positions.count)
-                positions.append(P0 + perp); positions.append(P0 - perp)
-                positions.append(P1 + perp); positions.append(P1 - perp)
+                positions.append(P0+perp); positions.append(P0-perp)
+                positions.append(P1+perp); positions.append(P1-perp)
                 indices.append(contentsOf: [base, base+1, base+2,
                                             base+1, base+3, base+2])
             }
