@@ -18,7 +18,15 @@
       "Bash(sed -i '' 's|from '\\\\''./i18n/index.js'\\\\''|from '\\\\''./i18n/index.jsx'\\\\''|g' /Users/junior/Desktop/mi-render/src/App.jsx)",
       "Bash(git init:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m ':*)"
+      "Bash(git commit -m ':*)",
+      "WebSearch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.it-jim.com)",
+      "WebFetch(domain:wwdclounges.com)",
+      "WebFetch(domain:forums.developer.apple.com)",
+      "WebFetch(domain:www.kodeco.com)",
+      "WebFetch(domain:labs.laan.com)"
     ]
   }
 }

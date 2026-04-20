@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { LangProvider } from './i18n/index.jsx'
 import { BottomNav }    from './components/BottomNav.jsx'
 import { CreateSheet }  from './components/CreateSheet.jsx'
@@ -9,6 +9,7 @@ import { ProfileView }  from './views/ProfileView.jsx'
 import { TeamView }     from './views/TeamView.jsx'
 import { ScanView }     from './views/ScanView.jsx'
 import { BudgetView }   from './views/BudgetView.jsx'
+import { useProjects }  from './hooks/useProjects.js'
 
 /**
  * App — tab-based navigation with create sheet
@@ -19,18 +20,18 @@ import { BudgetView }   from './views/BudgetView.jsx'
 export default function App() {
   const [tab, setTab]           = useState('projects')
   const [showCreate, setCreate] = useState(false)
-  const [flow, setFlow]         = useState(null)  // null | 'scan' | 'manual' | 'budget' | 'view-project'
+  const [flow, setFlow]         = useState(null)
   const [scannedRoom, setRoom]  = useState(null)
   const [openProject, setOpenProject] = useState(null)
-  const [projects, setProjects] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('mi-render-projects') || '[]') }
-    catch { return [] }
-  })
 
-  useEffect(() => {
-    try { localStorage.setItem('mi-render-projects', JSON.stringify(projects)) }
-    catch {}
-  }, [projects])
+  const {
+    projects,
+    addProject,
+    updateProject,
+    deleteProject,
+    exportProjectJSON,
+    importProjectJSON,
+  } = useProjects()
 
   function handleSelect(optionId) {
     setCreate(false)
@@ -55,36 +56,43 @@ export default function App() {
   }
 
   function handleBudgetDone(budgetData) {
+    const room = scannedRoom
     if (openProject) {
-      // Actualizar proyecto existente
-      setProjects((p) => p.map((proj) =>
-        proj.id === openProject.id
-          ? { ...proj, ...buildProjectFromBudget(budgetData, scannedRoom, proj) }
-          : proj
-      ))
+      updateProject(openProject.id, {
+        name:       budgetData?.roomName   || room?.roomName   || openProject.name,
+        clientName: budgetData?.clientName || openProject.clientName || '',
+        areaSqM:    budgetData?.areaSqM    ?? room?.floorArea  ?? openProject.areaSqM ?? 0,
+        perimeter:  room?.perimeter        ?? openProject.perimeter ?? 0,
+        volume:     room?.totalVolume      ?? openProject.volume    ?? 0,
+        wallCount:  room?.wallCount        ?? openProject.wallCount ?? 0,
+        avgHeight:  room?.avgHeight        ?? openProject.avgHeight ?? 2.5,
+        thumbnail:  room?.thumbnail        || openProject.thumbnail || null,
+        usdzPath:   room?.usdzPath         || openProject.usdzPath  || null,
+        room:       room                   || openProject.room,
+        budgetData,
+        total:      budgetData?.total      ?? openProject.total ?? 0,
+      })
       setOpenProject(null)
     } else {
-      // Proyecto nuevo
-      setProjects((p) => [buildProjectFromBudget(budgetData, scannedRoom, { id: Date.now(), type: scannedRoom?.scanMode === 'manual' ? 'manual' : 'scan' }), ...p])
+      addProject({
+        name:       budgetData?.roomName   || room?.roomName   || 'Proyecto',
+        type:       room?.scanMode === 'manual' ? 'manual' : 'scan',
+        clientName: budgetData?.clientName || '',
+        areaSqM:    budgetData?.areaSqM    ?? room?.floorArea  ?? 0,
+        perimeter:  room?.perimeter        ?? 0,
+        volume:     room?.totalVolume      ?? 0,
+        wallCount:  room?.wallCount        ?? room?.walls?.length ?? 0,
+        avgHeight:  room?.avgHeight        ?? 2.5,
+        thumbnail:  room?.thumbnail        || null,
+        usdzPath:   room?.usdzPath         || null,
+        room,
+        budgetData,
+        total:      budgetData?.total      ?? 0,
+      })
     }
     setFlow(null)
     setRoom(null)
     setTab('projects')
-  }
-
-  function buildProjectFromBudget(budgetData, room, base) {
-    return {
-      ...base,
-      name: budgetData?.roomName || room?.roomName || base.name || 'Proyecto',
-      clientName: budgetData?.clientName || base.clientName || '',
-      areaSqM: budgetData?.areaSqM ?? room?.floorArea ?? room?.areaSqM ?? base.areaSqM ?? 0,
-      total: budgetData?.total ?? base.total ?? 0,
-      date: budgetData?.date || new Date().toLocaleDateString('es-ES'),
-      thumbnail: room?.thumbnail || base.thumbnail || null,
-      usdzPath: room?.usdzPath || base.usdzPath || null,   // ruta al modelo 3D USDZ
-      room: room || base.room,
-      budgetData,
-    }
   }
 
   // ── Full-screen flows (scanner / budget) ─────────────────────────
@@ -123,7 +131,9 @@ export default function App() {
           <ProjectsView
             projects={projects}
             onOpen={handleOpenProject}
-            onProjectsChanged={(id) => setProjects(prev => prev.filter(p => String(p.id) !== String(id)))}
+            onDelete={deleteProject}
+            onExport={exportProjectJSON}
+            onImport={importProjectJSON}
           />
         )
       }
