@@ -348,15 +348,15 @@ extension ScanManager {
     /// Construye un ModelEntity desde ARMeshAnchor y lo añade/actualiza en ARView.scene.
     /// MeshDescriptor se construye en background; MeshResource.generate y addAnchor
     /// se ejecutan en main thread (requieren contexto Metal del hilo principal).
-    /// Renderiza el mesh LiDAR como wireframe blanco usando primitivas .lines de RealityKit.
-    /// Extrae las 3 aristas de cada triángulo y las renderiza como segmentos blancos.
-    /// El ARView transparente muestra las líneas sobre la cámara limpia de RoomCaptureView.
+    /// Renderiza el mesh LiDAR como wireframe blanco.
+    /// Cada arista se convierte en un ribbon delgado (2 triángulos) usando .triangles —
+    /// compatible con todas las versiones de RealityKit (no usa .lines que no existe).
     func renderMesh(_ anchor: ARMeshAnchor) {
         guard let arView = arView else { return }
         let anchorId = anchor.identifier
 
         DispatchQueue.global(qos: .userInitiated).async {
-            guard let desc = Self.buildWireframeDescriptor(from: anchor) else { return }
+            guard let desc = Self.buildWireframeEdgeDescriptor(from: anchor) else { return }
 
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, let arView = self.arView else { return }
@@ -364,7 +364,7 @@ extension ScanManager {
 
                 var mat = UnlitMaterial()
                 mat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
-                mat.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+                mat.blending = .transparent(opacity: .init(floatLiteral: 0.60))
                 let model = ModelEntity(mesh: mesh, materials: [mat])
 
                 if let existing = self.meshEntities[anchorId] {
@@ -381,43 +381,65 @@ extension ScanManager {
         }
     }
 
-    /// Construye un MeshDescriptor con primitivas .lines (aristas del mesh triangulado).
-    /// Cada triángulo (a, b, c) genera 3 aristas: a-b, b-c, c-a.
-    static func buildWireframeDescriptor(from anchor: ARMeshAnchor) -> MeshDescriptor? {
+    /// Construye ribbons delgados (2 triángulos por arista) para visualizar el wireframe.
+    /// Cada triángulo (A,B,C) genera 3 aristas; cada arista → quad de 2mm de ancho
+    /// alineado con la normal de cara → visible desde el ángulo de la cámara.
+    static func buildWireframeEdgeDescriptor(from anchor: ARMeshAnchor) -> MeshDescriptor? {
         let geo = anchor.geometry
         guard geo.vertices.count > 0, geo.faces.count > 0 else { return nil }
 
-        // Vértices
         let vPtr    = geo.vertices.buffer.contents()
             .advanced(by: geo.vertices.offset)
             .assumingMemoryBound(to: Float.self)
         let vStride = geo.vertices.stride / MemoryLayout<Float>.stride
-        var positions = [SIMD3<Float>]()
-        positions.reserveCapacity(geo.vertices.count)
-        for i in 0..<geo.vertices.count {
-            positions.append(SIMD3(vPtr[i*vStride], vPtr[i*vStride+1], vPtr[i*vStride+2]))
+
+        func vert(_ i: UInt32) -> SIMD3<Float> {
+            let n = Int(i)
+            return SIMD3(vPtr[n*vStride], vPtr[n*vStride+1], vPtr[n*vStride+2])
         }
 
-        // Aristas: 3 por triángulo (sin deduplicar — suficiente para visualización)
-        let iCount = geo.faces.indexCountPerPrimitive   // 3 para triángulos
+        let iCount = geo.faces.indexCountPerPrimitive
         let iPtr   = geo.faces.buffer.contents()
             .assumingMemoryBound(to: UInt32.self)
-        var lineIndices = [UInt32]()
-        lineIndices.reserveCapacity(geo.faces.count * 6)
+        let halfW:  Float = 0.0018   // 1.8mm mitad de ancho → línea de ~3.6mm
+
+        var positions = [SIMD3<Float>]()
+        var indices   = [UInt32]()
+        positions.reserveCapacity(geo.faces.count * 12)
+        indices.reserveCapacity(geo.faces.count * 18)
+
         for f in 0..<geo.faces.count {
-            let a = iPtr[f * iCount],
-                b = iPtr[f * iCount + 1],
-                c = iPtr[f * iCount + 2]
-            lineIndices.append(a); lineIndices.append(b)
-            lineIndices.append(b); lineIndices.append(c)
-            lineIndices.append(c); lineIndices.append(a)
+            let ia = iPtr[f*iCount], ib = iPtr[f*iCount+1], ic = iPtr[f*iCount+2]
+            let A = vert(ia), B = vert(ib), C = vert(ic)
+
+            // Normal de cara (cross product de dos aristas)
+            let e1  = B - A, e2 = C - A
+            let len = simd_length(simd_cross(e1, e2))
+            guard len > 1e-8 else { continue }
+            let N = simd_normalize(simd_cross(e1, e2))
+
+            // Genera ribbon para cada arista
+            for (P0, P1) in [(A,B), (B,C), (C,A)] {
+                let dir   = P1 - P0
+                let dlen  = simd_length(dir)
+                guard dlen > 1e-6 else { continue }
+                let dNorm = dir / dlen
+                let perp  = simd_normalize(simd_cross(dNorm, N)) * halfW
+
+                let base = UInt32(positions.count)
+                positions.append(P0 + perp); positions.append(P0 - perp)
+                positions.append(P1 + perp); positions.append(P1 - perp)
+                // Dos triángulos que forman el quad
+                indices.append(contentsOf: [base, base+1, base+2,
+                                            base+1, base+3, base+2])
+            }
         }
-        guard !positions.isEmpty, !lineIndices.isEmpty else { return nil }
+        guard !positions.isEmpty else { return nil }
 
         var desc = MeshDescriptor()
-        desc.name       = "wire_\(anchor.identifier.uuidString.prefix(8))"
+        desc.name       = "wedge_\(anchor.identifier.uuidString.prefix(8))"
         desc.positions  = .init(positions)
-        desc.primitives = .lines(lineIndices)
+        desc.primitives = .triangles(indices)
         return desc
     }
 
