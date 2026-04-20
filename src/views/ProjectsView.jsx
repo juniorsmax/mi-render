@@ -202,17 +202,33 @@ export function ProjectsView({ projects, onOpen, onDelete, onExport, onImport })
 
       {/* Lista */}
       <div className="page-content">
-        {merged.length === 0 ? (
+        {loadingNative && merged.length === 0 ? (
+          <ProjectsSkeleton />
+        ) : merged.length === 0 ? (
           <div className="projects-empty">
-            <div className="projects-empty-icon">📁</div>
+            <div className="projects-empty-art">
+              <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+                <rect x="8" y="14" width="36" height="28" rx="5" fill="currentColor" opacity="0.12"/>
+                <rect x="8" y="14" width="36" height="28" rx="5" stroke="currentColor" strokeWidth="2" opacity="0.4"/>
+                <path d="M18 26h16M18 32h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.5"/>
+                <rect x="16" y="8" width="12" height="8" rx="3" fill="currentColor" opacity="0.2"/>
+                <rect x="16" y="8" width="12" height="8" rx="3" stroke="currentColor" strokeWidth="1.5" opacity="0.4"/>
+              </svg>
+            </div>
             <p className="projects-empty-title">{t.home.empty}</p>
-            <p className="muted" style={{ fontSize: 13 }}>{t.home.emptyHint}</p>
+            <p className="projects-empty-desc">{t.home.emptyHint}</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="projects-empty">
-            <div className="projects-empty-icon" style={{ fontSize: '2rem' }}>🔍</div>
+            <div className="projects-empty-art">
+              <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
+                <circle cx="24" cy="24" r="13" stroke="currentColor" strokeWidth="2" opacity="0.4"/>
+                <path d="M33 33l8 8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity="0.5"/>
+                <path d="M20 24h8M24 20v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.3"/>
+              </svg>
+            </div>
             <p className="projects-empty-title">Sin resultados</p>
-            <p className="muted" style={{ fontSize: 13 }}>Prueba con otro nombre o fecha</p>
+            <p className="projects-empty-desc">Prueba con otro nombre o fecha</p>
           </div>
         ) : (
           filtered.map((p) => (
@@ -249,6 +265,25 @@ export function ProjectsView({ projects, onOpen, onDelete, onExport, onImport })
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Skeleton de carga ─────────────────────────────────────────────────────────
+
+function ProjectsSkeleton() {
+  return (
+    <div className="projects-skeleton-list">
+      {[1, 2, 3].map(i => (
+        <div key={i} className="skeleton-card" style={{ opacity: 1 - i * 0.15 }}>
+          <div className="skeleton-thumb skeleton" />
+          <div className="skeleton-body">
+            <div className="skeleton-line-lg skeleton" />
+            <div className="skeleton-line-sm skeleton" />
+            <div className="skeleton-line-xs skeleton" />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

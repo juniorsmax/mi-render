@@ -16,11 +16,45 @@
 
 .projects-empty {
   flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 10px;
-  text-align: center; padding: 60px 24px;
+  align-items: center; justify-content: center; gap: 16px;
+  text-align: center; padding: 48px 32px;
+  animation: slideInUp 300ms ease-in-out both;
 }
-.projects-empty-icon { font-size: 4rem; opacity: 0.4; }
-.projects-empty-title { font: 700 17px var(--font); color: var(--text-strong); }
+.projects-empty-art {
+  width: 120px; height: 120px;
+  background: var(--surface-2);
+  border-radius: 28px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 52px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+}
+.projects-empty-title {
+  font-size: 22px; font-weight: 700;
+  color: var(--text-strong); letter-spacing: -0.3px;
+}
+.projects-empty-desc {
+  font-size: 15px; color: var(--text-muted); line-height: 1.5; max-width: 240px;
+}
+
+/* ── Skeleton cards ── */
+.projects-skeleton-list {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px;
+}
+.skeleton-card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+}
+.skeleton-thumb {
+  width: 60px; height: 60px; border-radius: var(--r-md); flex-shrink: 0;
+}
+.skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.skeleton-line-lg { height: 14px; width: 60%; }
+.skeleton-line-sm { height: 11px; width: 40%; }
+.skeleton-line-xs { height: 10px; width: 25%; }
 
 .project-card {
   display: flex; align-items: center; gap: 14px;

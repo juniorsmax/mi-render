@@ -3,11 +3,12 @@
 .r3d-root {
   position: fixed;
   inset: 0;
-  background: #ddeeff;
+  background: var(--bg-beige, #f5f2ea);
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
   z-index: 200;
+  animation: fadeInScale 300ms ease-in-out both;
 }
 
 /* ── Header ── */
@@ -17,51 +18,57 @@
   justify-content: space-between;
   padding: 12px 16px;
   padding-top: max(12px, env(safe-area-inset-top));
-  background: rgba(255,255,255,0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(0,0,0,0.08);
+  background: rgba(245,242,234,0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(0,0,0,0.07);
   z-index: 10;
 }
 
 .r3d-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: #1c1c1e;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.4px;
 }
 
+/* Botón negro redondo estilo Polycam */
 .r3d-btn-icon {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.07);
+  background: #0a0a0a;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1c1c1e;
+  color: #ffffff;
   cursor: pointer;
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
+.r3d-btn-icon:active { transform: scale(0.90); }
 
 .r3d-btn-sm {
-  height: 32px;
-  min-width: 32px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: rgba(0,0,0,0.07);
+  height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: #0a0a0a;
   border: none;
   font-size: 14px;
-  color: #1c1c1e;
+  color: #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
+.r3d-btn-sm:active { transform: scale(0.90); }
 
 .r3d-btn-sm.r3d-btn-active {
-  background: rgba(0,122,255,0.15);
-  color: #007aff;
+  background: #007aff;
 }
 
 /* ── Canvas ── */
@@ -178,10 +185,10 @@
   display: flex;
   justify-content: space-around;
   align-items: center;
-  background: rgba(255,255,255,0.94);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-top: 1px solid rgba(0,0,0,0.08);
+  background: rgba(245,242,234,0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(0,0,0,0.07);
   padding: 10px 0;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   z-index: 10;

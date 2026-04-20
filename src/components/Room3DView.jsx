@@ -582,8 +582,8 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
         <MeasureCtx.Provider value={measureMode ? handlePick : null}>
           <Canvas shadows dpr={[1, 2]}
             gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
-            <color attach="background" args={['#ddeeff']} />
-            <fog attach="fog" args={['#ddeeff', 15, 35]} />
+            <color attach="background" args={['#f5f2ea']} />
+            <fog attach="fog" args={['#f5f2ea', 18, 38]} />
 
             <StudioLights />
 

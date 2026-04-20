@@ -106,6 +106,22 @@
   font-size: 14px;
 }
 
+/* Hero illustration */
+.home-hero-illustration {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-strong);
+}
+
+/* Feature pill icons */
+.home-feature-pill svg { color: var(--accent); }
+
+/* Step number — negro redondo estilo Polycam */
+.home-step-n {
+  background: #0a0a0a !important;
+}
+
 /* CTA */
 .home-cta {
   display: flex;
@@ -113,7 +129,28 @@
   align-items: center;
   padding-bottom: 12px;
 }
-.home-cta .btn-lg {
+
+.home-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #0a0a0a;
+  color: #ffffff;
+  border: none;
+  border-radius: 28px;
+  padding: 16px 36px;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
   width: 100%;
   max-width: 320px;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 300ms ease;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: -0.2px;
+}
+.home-cta-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
 }

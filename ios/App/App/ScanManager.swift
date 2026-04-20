@@ -7,6 +7,7 @@
 
 import ARKit
 import RealityKit
+import RoomPlan
 import ModelIO
 import MetalKit
 import UIKit
