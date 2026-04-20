@@ -31,11 +31,17 @@ class ScanManager: NSObject {
     /// Mapa UUID→AnchorEntity para actualizar entidades de mesh sin recrearlas.
     private(set) var meshEntities: [UUID: AnchorEntity] = [:]
 
-    /// Contador de actualizaciones por anchor — cuantas más, más escaneada la zona.
+    /// Throttle: última vez que se reconstruyó el wireframe de cada anchor.
+    private var meshLastBuilt: [UUID: TimeInterval] = [:]
+
+    /// Contador de actualizaciones por anchor.
     private var meshUpdateCounts: [UUID: Int] = [:]
 
     /// Feedback háptico para sectores recién escaneados.
     private let hapticLight = UIImpactFeedbackGenerator(style: .light)
+
+    /// Entidades de superficies CapturedRoom (colores semánticos, reemplazadas en cada update).
+    private var surfaceEntities: [UUID: AnchorEntity] = [:]
 
     /// Callback adicional para que LiDARPlugin reciba los anchors directamente.
     var onMeshAnchorsUpdated: (([ARMeshAnchor]) -> Void)?
@@ -354,6 +360,13 @@ extension ScanManager {
     func renderMesh(_ anchor: ARMeshAnchor) {
         guard let arView = arView else { return }
         let anchorId = anchor.identifier
+        let now      = Date().timeIntervalSinceReferenceDate
+
+        // Throttle: reconstruir solo si han pasado ≥2.5s desde el último build
+        // (excepto ancho nuevo que no existe aún en meshEntities)
+        if meshEntities[anchorId] != nil,
+           let last = meshLastBuilt[anchorId], now - last < 2.5 { return }
+        meshLastBuilt[anchorId] = now
 
         DispatchQueue.global(qos: .userInitiated).async {
             guard let desc = Self.buildWireframeEdgeDescriptor(from: anchor) else { return }
@@ -482,7 +495,67 @@ extension ScanManager {
             self.meshEntities.values.forEach { $0.removeFromParent() }
             self.meshEntities.removeAll()
             self.meshUpdateCounts.removeAll()
+            self.meshLastBuilt.removeAll()
         }
+    }
+
+    // MARK: - Superficies CapturedRoom (colores semánticos, estilo Polycam)
+
+    /// Renderiza las superficies de CapturedRoom con colores semánticos semi-transparentes.
+    /// Reemplaza anchors anteriores en lugar de duplicarlos.
+    /// Llamar desde el main thread.
+    @available(iOS 16.0, *)
+    func renderCapturedRoomSurfaces(_ room: CapturedRoom, in arView: ARView) {
+        // Eliminar overlays previos
+        surfaceEntities.values.forEach { $0.removeFromParent() }
+        surfaceEntities.removeAll()
+
+        // Colores semánticos por tipo de superficie
+        let wallMat  = surfaceMaterial(r: 0.25, g: 0.55, b: 1.00, opacity: 0.30)  // azul
+        let doorMat  = surfaceMaterial(r: 1.00, g: 0.65, b: 0.10, opacity: 0.32)  // naranja
+        let winMat   = surfaceMaterial(r: 0.20, g: 0.90, b: 1.00, opacity: 0.25)  // cian
+        let objMat   = surfaceMaterial(r: 0.30, g: 0.85, b: 0.30, opacity: 0.22)  // verde
+
+        func addSurface(dim: SIMD3<Float>, transform: simd_float4x4,
+                        mat: UnlitMaterial, id: UUID) {
+            let d       = SIMD3<Float>(dim.x, dim.y, max(dim.z, 0.04))
+            let entity  = ModelEntity(mesh: MeshResource.generateBox(size: d),
+                                      materials: [mat])
+            let anchor  = AnchorEntity(world: transform)
+            anchor.name = "surf_\(id.uuidString.prefix(8))"
+            anchor.addChild(entity)
+            arView.scene.addAnchor(anchor)
+            surfaceEntities[id] = anchor
+        }
+
+        for s in room.walls   { addSurface(dim: s.dimensions, transform: s.transform, mat: wallMat, id: s.identifier) }
+        for s in room.doors   { addSurface(dim: s.dimensions, transform: s.transform, mat: doorMat, id: s.identifier) }
+        for s in room.windows { addSurface(dim: s.dimensions, transform: s.transform, mat: winMat,  id: s.identifier) }
+        for o in room.objects { addSurface(dim: o.dimensions, transform: o.transform, mat: objMat,  id: o.identifier) }
+
+        if #available(iOS 17.0, *) {
+            let floorMat = surfaceMaterial(r: 0.10, g: 0.88, b: 0.45, opacity: 0.18) // verde suelo
+            let ceilMat  = surfaceMaterial(r: 0.55, g: 0.75, b: 1.00, opacity: 0.15) // azul techo
+            for s in room.floors   { addSurface(dim: SIMD3(s.dimensions.x, 0.04, s.dimensions.z),
+                                                 transform: s.transform, mat: floorMat, id: s.identifier) }
+            for s in room.ceilings { addSurface(dim: SIMD3(s.dimensions.x, 0.04, s.dimensions.z),
+                                                 transform: s.transform, mat: ceilMat,  id: s.identifier) }
+        }
+    }
+
+    func clearSurfaceEntities() {
+        DispatchQueue.main.async {
+            self.surfaceEntities.values.forEach { $0.removeFromParent() }
+            self.surfaceEntities.removeAll()
+        }
+    }
+
+    private func surfaceMaterial(r: Float, g: Float, b: Float, opacity: Float) -> UnlitMaterial {
+        var mat = UnlitMaterial()
+        mat.color    = .init(tint: UIColor(red: CGFloat(r), green: CGFloat(g),
+                                          blue: CGFloat(b), alpha: 1.0))
+        mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
+        return mat
     }
 
     /// Construye un MeshDescriptor desde la geometría del ARMeshAnchor.

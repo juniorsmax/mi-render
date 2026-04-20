@@ -837,7 +837,7 @@ class RoomPlanViewController: UIViewController {
     private var captureSession: RoomCaptureSession!
     private var overlay:        ScanGuidanceOverlay!
     private var meshOverlayView: ARView?
-    private var guidanceAnchors: [String: AnchorEntity] = [:]
+    // guidanceAnchors eliminado — superficies gestionadas por ScanManager.surfaceEntities
     private var isPaused        = false
     private var torchOn         = false
     private var uiReady         = false
@@ -970,6 +970,7 @@ class RoomPlanViewController: UIViewController {
         UIStateManager.shared.reset()
         // Limpiar entidades del overlay y desconectar ScanManager
         ScanManager.shared.clearMeshEntities()
+        ScanManager.shared.clearSurfaceEntities()
         ScanManager.shared.arView   = nil
         ScanManager.shared.session  = nil
         meshOverlayView?.removeFromSuperview()
@@ -1288,7 +1289,12 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.updateGuidanceOutlines(capturedRoom)
+            // Superficies semánticas: ScanManager renderiza con colores por tipo
+            if let arView = self.meshOverlayView {
+                if #available(iOS 16.0, *) {
+                    ScanManager.shared.renderCapturedRoomSurfaces(capturedRoom, in: arView)
+                }
+            }
             self.overlay?.updateSurfaces(surfaces, doors: room.doors.count, windows: room.windows.count)
             let wallArea = room.walls.reduce(Float(0)) { $0 + $1.dimensions.x * $1.dimensions.y }
             if room.walls.count > 0 {
@@ -1299,69 +1305,7 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
     }
 
-    // MARK: – Bounding boxes blancos estilo Polycam para superficies RoomPlan
-    // Solo bordes blancos finos — sin fills de color — sobre el wireframe LiDAR.
-    private func updateGuidanceOutlines(_ room: CapturedRoom) {
-        guard let arView = meshOverlayView else { return }
-
-        guidanceAnchors.values.forEach { $0.removeFromParent() }
-        guidanceAnchors.removeAll()
-
-        // Material borde blanco — trazo muy fino (0.004m), opacidad alta
-        var whiteMat = UnlitMaterial()
-        whiteMat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
-        whiteMat.blending = .transparent(opacity: .init(floatLiteral: 0.85))
-
-        // Cian para puertas y ventanas
-        var openMat = UnlitMaterial()
-        openMat.color    = .init(tint: UIColor(red: 0.4, green: 1.0, blue: 0.9, alpha: 1.0))
-        openMat.blending = .transparent(opacity: .init(floatLiteral: 0.85))
-
-        let e: Float = 0.004  // grosor del borde (4 mm)
-
-        // Genera 12 aristas de una caja como barras delgadas
-        func boxEdges(size: SIMD3<Float>, mat: UnlitMaterial,
-                      transform: simd_float4x4, prefix: String) {
-            let w = size.x, h = size.y, d = max(size.z, e * 2)
-            let anchor = AnchorEntity(world: transform)
-            // 4 aristas horizontales superiores/inferiores (a lo largo de X)
-            for (yOff, zOff) in [(h/2, d/2), (h/2, -d/2), (-h/2, d/2), (-h/2, -d/2)] {
-                let bar = ModelEntity(mesh: MeshResource.generateBox(size: [w, e, e]),
-                                      materials: [mat])
-                bar.position = SIMD3(0, yOff, zOff)
-                anchor.addChild(bar)
-            }
-            // 4 aristas verticales (a lo largo de Y)
-            for (xOff, zOff) in [(w/2, d/2), (w/2, -d/2), (-w/2, d/2), (-w/2, -d/2)] {
-                let bar = ModelEntity(mesh: MeshResource.generateBox(size: [e, h, e]),
-                                      materials: [mat])
-                bar.position = SIMD3(xOff, 0, zOff)
-                anchor.addChild(bar)
-            }
-            // 4 aristas de profundidad (a lo largo de Z)
-            for (xOff, yOff) in [(w/2, h/2), (w/2, -h/2), (-w/2, h/2), (-w/2, -h/2)] {
-                let bar = ModelEntity(mesh: MeshResource.generateBox(size: [e, e, d]),
-                                      materials: [mat])
-                bar.position = SIMD3(xOff, yOff, 0)
-                anchor.addChild(bar)
-            }
-            arView.scene.addAnchor(anchor)
-            guidanceAnchors[prefix] = anchor
-        }
-
-        for (i, wall) in room.walls.enumerated() {
-            boxEdges(size: [wall.dimensions.x, wall.dimensions.y, 0.008],
-                     mat: whiteMat, transform: wall.transform, prefix: "w\(i)")
-        }
-        for (i, door) in room.doors.enumerated() {
-            boxEdges(size: [door.dimensions.x, door.dimensions.y, 0.008],
-                     mat: openMat, transform: door.transform, prefix: "d\(i)")
-        }
-        for (i, win) in room.windows.enumerated() {
-            boxEdges(size: [win.dimensions.x, win.dimensions.y, 0.008],
-                     mat: openMat, transform: win.transform, prefix: "win\(i)")
-        }
-    }
+    // Superficies semánticas manejadas por ScanManager.renderCapturedRoomSurfaces
 
     func captureSession(_ session: RoomCaptureSession,
                         didEndWith data: CapturedRoomData,
