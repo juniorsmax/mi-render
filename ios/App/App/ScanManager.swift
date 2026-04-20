@@ -349,56 +349,9 @@ extension ScanManager {
     /// MeshDescriptor se construye en background; MeshResource.generate y addAnchor
     /// se ejecutan en main thread (requieren contexto Metal del hilo principal).
     func renderMesh(_ anchor: ARMeshAnchor) {
-        guard let arView = arView else { return }
-
-        let anchorId   = anchor.identifier
-        let updateCount = meshUpdateCounts[anchorId] ?? 1
-
-        // Zonas bien escaneadas (≥8 actualizaciones) → no renderizar overlay
-        guard updateCount < 8 else {
-            DispatchQueue.main.async { [weak self] in
-                self?.meshEntities[anchorId]?.removeFromParent()
-                self?.meshEntities.removeValue(forKey: anchorId)
-            }
-            return
-        }
-
-        // Construir el descriptor (solo datos, sin Metal) en background
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let desc = Self.buildDescriptor(from: anchor) else { return }
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self, let arView = self.arView else { return }
-
-                guard let meshResource = try? MeshResource.generate(from: [desc]) else {
-                    print("[ScanManager] renderMesh: MeshResource.generate falló para \(anchorId)")
-                    return
-                }
-
-                // Opacidad decrece según actualizaciones — simula "área escaneada"
-                // 1-2 updates: 0.28 (azul visible)   3-4: 0.18   5-7: 0.08
-                let updateNow = self.meshUpdateCounts[anchorId] ?? 1
-                let opacity: Float
-                switch updateNow {
-                case 1...2: opacity = 0.28
-                case 3...4: opacity = 0.18
-                default:    opacity = 0.08
-                }
-                let material    = MeshRenderer.shared.scanCoverageMaterial(opacity: opacity)
-                let modelEntity = ModelEntity(mesh: meshResource, materials: [material])
-
-                if let existing = self.meshEntities[anchorId] {
-                    existing.children.forEach { $0.removeFromParent() }
-                    existing.addChild(modelEntity)
-                } else {
-                    let anchorEntity = AnchorEntity(world: anchor.transform)
-                    anchorEntity.name = "mesh_\(anchorId.uuidString.prefix(8))"
-                    anchorEntity.addChild(modelEntity)
-                    arView.scene.addAnchor(anchorEntity)
-                    self.meshEntities[anchorId] = anchorEntity
-                }
-            }
-        }
+        // Visual del wireframe manejado por showSceneUnderstanding en el ARView transparente.
+        // Este método solo actualiza el contador para háptica — sin fills de color.
+        _ = meshUpdateCounts[anchor.identifier]
     }
 
     /// Infiere la clasificación ARMeshClassification dominante de un anchor.

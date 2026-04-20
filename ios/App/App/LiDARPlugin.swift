@@ -877,9 +877,9 @@ class RoomPlanViewController: UIViewController {
         captureSession.delegate = self
 
         // ── CAPA 2: ARView transparente — mesh semántico LiDAR sutil ────────
-        // Añade colores por tipo de superficie encima de la visualización de Apple.
-        // backgroundColor .clear + environment .color(.clear) = totalmente transparente.
-        // blending .transparent en los materiales desactiva depth write.
+        // ARView transparente solo para el wireframe triangulado (estilo Polycam).
+        // backgroundColor .clear = la cámara de RoomCaptureView se ve debajo limpia.
+        // showSceneUnderstanding muestra el mesh LiDAR como wireframe blanco sin fills.
         let meshView = ARView(frame: view.bounds,
                               cameraMode: .ar,
                               automaticallyConfigureSession: false)
@@ -889,11 +889,12 @@ class RoomPlanViewController: UIViewController {
         meshView.isOpaque                 = false
         meshView.layer.backgroundColor    = UIColor.clear.cgColor
         meshView.environment.background   = .color(.clear)
-        meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField, .disableCameraGrain]
-        // showSceneUnderstanding en ARView transparente = triangulación del mesh LiDAR visible
-        // Como el background es .clear, solo se renderizan las líneas del wireframe
-        // sobre la visualización de RoomCaptureView que está debajo.
-        meshView.debugOptions.insert(.showSceneUnderstanding)
+        meshView.renderOptions = [.disableMotionBlur, .disableDepthOfField,
+                                  .disableCameraGrain, .disableHDR]
+        // sceneUnderstanding habilitado para que showSceneUnderstanding funcione
+        meshView.environment.sceneUnderstanding.options = [.occlusion]
+        // showSceneUnderstanding = wireframe blanco triangulado del LiDAR
+        meshView.debugOptions = [.showSceneUnderstanding]
         meshView.session = captureSession.arSession
         view.insertSubview(meshView, aboveSubview: cv)
         meshOverlayView = meshView
@@ -1300,48 +1301,67 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
         }
     }
 
-    // MARK: – Guidance line: contorno fino de superficies confirmadas por RoomPlan
-    // Capa 2 del stack visual (encima del mesh LiDAR, debajo de la UI).
-    // blending .transparent = sin depth write, no tapa la cámara ni el mesh.
+    // MARK: – Bounding boxes blancos estilo Polycam para superficies RoomPlan
+    // Solo bordes blancos finos — sin fills de color — sobre el wireframe LiDAR.
     private func updateGuidanceOutlines(_ room: CapturedRoom) {
         guard let arView = meshOverlayView else { return }
 
         guidanceAnchors.values.forEach { $0.removeFromParent() }
         guidanceAnchors.removeAll()
 
-        // Paredes: blanco semi-transparente, caja muy fina (0.012m)
-        var wallMat = UnlitMaterial()
-        wallMat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
-        wallMat.blending = .transparent(opacity: .init(floatLiteral: 0.22))
+        // Material borde blanco — trazo muy fino (0.004m), opacidad alta
+        var whiteMat = UnlitMaterial()
+        whiteMat.color    = .init(tint: UIColor(white: 1.0, alpha: 1.0))
+        whiteMat.blending = .transparent(opacity: .init(floatLiteral: 0.85))
 
-        // Puertas/ventanas: cian semi-transparente
+        // Cian para puertas y ventanas
         var openMat = UnlitMaterial()
         openMat.color    = .init(tint: UIColor(red: 0.4, green: 1.0, blue: 0.9, alpha: 1.0))
-        openMat.blending = .transparent(opacity: .init(floatLiteral: 0.25))
+        openMat.blending = .transparent(opacity: .init(floatLiteral: 0.85))
+
+        let e: Float = 0.004  // grosor del borde (4 mm)
+
+        // Genera 12 aristas de una caja como barras delgadas
+        func boxEdges(size: SIMD3<Float>, mat: UnlitMaterial,
+                      transform: simd_float4x4, prefix: String) {
+            let w = size.x, h = size.y, d = max(size.z, e * 2)
+            let anchor = AnchorEntity(world: transform)
+            // 4 aristas horizontales superiores/inferiores (a lo largo de X)
+            for (yOff, zOff) in [(h/2, d/2), (h/2, -d/2), (-h/2, d/2), (-h/2, -d/2)] {
+                let bar = ModelEntity(mesh: MeshResource.generateBox(size: [w, e, e]),
+                                      materials: [mat])
+                bar.position = SIMD3(0, yOff, zOff)
+                anchor.addChild(bar)
+            }
+            // 4 aristas verticales (a lo largo de Y)
+            for (xOff, zOff) in [(w/2, d/2), (w/2, -d/2), (-w/2, d/2), (-w/2, -d/2)] {
+                let bar = ModelEntity(mesh: MeshResource.generateBox(size: [e, h, e]),
+                                      materials: [mat])
+                bar.position = SIMD3(xOff, 0, zOff)
+                anchor.addChild(bar)
+            }
+            // 4 aristas de profundidad (a lo largo de Z)
+            for (xOff, yOff) in [(w/2, h/2), (w/2, -h/2), (-w/2, h/2), (-w/2, -h/2)] {
+                let bar = ModelEntity(mesh: MeshResource.generateBox(size: [e, e, d]),
+                                      materials: [mat])
+                bar.position = SIMD3(xOff, yOff, 0)
+                anchor.addChild(bar)
+            }
+            arView.scene.addAnchor(anchor)
+            guidanceAnchors[prefix] = anchor
+        }
 
         for (i, wall) in room.walls.enumerated() {
-            let box    = MeshResource.generateBox(size: [wall.dimensions.x, wall.dimensions.y, 0.012])
-            let entity = ModelEntity(mesh: box, materials: [wallMat])
-            let anchor = AnchorEntity(world: wall.transform)
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            guidanceAnchors["w\(i)"] = anchor
+            boxEdges(size: [wall.dimensions.x, wall.dimensions.y, 0.008],
+                     mat: whiteMat, transform: wall.transform, prefix: "w\(i)")
         }
         for (i, door) in room.doors.enumerated() {
-            let box    = MeshResource.generateBox(size: [door.dimensions.x, door.dimensions.y, 0.010])
-            let entity = ModelEntity(mesh: box, materials: [openMat])
-            let anchor = AnchorEntity(world: door.transform)
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            guidanceAnchors["d\(i)"] = anchor
+            boxEdges(size: [door.dimensions.x, door.dimensions.y, 0.008],
+                     mat: openMat, transform: door.transform, prefix: "d\(i)")
         }
         for (i, win) in room.windows.enumerated() {
-            let box    = MeshResource.generateBox(size: [win.dimensions.x, win.dimensions.y, 0.010])
-            let entity = ModelEntity(mesh: box, materials: [openMat])
-            let anchor = AnchorEntity(world: win.transform)
-            anchor.addChild(entity)
-            arView.scene.addAnchor(anchor)
-            guidanceAnchors["win\(i)"] = anchor
+            boxEdges(size: [win.dimensions.x, win.dimensions.y, 0.008],
+                     mat: openMat, transform: win.transform, prefix: "win\(i)")
         }
     }
 

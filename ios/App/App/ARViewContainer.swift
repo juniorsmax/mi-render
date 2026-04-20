@@ -107,50 +107,8 @@ struct ARViewContainer: UIViewRepresentable {
 
         @available(iOS 16.0, *)
         private func captureSessionDidUpdate(room: CapturedRoom) {
-            guard let arView = arView else { return }
-            clearRoomPlanOverlays(in: arView)
-            var newAnchors: [UUID: AnchorEntity] = [:]
-
-            // Colores con alpha=1 en el tint — la transparencia la controla blending
-            // blending = .transparent desactiva depth write (equivalente a depthWriteEnabled=false)
-            let surfaceGroups: [(surfaces: [CapturedRoom.Surface], opacity: Float, color: UIColor)] = [
-                (room.walls,   0.25, UIColor(red: 0.80, green: 0.80, blue: 0.95, alpha: 1.0)),
-                (room.doors,   0.30, UIColor(red: 1.00, green: 0.75, blue: 0.10, alpha: 1.0)),
-                (room.windows, 0.22, UIColor(red: 0.40, green: 0.90, blue: 1.00, alpha: 1.0))
-            ]
-
-            for (surfaceList, opacity, color) in surfaceGroups {
-                for surface in surfaceList {
-                    let d    = surface.dimensions
-                    let mesh = MeshResource.generateBox(
-                        size: SIMD3<Float>(d.x, d.y, max(d.z, 0.05))
-                    )
-                    var mat  = UnlitMaterial()
-                    mat.color    = .init(tint: color)
-                    mat.blending = .transparent(opacity: .init(floatLiteral: opacity))
-                    let entity = ModelEntity(mesh: mesh, materials: [mat])
-                    let anchor = AnchorEntity(world: surface.transform)
-                    anchor.name = "rp_\(surface.identifier.uuidString.prefix(8))"
-                    anchor.addChild(entity)
-                    arView.scene.addAnchor(anchor)
-                    newAnchors[surface.identifier] = anchor
-                }
-            }
-
-            for object in room.objects {
-                let mesh = MeshResource.generateBox(size: object.dimensions)
-                var mat  = UnlitMaterial()
-                mat.color    = .init(tint: UIColor(red: 0.30, green: 0.85, blue: 0.30, alpha: 1.0))
-                mat.blending = .transparent(opacity: .init(floatLiteral: 0.22))
-                let entity = ModelEntity(mesh: mesh, materials: [mat])
-                let anchor = AnchorEntity(world: object.transform)
-                anchor.name = "rp_obj_\(object.identifier.uuidString.prefix(8))"
-                anchor.addChild(entity)
-                arView.scene.addAnchor(anchor)
-                newAnchors[object.identifier] = anchor
-            }
-
-            roomPlanAnchors = newAnchors
+            // Los overlays de color se manejan en LiDARPlugin.updateGuidanceOutlines
+            // (cajas de borde blanco estilo Polycam). No añadir duplicados aquí.
         }
 
         private func clearRoomPlanOverlays(in arView: ARView) {
