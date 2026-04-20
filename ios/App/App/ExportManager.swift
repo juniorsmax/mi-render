@@ -87,17 +87,42 @@ class ExportManager {
 
     // MARK: - Exportar USDZ desde RoomPlan
 
+    /// Exporta USDZ paramétrico (muros/puertas/ventanas limpios — ideal para AR Quick Look)
     @available(iOS 16.0, *)
     func exportUSDZ(room: CapturedRoom, named name: String) -> URL? {
         let url = exportDirectory.appendingPathComponent("\(name).usdz")
         do {
-            try room.export(to: url)
+            try room.export(to: url, exportOptions: .parametric)
             lastUsdzUrl = url
             return url
         } catch {
-            print("Export USDZ error: \(error)")
+            print("Export USDZ (parametric) error: \(error)")
             return nil
         }
+    }
+
+    /// Exporta USDZ de malla cruda (geometría ARKit — compatible con Blender/SketchUp/AutoCAD)
+    @available(iOS 16.0, *)
+    func exportMeshUSDZ(room: CapturedRoom, named name: String) -> URL? {
+        let url = exportDirectory.appendingPathComponent("\(name)-mesh.usdz")
+        do {
+            try room.export(to: url, exportOptions: .mesh)
+            lastUsdzUrl = url
+            return url
+        } catch {
+            print("Export USDZ (mesh) error: \(error)")
+            // Fallback a paramétrico si mesh falla
+            return exportUSDZ(room: room, named: name + "-fallback")
+        }
+    }
+
+    /// Exporta ambas variantes y devuelve (parametricURL, meshURL)
+    @available(iOS 16.0, *)
+    @discardableResult
+    func exportBothUSDZ(room: CapturedRoom, named name: String) -> (parametric: URL?, mesh: URL?) {
+        let parametric = exportUSDZ(room: room, named: name)
+        let mesh       = exportMeshUSDZ(room: room, named: name)
+        return (parametric, mesh)
     }
 
     // MARK: - Exportar USDZ optimizado con materiales por clasificación

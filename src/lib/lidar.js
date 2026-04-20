@@ -116,11 +116,12 @@ function parseLiDARResult(raw) {
     windows:      raw.windows       ?? [],
     openings:     raw.openings      ?? [],
     wallCount:    raw.wallCount     ?? raw.walls?.length ?? 0,
-    objects:      raw.objects       ?? [],
-    confidence:   raw.confidence    ?? 'high',
-    scanMode:     'lidar-native',
-    usdzPath:     raw.usdzPath      ?? null,
-    usdzExported: !!(raw.usdzPath   || raw.usdzExported),
+    objects:        raw.objects         ?? [],
+    confidence:     raw.confidence      ?? 'high',
+    scanMode:       'lidar-native',
+    usdzPath:       raw.usdzPath        ?? null,   // paramétrico (AR Quick Look)
+    meshUsdzPath:   raw.meshUsdzPath    ?? null,   // malla cruda (Blender/SketchUp)
+    usdzExported:   !!(raw.usdzPath     || raw.usdzExported),
     meshAnchorsCount: raw.meshAnchorsCount ?? 0,
   }
 }
@@ -245,11 +246,26 @@ export async function exportSTL(name = 'mi-render-mesh') {
 }
 
 /**
- * Exporta el último escaneo RoomPlan como USDZ (AR QuickLook)
- * @param {string} name — nombre del archivo (sin extensión)
+ * Exporta el último escaneo RoomPlan como USDZ paramétrico (AR Quick Look)
+ * Abre share sheet iOS para compartir / guardar en Archivos
+ * @param {{ name?: string, share?: boolean }} opts
  */
-export async function exportUSDZ(name = 'mi-render-scan') {
-  return callNative('exportUSDZ', { name })
+export async function exportUSDZ(opts = {}) {
+  const name  = typeof opts === 'string' ? opts : (opts.name ?? 'mi-render-scan')
+  const share = opts.share ?? true
+  return callNative('exportUSDZ', { name, type: 'parametric', share })
+}
+
+/**
+ * Exporta el último escaneo RoomPlan como USDZ de malla cruda
+ * Compatible con Blender, SketchUp, AutoCAD vía converters
+ * Abre share sheet iOS
+ * @param {{ name?: string, share?: boolean }} opts
+ */
+export async function exportMeshUSDZ(opts = {}) {
+  const name  = typeof opts === 'string' ? opts : (opts.name ?? 'mi-render-mesh')
+  const share = opts.share ?? true
+  return callNative('exportUSDZ', { name, type: 'mesh', share })
 }
 
 /**

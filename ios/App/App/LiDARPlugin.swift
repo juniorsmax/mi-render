@@ -275,30 +275,52 @@ public class LiDARPlugin: CAPPlugin, CLLocationManagerDelegate {
     }
 
     // ── exportUSDZ ───────────────────────────────────────────────────────────
+    // Parámetros JS:
+    //   name  — nombre del archivo (sin extensión), opcional
+    //   type  — "parametric" (default, AR Quick Look) | "mesh" (Blender/SketchUp)
+    //   share — true (default) abre share sheet iOS
     @objc func exportUSDZ(_ call: CAPPluginCall) {
+        let name    = call.getString("name")  ?? "mi-render-scan"
+        let type    = call.getString("type")  ?? "parametric"
+        let share   = call.getBool("share")   ?? true
+
         DispatchQueue.main.async {
             guard let vc = self.bridge?.viewController else {
                 call.reject("No se encontró viewController")
                 return
             }
 
-            // Intentar exportar desde RoomPlanManager si hay sala capturada (iOS 16+)
             if #available(iOS 16.0, *),
-               let room = RoomPlanManager.shared.lastCapturedRoom,
-               let url = ExportManager.shared.exportUSDZ(room: room, named: "mi-render-scan") {
-                ExportManager.shared.shareFile(at: url, from: vc)
-                call.resolve(["path": url.path])
-                return
+               let room = RoomPlanManager.shared.lastCapturedRoom {
+
+                // Elegir variante según type
+                let url: URL?
+                if type == "mesh" {
+                    url = ExportManager.shared.exportMeshUSDZ(room: room, named: name)
+                } else {
+                    url = ExportManager.shared.exportUSDZ(room: room, named: name)
+                }
+
+                if let url = url {
+                    if share { ExportManager.shared.shareFile(at: url, from: vc) }
+                    call.resolve([
+                        "path":   url.path,
+                        "type":   type,
+                        "shared": share,
+                    ])
+                    return
+                }
             }
 
-            // Fallback: buscar USDZ en directorio temporal (flujo ObjectScan)
-            let tmpUrl = FileManager.default.temporaryDirectory
-                .appendingPathComponent("mi-render-scan.usdz")
+            // Fallback: buscar USDZ pre-exportado en /tmp/
+            let suffix  = type == "mesh" ? "-mesh" : ""
+            let tmpName = "mi-render-scan\(suffix).usdz"
+            let tmpUrl  = FileManager.default.temporaryDirectory.appendingPathComponent(tmpName)
             if FileManager.default.fileExists(atPath: tmpUrl.path) {
-                ExportManager.shared.shareFile(at: tmpUrl, from: vc)
-                call.resolve(["path": tmpUrl.path])
+                if share { ExportManager.shared.shareFile(at: tmpUrl, from: vc) }
+                call.resolve(["path": tmpUrl.path, "type": type, "shared": share])
             } else {
-                call.reject("No hay escaneo guardado para exportar")
+                call.reject("No hay escaneo USDZ (\(type)) guardado. Realiza un escaneo primero.")
             }
         }
     }
@@ -1330,21 +1352,31 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
                 let room = try await RoomBuilder(options: []).capturedRoom(from: data)
                 RoomPlanManager.shared.lastCapturedRoom = room
 
-                // ── Guardar en /tmp/ para exportación inmediata ──────────────
-                let _ = ExportManager.shared.exportUSDZ(room: room, named: "mi-render-scan")
-                let tmpUrl = FileManager.default.temporaryDirectory
+                // ── Exportar USDZ en /tmp/ (acceso rápido para share sheet) ──
+                // Paramétrico: muros limpios, AR Quick Look
+                let tmpParametric = FileManager.default.temporaryDirectory
                     .appendingPathComponent("mi-render-scan.usdz")
-                try? room.export(to: tmpUrl, exportOptions: .parametric)
+                try? room.export(to: tmpParametric, exportOptions: .parametric)
+
+                // Malla cruda: geometría ARKit, compatible con Blender/SketchUp/AutoCAD
+                let tmpMesh = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("mi-render-scan-mesh.usdz")
+                try? room.export(to: tmpMesh, exportOptions: .mesh)
+
+                // También guardar en ExportManager (para plugin exportUSDZ)
+                let _ = ExportManager.shared.exportBothUSDZ(room: room, named: "mi-render-scan")
 
                 // ── Persistir proyecto en Documents/projects/{uuid}/ ─────────
                 let _df = DateFormatter(); _df.dateFormat = "dd/MM/yyyy HH:mm"
                 let projectName = "Escaneo \(_df.string(from: Date()))"
                 var meta = ProjectPersistenceManager.shared.createProject(name: projectName)
 
-                // Guardar USDZ parametric (RoomPlan, más preciso que mesh raw)
-                let projDir  = ProjectPersistenceManager.shared.projectFolder(for: meta.id)
-                let projUSDZ = projDir.appendingPathComponent("mesh.usdz")
-                try? room.export(to: projUSDZ, exportOptions: .parametric)
+                let projDir           = ProjectPersistenceManager.shared.projectFolder(for: meta.id)
+                let projUSDZParam     = projDir.appendingPathComponent("model-parametric.usdz")
+                let projUSDZMesh      = projDir.appendingPathComponent("model-mesh.usdz")
+                try? room.export(to: projUSDZParam, exportOptions: .parametric)
+                try? room.export(to: projUSDZMesh,  exportOptions: .mesh)
+
                 ProjectPersistenceManager.shared.updateMeta(id: meta.id) {
                     $0.hasMesh     = true
                     $0.floorArea   = Double(MeshManager.shared.surfaces.floor)
@@ -1372,13 +1404,13 @@ extension RoomPlanViewController: RoomCaptureSessionDelegate {
 
                 // ── Construir resultado final ────────────────────────────────
                 var result = self.buildResult(from: room)
-                result["projectId"]       = meta.id.uuidString
-                result["projectName"]     = meta.name
-                result["usdzPath"]        = projUSDZ.path
-                result["meshAnchorsCount"] = arAnchors.count
-                if let usdzUrl = ExportManager.shared.lastUsdzUrl {
-                    result["exportedUsdzPath"] = usdzUrl.path
-                }
+                result["projectId"]         = meta.id.uuidString
+                result["projectName"]       = meta.name
+                result["usdzPath"]          = projUSDZParam.path   // AR Quick Look
+                result["meshUsdzPath"]      = projUSDZMesh.path    // Blender/SketchUp
+                result["tmpUsdzPath"]       = tmpParametric.path
+                result["tmpMeshUsdzPath"]   = tmpMesh.path
+                result["meshAnchorsCount"]  = arAnchors.count
 
                 await MainActor.run {
                     self.dismiss(animated: true) { [weak self] in

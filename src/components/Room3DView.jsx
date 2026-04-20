@@ -28,7 +28,7 @@ import {
   ContactShadows,
 } from '@react-three/drei'
 import * as THREE from 'three'
-import { exportUSDZ, openViewer } from '../lib/lidar'
+import { exportUSDZ, exportMeshUSDZ, openViewer } from '../lib/lidar'
 import { Capacitor } from '@capacitor/core'
 import './Room3DView.css'
 
@@ -479,6 +479,7 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
   })
   const [activeBar,     setActiveBar]     = useState(null)
   const [exporting,     setExporting]     = useState(false)
+  const [showExport,    setShowExport]    = useState(false)  // menú de export
 
   // ── Estado de mediciones ──────────────────────────────────────────
   const [measureMode,   setMeasureMode]   = useState(false)
@@ -538,9 +539,19 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
     orbitRef.current.update()
   }
 
-  async function handleExportUSDZ() {
-    setExporting(true)
+  // Exportar USDZ paramétrico — AR Quick Look, archivos, AirDrop
+  async function handleExportAR() {
+    setShowExport(false)
+    setExporting('ar')
     try { await exportUSDZ({ name: projectName }) } catch { /* silencio */ }
+    setExporting(false)
+  }
+
+  // Exportar USDZ de malla cruda — Blender, SketchUp, AutoCAD
+  async function handleExportMesh() {
+    setShowExport(false)
+    setExporting('mesh')
+    try { await exportMeshUSDZ({ name: projectName + '-mesh' }) } catch { /* silencio */ }
     setExporting(false)
   }
 
@@ -711,8 +722,8 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
             className={`r3d-bar-btn ${activeBar === id ? 'active' : ''}`}
             onClick={() => {
               if (id === 'measure') { toggleMeasure(); return }
+              if (id === 'export')  { setShowExport(v => !v); return }
               setActiveBar(v => v === id ? null : id)
-              if (id === 'export') handleExportUSDZ()
             }}>
             <span className="r3d-bar-icon">
               {id === 'measure' && measurements.length > 0
@@ -740,7 +751,38 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
         )}
       </div>
 
-      {exporting && <div className="r3d-exporting">Exportando USDZ…</div>}
+      {/* ── Menú exportar 3D ── */}
+      {showExport && (
+        <div className="r3d-export-menu">
+          <div className="r3d-export-title">Exportar modelo</div>
+
+          <button className="r3d-export-opt" onClick={handleExportAR}>
+            <span className="r3d-export-icon">📱</span>
+            <div>
+              <div className="r3d-export-name">AR Quick Look</div>
+              <div className="r3d-export-desc">USDZ paramétrico · AirDrop · Archivos · Notas</div>
+            </div>
+          </button>
+
+          <button className="r3d-export-opt" onClick={handleExportMesh}>
+            <span className="r3d-export-icon">🧊</span>
+            <div>
+              <div className="r3d-export-name">Malla 3D (Blender / SketchUp)</div>
+              <div className="r3d-export-desc">USDZ malla cruda · AutoCAD · converters</div>
+            </div>
+          </button>
+
+          <button className="r3d-export-cancel" onClick={() => setShowExport(false)}>
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {exporting && (
+        <div className="r3d-exporting">
+          {exporting === 'mesh' ? 'Exportando malla 3D…' : 'Exportando AR USDZ…'}
+        </div>
+      )}
     </div>
   )
 }
