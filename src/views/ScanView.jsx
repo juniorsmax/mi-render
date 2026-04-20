@@ -5,6 +5,7 @@ import { sanitizeNumber, sanitizeName } from '../lib/security'
 import { getScanMode, SCAN_MODE_LABELS, startLiDARScan, startObjectScan, startPhotogrammetry } from '../lib/lidar'
 import { Icon } from '../components/Icon.jsx'
 import { ScanExport } from '../components/ScanExport.jsx'
+import { Room3DView } from '../components/Room3DView.jsx'
 import './ScanView.css'
 
 /**
@@ -335,6 +336,27 @@ export function ScanView({ onComplete, onCancel, initialStep = 'permission' }) {
   // STEP: result — resultados del escaneo LiDAR (plano + stats + export)
   // ════════════════════════════════════════════════════
   if (step === 'result' && scanResult) {
+    // Escaneo LiDAR nativo → vista 3D dollhouse interactiva
+    if (scanResult.scanMode === 'lidar-native') {
+      return (
+        <Room3DView
+          result={scanResult}
+          projectName="Habitación"
+          onBack={() => setStep('result-classic')}
+          onAccept={() => onComplete({ ...scanResult })}
+        />
+      )
+    }
+    // Otros modos → ScanExport clásico
+    return <ScanExport
+      result={scanResult}
+      onAccept={(thumbnail) => onComplete({ ...scanResult, thumbnail })}
+      onRescan={() => { setScanResult(null); setStep('permission') }}
+    />
+  }
+
+  // Vista clásica accesible desde Room3DView (botón "atrás")
+  if (step === 'result-classic' && scanResult) {
     return <ScanExport
       result={scanResult}
       onAccept={(thumbnail) => onComplete({ ...scanResult, thumbnail })}
