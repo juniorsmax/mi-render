@@ -535,12 +535,10 @@ extension ScanManager {
         for o in room.objects { addSurface(dim: o.dimensions, transform: o.transform, mat: objMat,  id: o.identifier) }
 
         if #available(iOS 17.0, *) {
-            let floorMat = surfaceMaterial(r: 0.10, g: 0.88, b: 0.45, opacity: 0.18) // verde suelo
-            let ceilMat  = surfaceMaterial(r: 0.55, g: 0.75, b: 1.00, opacity: 0.15) // azul techo
-            for s in room.floors   { addSurface(dim: SIMD3(s.dimensions.x, 0.04, s.dimensions.z),
-                                                 transform: s.transform, mat: floorMat, id: s.identifier) }
-            for s in room.ceilings { addSurface(dim: SIMD3(s.dimensions.x, 0.04, s.dimensions.z),
-                                                 transform: s.transform, mat: ceilMat,  id: s.identifier) }
+            // room.floors existe en iOS 17+; room.ceilings NO existe en RoomPlan API
+            let floorMat = surfaceMaterial(r: 0.10, g: 0.88, b: 0.45, opacity: 0.18)
+            for s in room.floors { addSurface(dim: SIMD3(s.dimensions.x, 0.04, s.dimensions.z),
+                                               transform: s.transform, mat: floorMat, id: s.identifier) }
         }
     }
 
