@@ -25,7 +25,6 @@ import {
   OrbitControls,
   PerspectiveCamera,
   Html,
-  ContactShadows,
 } from '@react-three/drei'
 import * as THREE from 'three'
 import { exportUSDZ, exportMeshUSDZ, openViewer } from '../lib/lidar'
@@ -90,7 +89,7 @@ function DollhouseScene({ result, layers, floorType }) {
   return (
     <group>
       {/* Suelo (también clickable en modo medir) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={handleClick}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} onClick={handleClick}>
         <planeGeometry args={[floorW * 2, floorD * 2]} />
         <meshStandardMaterial
           color={floorType === 'tile' ? FLOOR_TILE : FLOOR_PARQUET}
@@ -101,7 +100,7 @@ function DollhouseScene({ result, layers, floorType }) {
 
       {/* Techo (oculto por defecto, toggle capa) */}
       {layers.ceil && (
-        <mesh position={[0, height, 0]} rotation={[Math.PI / 2, 0, 0]} receiveShadow>
+        <mesh position={[0, height, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <planeGeometry args={[floorW * 2, floorD * 2]} />
           <meshStandardMaterial color={CEIL_COLOR} roughness={0.9} transparent opacity={0.6} />
         </mesh>
@@ -132,14 +131,7 @@ function DollhouseScene({ result, layers, floorType }) {
         <WallLabel key={`lbl-${i}`} wall={wall} height={height} />
       ))}
 
-      {/* Sombra de contacto */}
-      <ContactShadows
-        position={[0, 0.01, 0]}
-        opacity={0.35}
-        scale={floorW * 2.5}
-        blur={2}
-        far={4}
-      />
+      {/* Sin ContactShadows — no compatible con iOS WebView */}
     </group>
   )
 }
@@ -154,7 +146,7 @@ function WallMesh({ wall, height }) {
   const matrix = transform ? buildMatrix(transform) : null
 
   return (
-    <mesh castShadow receiveShadow matrixAutoUpdate={false}
+    <mesh castShadow matrixAutoUpdate={false}
       ref={el => { if (el && matrix) el.matrix.copy(matrix) }}
       onClick={onPick ? (e) => { e.stopPropagation(); onPick(e.point.clone()) } : undefined}>
       <boxGeometry args={[dimX, dimY, Math.max(dimZ, 0.12)]} />
@@ -278,7 +270,7 @@ function ObjectMesh({ object }) {
     <group matrixAutoUpdate={false}
       ref={el => { if (el && matrix) el.matrix.copy(matrix) }}>
       {/* Cuerpo principal */}
-      <mesh castShadow receiveShadow>
+      <mesh castShadow>
         <boxGeometry args={[dimX, dimY, dimZ]} />
         <meshStandardMaterial
           color={style.color}
@@ -304,8 +296,7 @@ function StudioLights() {
     <>
       <ambientLight intensity={0.6} />
       {/* Key light */}
-      <directionalLight position={[5, 8, 5]} intensity={1.2} castShadow
-        shadow-mapSize={[1024, 1024]} />
+      <directionalLight position={[5, 8, 5]} intensity={1.2} />
       {/* Fill light */}
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />
       {/* Rim light */}
@@ -580,8 +571,8 @@ export function Room3DView({ result, projectName = 'Habitación', onBack, onAcce
       {/* ── Canvas 3D ── */}
       <div className={`r3d-canvas-wrap ${measureMode ? 'r3d-cursor-cross' : ''}`}>
         <MeasureCtx.Provider value={measureMode ? handlePick : null}>
-          <Canvas shadows dpr={[1, 2]}
-            gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
+          <Canvas dpr={[1, 1.5]}
+            gl={{ antialias: true, powerPreference: 'high-performance' }}>
             <color attach="background" args={['#f5f2ea']} />
             <fog attach="fog" args={['#f5f2ea', 18, 38]} />
 
